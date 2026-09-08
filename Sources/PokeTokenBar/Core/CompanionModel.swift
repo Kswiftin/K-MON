@@ -327,6 +327,17 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
     case flamePlate, splashPlate, zapPlate, meadowPlate, iciclePlate, fistPlate
     case toxicPlate, earthPlate, skyPlate, mindPlate, insectPlate, stonePlate
     case spookyPlate, dracoPlate, dreadPlate, ironPlate, pixiePlate
+    /// 특정 종에게만 일하는 물건 10종 — 전기구슬(피카츄)·굵은뼈(탕구리 계열)·금속파우더·
+    /// 스피드파우더(메타몽)·럭키펀치(럭키)·대파(파오리 계열)·마음의물방울(라티 남매)·보옥 셋.
+    ///
+    /// 종을 묻는 자리는 **하나**다(`BattleSide.heldEffect`) — 엉뚱한 종이 쥐면 효과가 통째로
+    /// 없어진다. 배율을 곱하는 자리마다 종을 다시 물으면 한 자리만 빠뜨렸을 때 그 배율만
+    /// 아무에게나 붙는다.
+    ///
+    /// 기라티나의 백금옥은 본가에서 폼도 바꾸지만 여기서는 배율만 남는다(폼체인지가 없다).
+    /// 심해의이빨·심해의비늘은 이 저장소에서 진화 아이템이라 빠졌다.
+    case lightBall, thickClub, metalPowder, quickPowder, luckyPunch
+    case stick, soulDew, adamantOrb, lustrousOrb, griseousOrb
     /// R7 decor is inventory, not a second currency or store.
     // Mini Home furniture. The original three are the free campus starter set.
     case roomBed, roomTable, roomLamp
@@ -359,6 +370,8 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
              .flamePlate, .splashPlate, .zapPlate, .meadowPlate, .iciclePlate, .fistPlate,
              .toxicPlate, .earthPlate, .skyPlate, .mindPlate, .insectPlate, .stonePlate,
              .spookyPlate, .dracoPlate, .dreadPlate, .ironPlate, .pixiePlate,
+             .lightBall, .thickClub, .metalPowder, .quickPowder, .luckyPunch,
+             .stick, .soulDew, .adamantOrb, .lustrousOrb, .griseousOrb,
              .roomBed, .roomTable, .roomLamp, .lovelyVanity, .lovelySofa, .lovelyHeartLamp,
              .retroArcade, .retroRadio, .retroTV, .naturePlant, .natureBench, .natureLantern: return nil
         case .linkingCord: return .plainTrade
@@ -439,7 +452,9 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
              .ironBall, .laggingTail, .fullIncense,
              .flamePlate, .splashPlate, .zapPlate, .meadowPlate, .iciclePlate, .fistPlate,
              .toxicPlate, .earthPlate, .skyPlate, .mindPlate, .insectPlate, .stonePlate,
-             .spookyPlate, .dracoPlate, .dreadPlate, .ironPlate, .pixiePlate:
+             .spookyPlate, .dracoPlate, .dreadPlate, .ironPlate, .pixiePlate,
+             .lightBall, .thickClub, .metalPowder, .quickPowder, .luckyPunch,
+             .stick, .soulDew, .adamantOrb, .lustrousOrb, .griseousOrb:
             return .heldItem
         case .shinyCharm: return .passive
         case .roomBed, .roomTable, .roomLamp, .lovelyVanity, .lovelySofa, .lovelyHeartLamp,
@@ -475,6 +490,16 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
         case .flameOrb:    return .flameOrb
         case .toxicOrb:    return .toxicOrb
         case .assaultVest: return .assaultVest
+        case .lightBall:   return .lightBall
+        case .thickClub:   return .thickClub
+        case .metalPowder: return .metalPowder
+        case .quickPowder: return .quickPowder
+        case .luckyPunch:  return .luckyPunch
+        case .stick:       return .leek
+        case .soulDew:     return .soulDew
+        case .adamantOrb:  return .adamantOrb
+        case .lustrousOrb: return .lustrousOrb
+        case .griseousOrb: return .griseousOrb
         case .ironBall:    return .ironBall
         case .laggingTail, .fullIncense: return .movesLast
         default:
@@ -663,6 +688,16 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
         case .roseIncense: return "rose-incense"
         // 열매는 케이스명이 곧 API 아이템명이다(위 `kebabRawValue`).
         case _ where berryEffect != nil || gemType != nil || plateType != nil: return kebabRawValue
+        case .lightBall: return "light-ball"
+        case .thickClub: return "thick-club"
+        case .metalPowder: return "metal-powder"
+        case .quickPowder: return "quick-powder"
+        case .luckyPunch: return "lucky-punch"
+        case .stick: return "stick"
+        case .soulDew: return "soul-dew"
+        case .adamantOrb: return "adamant-orb"
+        case .lustrousOrb: return "lustrous-orb"
+        case .griseousOrb: return "griseous-orb"
         case .ironBall: return "iron-ball"
         case .laggingTail: return "lagging-tail"
         case .fullIncense: return "full-incense"
@@ -741,6 +776,16 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
              .toxicPlate, .earthPlate, .skyPlate, .mindPlate, .insectPlate, .stonePlate,
              .spookyPlate, .dracoPlate, .dreadPlate, .ironPlate, .pixiePlate:
             return "🪨"
+        case .lightBall: return "🔆"
+        case .thickClub: return "🦴"
+        case .metalPowder: return "🥈"
+        case .quickPowder: return "💨"
+        case .luckyPunch: return "🥊"
+        case .stick: return "🥬"
+        case .soulDew: return "💧"
+        case .adamantOrb: return "🔷"
+        case .lustrousOrb: return "🤍"
+        case .griseousOrb: return "🟣"
         case .ironBall: return "⚫"
         case .laggingTail: return "🐌"
         case .fullIncense: return "🕯️"
@@ -770,6 +815,11 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
         // 플레이트는 타입 강화 도구와 효과가 같으니 값도 같다 — 달리 두면 같은 물건이 두 값이 된다.
         case _ where plateType != nil: return HeldItemBalance.typeEnhancerPrice
         case .ironBall, .laggingTail, .fullIncense: return HeldItemBalance.drawbackPrice
+        // 종 전용은 쥘 수 있는 개체가 하나뿐이라 값을 싸게 둔다 — 비싸게 두면 그 종을 안 가진
+        // 사용자에게는 값만 큰 장식이 된다.
+        case .lightBall, .thickClub, .metalPowder, .quickPowder, .luckyPunch,
+             .stick, .soulDew, .adamantOrb, .lustrousOrb, .griseousOrb:
+            return HeldItemBalance.speciesBoundPrice
         case .roomBed: return 1_500
         case .roomTable: return 1_000
         case .roomLamp: return 800
@@ -891,7 +941,8 @@ enum HeldItemEffect: Sendable, Equatable, CaseIterable {
             + PokemonType.allCases.map(HeldItemEffect.resistBerry)
             + HeldItemEffect.pinchRaisedStats.map(HeldItemEffect.pinchStatBoost)
             + PokemonType.allCases.map(HeldItemEffect.gem)
-            + [.ironBall, .movesLast]
+            + [.ironBall, .movesLast, .lightBall, .thickClub, .metalPowder, .quickPowder,
+               .luckyPunch, .leek, .soulDew, .adamantOrb, .lustrousOrb, .griseousOrb]
     }
 
     /// 데미지가 1.3배가 되고 그 대가로 매 턴 최대 HP 의 1/10 을 잃는다.
@@ -929,6 +980,12 @@ enum HeldItemEffect: Sendable, Equatable, CaseIterable {
     case ironBall
     /// 같은 우선도 안에서 뒤로 밀린다 — 느림보꼬리·만복향로.
     case movesLast
+    /// 특정 종에게만 일하는 열 갈래. 종 조건은 `restrictedSpecies` 한 곳에 있고, 배율·급소는
+    /// 다른 물건과 **같은 축**으로 답한다(`statScale`·`bonusCritStages`·`boostedMoveTypes`) —
+    /// 그래야 엔진이 "종 전용" 이라는 개념을 몰라도 된다.
+    case lightBall, thickClub, metalPowder, quickPowder
+    case luckyPunch, leek, soulDew
+    case adamantOrb, lustrousOrb, griseousOrb
 
     /// 위급 열매가 올릴 수 있는 스탯 — 본가에 열매가 있는 다섯뿐이다.
     static let pinchRaisedStats: [BattleStat] = [.atk, .def, .spa, .spd, .spe]
@@ -944,7 +1001,9 @@ enum HeldItemEffect: Sendable, Equatable, CaseIterable {
         case .lifeOrb, .focusSash, .leftovers, .choiceScarf,
              .flameOrb, .toxicOrb, .assaultVest, .typeBoost,
              .resistBerry, .pinchStatBoost, .pinchCrit, .pinchHeal,
-             .gem, .ironBall, .movesLast: return nil
+             .gem, .ironBall, .movesLast,
+             .lightBall, .thickClub, .metalPowder, .quickPowder, .luckyPunch, .leek,
+             .soulDew, .adamantOrb, .lustrousOrb, .griseousOrb: return nil
         }
     }
 
@@ -956,7 +1015,9 @@ enum HeldItemEffect: Sendable, Equatable, CaseIterable {
         case .lifeOrb, .focusSash, .leftovers, .choiceBand, .choiceSpecs, .choiceScarf,
              .flameOrb, .toxicOrb, .typeBoost,
              .resistBerry, .pinchStatBoost, .pinchCrit, .pinchHeal,
-             .gem, .ironBall, .movesLast: return nil
+             .gem, .ironBall, .movesLast,
+             .lightBall, .thickClub, .metalPowder, .quickPowder, .luckyPunch, .leek,
+             .soulDew, .adamantOrb, .lustrousOrb, .griseousOrb: return nil
         }
     }
 
@@ -972,15 +1033,26 @@ enum HeldItemEffect: Sendable, Equatable, CaseIterable {
         case .lifeOrb, .focusSash, .leftovers, .choiceBand, .choiceSpecs, .choiceScarf,
              .assaultVest, .typeBoost,
              .resistBerry, .pinchStatBoost, .pinchCrit, .pinchHeal,
-             .gem, .ironBall, .movesLast: return nil
+             .gem, .ironBall, .movesLast,
+             .lightBall, .thickClub, .metalPowder, .quickPowder, .luckyPunch, .leek,
+             .soulDew, .adamantOrb, .lustrousOrb, .griseousOrb: return nil
         }
     }
 
-    /// 이 물건이 위력을 올려 주는 기술 타입 — 타입 강화 도구뿐이다. 데미지 계통 축
-    /// (`boostedDamageClass`)과 나눈 이유는 재는 것이 달라서다: 저기는 물리·특수, 여기는 타입이다.
-    var boostedMoveType: PokemonType? {
-        if case .typeBoost(let type) = self { return type }
-        return nil
+    /// 이 물건이 위력을 올려 주는 기술 타입 — 타입 강화 도구·플레이트는 하나, 보옥 셋은 둘이다.
+    /// 데미지 계통 축(`boostedDamageClass`)과 나눈 이유는 재는 것이 달라서다: 저기는 물리·특수,
+    /// 여기는 타입이다.
+    ///
+    /// **집합인 이유는 보옥이다.** 하나만 답하는 축으로 두면 디아루가의 강철 기술처럼 둘째 타입이
+    /// 조용히 안 오른다(값이 nil 이 아니라 "다른 타입" 이라 오류도 안 난다).
+    var boostedMoveTypes: Set<PokemonType> {
+        switch self {
+        case .typeBoost(let type): return [type]
+        case .adamantOrb:  return [.dragon, .steel]
+        case .lustrousOrb: return [.dragon, .water]
+        case .griseousOrb: return [.dragon, .ghost]
+        default: return []
+        }
     }
 
     /// 스피드를 1.5 배로 만드는가 — 구애스카프뿐이다. 데미지 배율 축과 나눈 이유는 곱하는 자리가
@@ -1000,7 +1072,9 @@ enum HeldItemEffect: Sendable, Equatable, CaseIterable {
         case .choiceBand, .choiceSpecs, .choiceScarf: return true
         case .lifeOrb, .focusSash, .leftovers, .flameOrb, .toxicOrb, .assaultVest,
              .typeBoost, .resistBerry, .pinchStatBoost, .pinchCrit, .pinchHeal,
-             .gem, .ironBall, .movesLast: return false
+             .gem, .ironBall, .movesLast,
+             .lightBall, .thickClub, .metalPowder, .quickPowder, .luckyPunch, .leek,
+             .soulDew, .adamantOrb, .lustrousOrb, .griseousOrb: return false
         }
     }
 
@@ -1025,11 +1099,59 @@ enum HeldItemEffect: Sendable, Equatable, CaseIterable {
         case .pinchHeal:                return .heal
         case .lifeOrb, .focusSash, .leftovers, .choiceBand, .choiceSpecs, .choiceScarf,
              .flameOrb, .toxicOrb, .assaultVest, .typeBoost, .resistBerry,
-             .gem, .ironBall, .movesLast: return nil
+             .gem, .ironBall, .movesLast,
+             .lightBall, .thickClub, .metalPowder, .quickPowder, .luckyPunch, .leek,
+             .soulDew, .adamantOrb, .lustrousOrb, .griseousOrb: return nil
         }
     }
 
-    /// 이 물건이 **한 번만** 올려 주는 기술 타입 — 주얼이다. 상시 강화(`boostedMoveType`)와
+    /// 이 물건이 **어떤 종에게만** 일하는가 — nil 이면 누구나 쓸 수 있다.
+    ///
+    /// 이 조건을 묻는 자리는 `BattleSide.heldEffect` 하나다. 배율을 곱하는 자리마다 물으면 한
+    /// 자리만 빠뜨렸을 때 그 배율만 아무에게나 붙고, 화면에는 아무 오류도 안 보인다.
+    var restrictedSpecies: Set<Int>? {
+        switch self {
+        case .lightBall:  return [25]                 // 피카츄
+        case .thickClub:  return [104, 105]           // 탕구리·텅구리
+        case .metalPowder, .quickPowder: return [132] // 메타몽
+        case .luckyPunch: return [113]                // 럭키
+        case .leek:       return [83, 865]            // 파오리·창파나이트
+        case .soulDew:    return [380, 381]           // 라티아스·라티오스
+        case .adamantOrb: return [483]                // 디아루가
+        case .lustrousOrb: return [484]               // 펄기아
+        case .griseousOrb: return [487]               // 기라티나
+        default: return nil
+        }
+    }
+
+    /// 이 물건이 그 능력치에 곱하는 분수 — 없으면 nil. 랭크·특성·화상 **뒤**에 곱한다(본가 순서).
+    ///
+    /// 스탯 하나를 payload 로 들지 않고 물음으로 두는 이유는 두 스탯을 함께 올리는 물건이 있어서다
+    /// (전기구슬은 공격·특공, 마음의물방울은 특공·특방).
+    func statScale(_ stat: BattleStat) -> (numerator: Int, denominator: Int)? {
+        switch (self, stat) {
+        case (.lightBall, .atk), (.lightBall, .spa),
+             (.thickClub, .atk),
+             (.metalPowder, .def),
+             (.quickPowder, .spe):
+            return (2, 1)
+        case (.soulDew, .spa), (.soulDew, .spd):
+            return (3, 2)
+        default:
+            return nil
+        }
+    }
+
+    /// 이 물건이 더해 주는 급소 단계 — 럭키펀치·대파의 +2 다. 기합충전과 같은 표를 타므로 상한도
+    /// 같다(단계가 겹쳐도 표가 3 에서 막힌다).
+    var bonusCritStages: Int {
+        switch self {
+        case .luckyPunch, .leek: return 2
+        default: return 0
+        }
+    }
+
+    /// 이 물건이 **한 번만** 올려 주는 기술 타입 — 주얼이다. 상시 강화(`boostedMoveTypes`)와
     /// 나눈 이유는 소모다: 한 축으로 접으면 상시 도구가 첫 기술에 사라지거나 주얼이 영원히 남는다.
     var oneShotBoostedMoveType: PokemonType? {
         if case .gem(let type) = self { return type }
@@ -1111,6 +1233,8 @@ enum HeldItemBalance {
     /// 대가만 있는 물건 셋(검은철구·느림보꼬리·만복향로)의 상점가 — 성능을 **깎는** 물건이라
     /// 값을 낮게 둔다. 0 원으로 두지 않는 이유는 자이로볼·카운터 조합에서 실제로 이득이라서다.
     static let drawbackPrice = 900
+    /// 종 전용 물건의 상점가 — 쥘 수 있는 개체가 하나뿐이라 싸게 둔다.
+    static let speciesBoundPrice = 1_200
 
     /// 구슬 2종의 상점가 — 둘이 같은 값이다(거는 상태만 갈릴 뿐 같은 물건이다). 지닌물건 중
     /// **가장 싸다**: 주는 것이 강화가 아니라 상태이상이라, 근성 같은 특성과 짝지어야 이득이 되고

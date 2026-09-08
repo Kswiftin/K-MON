@@ -33,7 +33,7 @@ final class PlateTests: XCTestCase {
 
     /// **노말을 뺀 17타입에 하나씩**이다 — 노말 플레이트는 본가에도 없다(아르세우스의 기본형).
     func testThePlatesCoverEveryTypeButNormal() {
-        let types = Self.plates.compactMap { $0.heldBattleEffect?.boostedMoveType }
+        let types = Self.plates.flatMap { $0.heldBattleEffect?.boostedMoveTypes ?? [] }
         XCTAssertEqual(types.count, Self.plates.count)
         XCTAssertEqual(Set(types), Set(PokemonType.allCases).subtracting([.normal]))
     }

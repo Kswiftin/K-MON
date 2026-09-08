@@ -1592,6 +1592,16 @@ struct L {
         case .dreadPlate: return "공포플레이트"
         case .ironPlate: return "강철플레이트"
         case .pixiePlate: return "정령플레이트"
+        case .lightBall: return "전기구슬"
+        case .thickClub: return "굵은뼈"
+        case .metalPowder: return "금속파우더"
+        case .quickPowder: return "스피드파우더"
+        case .luckyPunch: return "럭키펀치"
+        case .stick: return "대파"
+        case .soulDew: return "마음의물방울"
+        case .adamantOrb: return "금강옥"
+        case .lustrousOrb: return "백옥"
+        case .griseousOrb: return "백금옥"
         case .shinyCharm: return "이로치 부적"
         case .linkingCord: return "연결의끈"
         case .fireStone: return "불꽃의돌"
@@ -1736,6 +1746,26 @@ struct L {
                 return "스피드가 절반이 되고 땅에 발이 닿아요. 느릴수록 강한 기술과 함께 쓰는 물건이에요."
             case .movesLast:
                 return "우선도가 같으면 아무리 빨라도 나중에 움직여요. 반격 기술과 함께 쓰는 물건이에요."
+            case .lightBall:
+                return "피카츄가 지니면 공격과 특수공격이 두 배가 돼요. 다른 포켓몬에게는 아무 일도 없어요."
+            case .thickClub:
+                return "탕구리와 텅구리가 지니면 공격이 두 배가 돼요. 다른 포켓몬에게는 아무 일도 없어요."
+            case .metalPowder:
+                return "메타몽이 지니면 방어가 두 배가 돼요. 다른 포켓몬에게는 아무 일도 없어요."
+            case .quickPowder:
+                return "메타몽이 지니면 스피드가 두 배가 돼요. 다른 포켓몬에게는 아무 일도 없어요."
+            case .luckyPunch:
+                return "럭키가 지니면 급소에 잘 맞혀요. 다른 포켓몬에게는 아무 일도 없어요."
+            case .leek:
+                return "파오리와 창파나이트가 지니면 급소에 잘 맞혀요. 다른 포켓몬에게는 아무 일도 없어요."
+            case .soulDew:
+                return "라티아스와 라티오스가 지니면 특수공격과 특수방어가 1.5배가 돼요."
+            case .adamantOrb:
+                return "디아루가가 지니면 드래곤·강철 타입 기술의 위력이 1.2배가 돼요."
+            case .lustrousOrb:
+                return "펄기아가 지니면 드래곤·물 타입 기술의 위력이 1.2배가 돼요."
+            case .griseousOrb:
+                return "기라티나가 지니면 드래곤·고스트 타입 기술의 위력이 1.2배가 돼요."
             case nil:
                 // 지닌물건 갈래인데 효과가 없는 조합 — `bagUse` 가 둘을 함께 정하므로 도달 불가다.
                 return ""
@@ -1783,6 +1813,16 @@ struct L {
         case .gem(let type): return "\(type.name) 기술 ×1.3 / 1회"
         case .ironBall: return "스피드 1/2 / 땅에 닿음"
         case .movesLast: return "같은 우선도면 후공"
+        case .lightBall: return "피카츄 공격·특공 ×2"
+        case .thickClub: return "탕구리 계열 공격 ×2"
+        case .metalPowder: return "메타몽 방어 ×2"
+        case .quickPowder: return "메타몽 스피드 ×2"
+        case .luckyPunch: return "럭키 급소율 상승"
+        case .leek: return "파오리 계열 급소율 상승"
+        case .soulDew: return "라티 남매 특공·특방 ×1.5"
+        case .adamantOrb: return "디아루가 드래곤·강철 ×1.2"
+        case .lustrousOrb: return "펄기아 드래곤·물 ×1.2"
+        case .griseousOrb: return "기라티나 드래곤·고스트 ×1.2"
         case nil:        return ""   // `bagUse` 가 둘을 함께 정하므로 도달 불가다
         }
     }

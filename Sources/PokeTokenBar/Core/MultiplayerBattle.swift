@@ -423,7 +423,9 @@ enum MultiplayerWireMessage: Codable, Sendable, Equatable {
     //     무작위 tie-break 소비까지 바꾼다.
     // 24: 플레이트 17종(타입 강화 도구와 같은 ×1.2 — 구버전 게스트는 그 이름을 모르는 아이템으로
     //     접어 데미지가 갈린다).
-    static let protocolVersion = 24
+    // 25: 특정 종 전용 10종(전기구슬 부류) — 구버전 게스트는 그 이름을 모르는 아이템으로 접어
+    //     능력치 배율·급소가 갈린다.
+    static let protocolVersion = 25
     case join(version: Int, participant: LobbyParticipant, snapshot: BattleSnapshot)
     case lobby(MultiplayerLobby)
     case ready(participantID: UUID, ready: Bool)

@@ -1561,8 +1561,12 @@ struct BattleSide: Sendable, Equatable {
     /// 지금 이 개체가 지닌물건에서 받는 효과 — 소모됐으면 `nil` 이다(없는 것과 같다).
     /// 읽는 자리를 하나로 두는 이유는 소모 조건이다: `snapshot.heldItem` 을 직접 보는 코드가
     /// 남으면 그 자리만 1회용 제약을 잃는다(기합의띠가 회복기 하나로 무적이 된다).
+    /// 종 전용 물건(전기구슬 부류)의 **종 조건도 여기서** 본다 — 배율을 곱하는 자리마다 물으면
+    /// 한 자리만 빠뜨렸을 때 그 배율만 아무에게나 붙는다.
     var heldEffect: HeldItemEffect? {
-        heldItemConsumed ? nil : snapshot.heldItem?.heldBattleEffect
+        guard !heldItemConsumed, let effect = snapshot.heldItem?.heldBattleEffect else { return nil }
+        if let species = effect.restrictedSpecies, !species.contains(snapshot.speciesID) { return nil }
+        return effect
     }
 
     /// 이 개체의 특성 — 스냅샷의 슬러그를 해석한 값. 모르는 슬러그는 `nil` 이라 특성이 없는 것과 같다.
@@ -1613,6 +1617,10 @@ struct BattleSide: Sendable, Equatable {
         // 먼저 깎은 값을 올려 같은 개체가 마비 여부에 따라 다른 배율을 받는다.
         if heldEffect?.boostsSpeed == true {
             boosted = boosted * HeldItemBalance.choiceNumerator / HeldItemBalance.choiceDenominator
+        }
+        // 스피드파우더도 같은 자리다 — 종 조건은 `heldEffect` 가 이미 걸렀다.
+        if let scale = heldEffect?.statScale(.spe) {
+            boosted = boosted * scale.numerator / scale.denominator
         }
         // 검은철구도 **마비 반감 앞에서** 곱한다(구애스카프와 같은 순서·같은 이유).
         if heldEffect?.halvesSpeed == true { boosted = max(1, boosted / 2) }
@@ -1865,7 +1873,10 @@ enum BattleEngine {
     ///      먼저 가르면 무작위 tie-break 를 안 뽑는다.
     ///      + 플레이트 17종(타입 강화 도구와 같은 ×1.2). 구버전 피어는 그 이름을 모르는 값으로
     ///      접어 데미지가 갈린다 — 강철은 이 저장소에서 처음 생긴 강화 수단이다.
-    static let rulesVersion = 29
+    ///      + 특정 종 전용 10종(전기구슬·굵은뼈·금속파우더·스피드파우더·럭키펀치·대파·
+    ///      마음의물방울·보옥 셋). 능력치 배율·급소 단계·두 타입 강화가 붙고, 구버전 피어는 그
+    ///      이름을 모르는 값으로 접어 데미지·급소·행동 순서가 갈린다.
+    static let rulesVersion = 30
 
     /// 연결이 끊긴 배틀의 승패 — 남은 HP **비율**이 앞선 쪽이 이기고, 같으면 `nil`(무효)이다.
     ///
@@ -2288,6 +2299,7 @@ enum BattleEngine {
             .filter { attacker.has($0) }
             .reduce(0) { $0 + $1.critStages }
         let critStage = move.critStage + attacker.runBoosts.critStages + volatileCritStages
+            + (attacker.heldEffect?.bonusCritStages ?? 0)
         // 급소 판정은 **행운의부적이 있어도 그대로 굴린다** — 뽑는 횟수가 갈리면 그 뒤 모든 판정이
         // 밀린다. 막는 것은 결과뿐이다.
         let rolledCritical = rng.next() % critDenominator < critThreshold(stage: critStage)
@@ -2309,11 +2321,20 @@ enum BattleEngine {
         // 런 강화의 공격 스택. 화상 반감 **뒤**에 곱한다 — 앞에 두면 정수 나눗셈이 강화분을 먼저
         // 깎아, 같은 스택이 화상 여부에 따라 다른 값을 낸다.
         attack = attacker.runBoosts.scaled(attack, stacks: attacker.runBoosts.attack)
+        // 종 전용 물건의 능력치 배율(전기구슬·굵은뼈·마음의물방울) — 화상 반감·런 강화 **뒤**다.
+        // 앞에 두면 정수 나눗셈이 배율분을 먼저 깎아 같은 물건이 상태에 따라 다른 값을 낸다.
+        if let scale = attacker.heldEffect?.statScale(offense) {
+            attack = attack * scale.numerator / scale.denominator
+        }
         var defense = StatStages.apply(defender.rawStat(guardStat), stage: guardStage)
         if let ability = defender.ability {
             defense = ability.adjustedDefense(defense, isPhysical: isPhysical, status: defender.status)
         }
         defense = defender.runBoosts.scaled(defense, stacks: defender.runBoosts.defense)
+        // 맞는 쪽 몫도 같은 축이다(금속파우더의 방어, 마음의물방울의 특방).
+        if let scale = defender.heldEffect?.statScale(guardStat) {
+            defense = defense * scale.numerator / scale.denominator
+        }
         // 돌격조끼는 **막아 주는 계통**으로 묻는다(물건 이름을 직접 보면 두 번째 조끼가 늘 때
         // 이 자리만 빠진다). 데미지가 아니라 방어 스탯에 곱하는 자리는 본가와 같다.
         if defender.heldEffect?.guardedDamageClass == move.damageClass {
@@ -2375,8 +2396,8 @@ enum BattleEngine {
         }
         // 타입 강화 도구 — 상성표를 보는 기술만 탄다(런 강화의 타입 데미지와 같은 게이트다:
         // 도구가 발버둥을 올리면 PP 가 마른 뒤가 오히려 강해진다). 물건이 아니라
-        // `boostedMoveType` 으로 묻는다.
-        if !ignoresTypeChart, attacker.heldEffect?.boostedMoveType == move.type {
+        // `boostedMoveTypes` 로 묻는다.
+        if !ignoresTypeChart, attacker.heldEffect?.boostedMoveTypes.contains(move.type) == true {
             damage = damage * HeldItemBalance.typeEnhancerNumerator
                 / HeldItemBalance.typeEnhancerDenominator
         }

@@ -98,7 +98,7 @@ final class GemAndDrawbackItemTests: XCTestCase {
         XCTAssertFalse(HeldItemEffect.movesLast.halvesSpeed)
         for kind in Self.gems + Self.drawbacks {
             XCTAssertNil(kind.heldBattleEffect?.pinchAction, kind.rawValue)
-            XCTAssertNil(kind.heldBattleEffect?.boostedMoveType, kind.rawValue)
+            XCTAssertEqual(kind.heldBattleEffect?.boostedMoveTypes, [], kind.rawValue)
         }
     }
 

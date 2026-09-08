@@ -125,7 +125,7 @@ final class BerryTests: XCTestCase {
             XCTAssertNil(effect?.boostedDamageClass, kind.rawValue)
             XCTAssertNil(effect?.guardedDamageClass, kind.rawValue)
             XCTAssertNil(effect?.selfInflictedStatus, kind.rawValue)
-            XCTAssertNil(effect?.boostedMoveType, kind.rawValue)
+            XCTAssertEqual(effect?.boostedMoveTypes, [], kind.rawValue)
             XCTAssertEqual(effect?.boostsSpeed, false, kind.rawValue)
             XCTAssertEqual(effect?.blocksStatusMoves, false, kind.rawValue)
             XCTAssertEqual(effect?.locksIntoOneMove, false, kind.rawValue)

@@ -255,7 +255,7 @@ final class HeldItemVarietyTests: XCTestCase {
         XCTAssertEqual(enhancers.count, 22)
         for kind in enhancers {
             XCTAssertEqual(kind.bagUse, .heldItem, kind.rawValue)
-            XCTAssertEqual(kind.heldBattleEffect?.boostedMoveType, kind.typeEnhancedType,
+            XCTAssertEqual(kind.heldBattleEffect?.boostedMoveTypes, [kind.typeEnhancedType!],
                            "\(kind.rawValue) 의 아이템 표와 효과 축이 어긋난다")
             XCTAssertNil(kind.evolutionRule, kind.rawValue)
             XCTAssertNotNil(kind.spriteName, kind.rawValue)
