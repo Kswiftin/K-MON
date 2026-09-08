@@ -248,7 +248,8 @@ struct RaidArenaView: View {
                 MoveGridView(moves: struggling ? [.struggle()] : me.side.moves,
                              pp: struggling ? [] : me.side.pp,
                              isEnabled: true,
-                             effectivenessAgainst: boss.side.activeTypes) { index in
+                             effectivenessAgainst: boss.side.activeTypes,
+                             locks: struggling ? [] : me.side.selectionLocks) { index in
                     onMove(struggling ? -1 : index)
                 }
             }

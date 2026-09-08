@@ -320,8 +320,9 @@ struct RoomBattleView: View {
                     // 마르면 네 칸이 모두 비활성이라 턴 마감까지 아무것도 할 수 없었다.
                     let struggling = me.side.mustStruggle
                     MoveGridView(moves: struggling ? [.struggle()] : me.side.moves,
-                                 pp: struggling ? [] : me.side.pp,
-                                 isEnabled: multiplayerTargetID != nil) { index in
+                                 pp: struggling ? [] : me.side.pp, language: store.language,
+                                 isEnabled: multiplayerTargetID != nil,
+                                 locks: struggling ? [] : me.side.selectionLocks) { index in
                         guard let target = multiplayerTargetID else { return }
                         center.multiplayer.submitAction(targetID: target, moveIndex: struggling ? -1 : index)
                     }

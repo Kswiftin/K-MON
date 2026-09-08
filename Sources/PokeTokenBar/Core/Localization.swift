@@ -421,6 +421,20 @@ struct L {
         }
     }
 
+    /// 기술 버튼이 **왜** 비활성인가 — 잠금마다 갈린다. 하나로 뭉개면("쓸 수 없다") 무엇을 풀어야
+    /// 다시 쓸 수 있는지가 화면에서 사라진다(도발은 세 턴을 기다리고, 구애는 교체해야 풀린다).
+    func moveSelectionLockReason(_ lock: MoveSelectionLock) -> String {
+        switch lock {
+        case .disable:    return t("기술이 봉인됐다", "Move is disabled", "わざが かなしばり")
+        case .encore:     return t("앙코르로 한 기술만", "Encore allows only one move", "アンコールで1つだけ")
+        case .taunt:      return t("도발로 변화기 금지", "Taunt blocks status moves", "ちょうはつで へんかわざ不可")
+        case .torment:    return t("트집으로 연속 금지", "Torment blocks a repeat", "いちゃもんで れんぞく不可")
+        case .imprison:   return t("상대가 봉인한 기술", "Sealed by Imprison", "ふういんされた わざ")
+        case .healBlock:  return t("회복이 봉쇄됐다", "Healing is blocked", "かいふくが ふうじられた")
+        case .choiceItem: return t("구애로 기술 고정", "Locked in by the Choice item", "こだわりで わざ固定")
+        }
+    }
+
     /// 회복 — 드레인기(흡수·기가드레인)가 쓴다. **원인으로 문구를 가르지 않는다.** 플레이어가
     /// 알아야 하는 건 "누가 얼마나 회복했나"뿐이고, 무엇으로 회복했는지는 앞 줄의 기술명이 이미 말한다.
     func battleHealed(_ name: String, amount: Int) -> String {

@@ -427,4 +427,38 @@ final class BattleSelectionLockTests: XCTestCase {
         }
         XCTAssertEqual(offenders, [], "이 자리는 canUse(moveAt:) 로 골라야 한다: \(offenders)")
     }
+
+    // MARK: 화면과 터미널이 읽는 자리
+
+    /// 버튼 네 칸의 잠금 상태는 **한 배열**로 답한다 — 화면마다 `selectionLock` 을 따로 훑으면
+    /// 한 화면에서만 잠금이 안 보인다(UI 규약: 못 쓰는 조작은 숨기지 않고 비활성으로 남긴다).
+    func testTheGridReadsEveryLockInOneArray() {
+        var mon = side(moves: [attackMove(33), statusMove(45), statusMove(105)])
+        XCTAssertTrue(mon.start(.taunt, turns: 3))
+        XCTAssertEqual(mon.selectionLocks, [nil, .taunt, .taunt])
+        XCTAssertEqual(side(moves: [attackMove(33)]).selectionLocks, [nil])
+    }
+
+    /// 잠금 사유는 세 언어 다 있고 **서로 다르다** — 같은 문구를 돌려주면 화면이 왜 못 누르는지
+    /// 말하지 못한다(비활성 버튼만 남고 이유가 사라진다).
+    func testEveryLockReasonReadsInThreeLanguages() {
+        for language in AppLanguage.allCases {
+            let l = L(language)
+            var seen: Set<String> = []
+            for lock in MoveSelectionLock.allCases {
+                let text = l.moveSelectionLockReason(lock)
+                XCTAssertFalse(text.isEmpty, "\(lock) 의 \(language) 문구가 비어 있다")
+                XCTAssertTrue(seen.insert(text).inserted, "\(lock) 이 다른 잠금과 같은 문구다: \(text)")
+            }
+        }
+    }
+
+    /// 터미널의 기술 목록도 같은 판정을 지난다 — 목록에 남으면 골랐다가 거절당하고,
+    /// 거절 사유가 없으면 사용자는 그 기술이 왜 안 나가는지 알 수 없다.
+    func testTheTerminalOffersOnlyTheMovesItCanUse() {
+        var mon = side(moves: [attackMove(33), statusMove(45)])
+        XCTAssertTrue(mon.start(.taunt, turns: 3))
+        let offered = mon.moves.indices.filter { mon.canUse(moveAt: $0) }
+        XCTAssertEqual(offered, [0], "도발당한 개체의 변화기가 터미널 목록에 남았다")
+    }
 }

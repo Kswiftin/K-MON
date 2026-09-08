@@ -1635,6 +1635,10 @@ struct BattleSide: Sendable, Equatable {
             && selectionLock(forMoveAt: index) == nil
     }
 
+    /// 네 칸의 잠금을 한 배열로 — 화면이 버튼을 그릴 때 칸마다 따로 묻지 않게 한다(화면이 넷이라
+    /// 그 중 하나만 안 묻는 날 그 화면에서만 잠금이 안 보인다).
+    var selectionLocks: [MoveSelectionLock?] { moves.indices.map { selectionLock(forMoveAt: $0) } }
+
     /// 이 칸이 **왜** 막혔나 — 막히지 않았으면 `nil`. UI 는 이 값으로 버튼을 비활성으로 남긴다
     /// (숨기지 않는다: 왜 못 쓰는지가 화면에 보여야 한다).
     ///

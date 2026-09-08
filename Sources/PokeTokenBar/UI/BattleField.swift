@@ -810,6 +810,10 @@ struct MoveGridView: View {
     /// 광역기(`MoveSpec.hitsSpread`)에 범위 표시를 붙일까. **필드에 둘 이상이 설 때만 켠다** —
     /// 1대1 에서는 가리킬 대상이 하나뿐이라 표시가 정보가 아니고 버튼만 복잡해진다.
     var showsSpreadMark = false
+    /// 칸마다의 잠금 사유(`BattleSide.selectionLocks`) — 비어 있으면 잠긴 칸이 없다.
+    /// **못 쓰는 칸을 빼지 않고 비활성으로 남긴다**: 목록에서 지우면 네 칸이 세 칸으로 줄어
+    /// 무엇이 왜 사라졌는지 화면이 말하지 못한다.
+    var locks: [MoveSelectionLock?] = []
     let onChoose: (Int) -> Void
 
     var body: some View {
@@ -824,6 +828,8 @@ struct MoveGridView: View {
     private func button(_ move: MoveSpec, index: Int) -> some View {
         let remaining = pp.indices.contains(index) ? pp[index] : nil
         let tier = remaining.map { PPTier.of(remaining: $0, max: move.pp) } ?? .ample
+        let lock = locks.indices.contains(index) ? locks[index] : nil
+        let selectable = isEnabled && tier.isSelectable && lock == nil
         return Button { onChoose(index) } label: {
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 3) {
@@ -862,12 +868,14 @@ struct MoveGridView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             // 못 고르는 버튼은 못 고르게 **보여야** 한다. PP 가 마른 칸만 흐리게 두는 동안,
             // 재생 중 잠긴 네 칸은 평소와 똑같아 보여서 눌러 보고서야 잠긴 걸 알았다.
-            .background(move.type.battleColor.opacity(isEnabled && tier.isSelectable ? 1 : 0.35),
+            .background(move.type.battleColor.opacity(selectable ? 1 : 0.35),
                         in: RoundedRectangle(cornerRadius: 7))
         }
         .buttonStyle(.plain)
-        .disabled(!isEnabled || !tier.isSelectable)
-        .help(move.flavorText ?? move.name)
+        .disabled(!selectable)
+        // 잠긴 칸의 툴팁은 **잠금 사유**다 — 기술 설명이 그대로면 왜 못 누르는지 알 수 없다.
+        .help(lock.map { L(language).moveSelectionLockReason($0) }
+            ?? move.description(language) ?? move.name(language))
     }
 
     private func effectivenessHint(_ move: MoveSpec) -> (text: String, color: Color)? {
@@ -1208,6 +1216,7 @@ struct BattleArenaView: View {
                              pp: mine.mustStruggle ? [] : mine.pp,
                              isEnabled: acceptsInput,
                              effectivenessAgainst: myBeginnerMode ? theirs.activeTypes : nil,
+                             locks: mine.mustStruggle ? [] : mine.selectionLocks,
                              onChoose: { onChoose(mine.mustStruggle ? -1 : $0) })
             } else if needsForcedReplacement {
                 VStack(alignment: .leading, spacing: 5) {
