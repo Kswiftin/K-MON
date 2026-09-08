@@ -335,6 +335,18 @@ private struct RosterMonCard: View {
                 .help(isFavorite ? store.l.favoriteLockedHint : store.l.favorite)
             }.padding(3)
         }
+        .overlay(alignment: .bottomLeading) {
+            if let held = mon.heldItem {
+                Image(systemName: "bag.fill")
+                    .font(PokedoroTheme.badgeFont(size: 7, weight: .bold))
+                    .foregroundStyle(.secondary)
+                    .padding(3)
+                    .background(.regularMaterial, in: Capsule())
+                    .padding(3)
+                    .help("\(store.l.heldItemSectionTitle): \(store.l.itemName(held))")
+                    .accessibilityLabel("\(store.l.heldItemSectionTitle) \(store.l.itemName(held))")
+            }
+        }
         .overlay(alignment: .topLeading) {
             if mon.isNewlyHatched {
                 Text("NEW")
@@ -376,6 +388,8 @@ private struct PokemonDetailCard: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
+            heldItemRow()
+            teraTypeRow()
             if let stats = profile?.stats { statGrid(stats) }
             Divider()
             Text(store.l.movesTitle).font(.caption.bold())
@@ -401,6 +415,51 @@ private struct PokemonDetailCard: View {
             line = try? await PokeAPIClient.shared.line(baseSpeciesID: mon.baseID)
             abilityText = await PokeAPIClient.shared
                 .chatSpeciesIdentity(speciesID: mon.presentationID).ability
+        }
+    }
+
+    /// 테라 타입 줄. 값이 없으면 그리지 않는다 — `nil` 은 "첫 번째 타입에서 파생" 이라
+    /// (`BattleSnapshot.teraType`) 표시할 사실이 아직 없다는 뜻이고, 테라피스를 써야 생긴다.
+    @ViewBuilder private func teraTypeRow() -> some View {
+        if let tera = mon.teraType {
+            HStack(spacing: 4) {
+                Label(store.l.teraTypeSectionTitle, systemImage: "diamond")
+                    .font(.caption.bold())
+                Text(tera.name)
+                    .font(PokedoroTheme.badgeFont(size: 7, weight: .heavy))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 3).padding(.vertical, 1)
+                    .background(tera.rosterColor, in: Capsule())
+                Spacer(minLength: 4)
+            }
+        }
+    }
+
+    /// 지닌물건 줄. 물건이 없으면 아무것도 그리지 않는다 — 빈 줄을 예약하면 특성과 종족값
+    /// 사이가 벌어지고, "없음" 은 161종 중 어느 것도 안 쥔 대다수 개체에서 잡음만 된다.
+    ///
+    /// 효과 힌트를 이름과 함께 낸다(가방과 같은 문구 — `heldItemEffectHint`). 이름만으로는
+    /// 무엇이 붙었는지 알 수 없는 물건이 대부분이다.
+    ///
+    /// 벗기기는 **활성 개체에서만** 낸다 — `CompanionStore.takeHeldItem` 이 활성 개체를 대상으로
+    /// 하므로, 박스 개체에 버튼을 두면 눌러도 다른 개체의 물건이 벗겨진다.
+    @ViewBuilder private func heldItemRow() -> some View {
+        if let held = store.heldItem(of: mon) {
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 4) {
+                    Label(store.l.heldItemSectionTitle, systemImage: "bag")
+                        .font(.caption.bold())
+                    Spacer(minLength: 4)
+                    if mon.id == store.activeMonID, store.canTakeHeldItem {
+                        Button(store.l.heldItemTakeOff) { store.takeHeldItem() }
+                            .buttonStyle(.bordered).controlSize(.mini)
+                    }
+                }
+                Text(store.l.itemName(held)).font(.caption2.bold())
+                Text(store.l.heldItemEffectHint(held))
+                    .font(.caption2).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
     }
 

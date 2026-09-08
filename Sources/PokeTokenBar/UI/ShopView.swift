@@ -11,7 +11,7 @@ struct ShopView: View {
     @State private var machineNames: [Int: String] = [:]
 
     private enum ShopCategory: String, CaseIterable, Identifiable {
-        case general, evolution, eggs, machines, outfits
+        case general, battle, evolution, eggs, machines, outfits
         var id: String { rawValue }
     }
 
@@ -25,6 +25,7 @@ struct ShopView: View {
             walletHeader(l)
             Picker("", selection: $category) {
                 Text("도구").tag(ShopCategory.general)
+                Text("배틀").tag(ShopCategory.battle)
                 Text("진화").tag(ShopCategory.evolution)
                 Text("알").tag(ShopCategory.eggs)
                 Text("기술머신").tag(ShopCategory.machines)
@@ -34,7 +35,14 @@ struct ShopView: View {
 
             switch category {
             case .general:
-                ForEach(store.purchasableItems.filter { !$0.isEvolutionItem }, id: \.self) { kind in
+                // 지닌물건은 '배틀' 탭으로 갈라져 있다 — 여기 두면 사탕·민트가 도구 수십 종에
+                // 묻힌다(지닌물건이 앞으로 100종 넘게 는다).
+                ForEach(store.purchasableItems.filter { !$0.isEvolutionItem && $0.bagUse != .heldItem },
+                        id: \.self) { kind in
+                    ShopItemCard(store: store, kind: kind)
+                }
+            case .battle:
+                ForEach(store.purchasableItems.filter { $0.bagUse == .heldItem }, id: \.self) { kind in
                     ShopItemCard(store: store, kind: kind)
                 }
             case .evolution:

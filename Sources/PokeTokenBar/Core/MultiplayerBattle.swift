@@ -417,7 +417,33 @@ enum MultiplayerWireMessage: Codable, Sendable, Equatable {
     //     `volatileTriggered`·`heldItemTriggered`·`moveBlocked`). 이 enum 은 자동합성 `Codable` 이라
     //     구버전 게스트가 모르는 case 를 만나면 `roundResolved` 통째로 디코딩에 실패하고 연결이
     //     끊긴다 — 규칙만 바뀐 게 아니라 **와이어 모양**이 바뀌었다.
-    static let protocolVersion = 19
+    // 22: 열매 29종(약점 반감 18·위급 6·성격 회복 5) — 구버전 게스트는 그 이름을 모르는
+    //     아이템으로 접어 같은 판의 데미지·랭크·HP 가 갈린다.
+    // 23: 주얼 18종과 대가만 있는 셋(검은철구·느림보꼬리·만복향로) — 후공 물건은 행동 순서와
+    //     무작위 tie-break 소비까지 바꾼다.
+    // 24: 플레이트 17종(타입 강화 도구와 같은 ×1.2 — 구버전 게스트는 그 이름을 모르는 아이템으로
+    //     접어 데미지가 갈린다).
+    // 25: 특정 종 전용 10종(전기구슬 부류) — 구버전 게스트는 그 이름을 모르는 아이템으로 접어
+    //     능력치 배율·급소가 갈린다.
+    // 26: 일반 배틀 도구 12종(힘의머리띠 부류의 데미지 배율·초점렌즈의 급소·렌즈와 가루의 명중·
+    //     조개껍질방울과 큰뿌리의 회복·검은오물의 턴 끝 회복 또는 데미지). 명중이 갈리면 난수
+    //     소비 횟수까지 갈리고, `DamageCause` 에 원인 하나(`heldItem`)가 늘어 구버전 게스트는
+    //     그 데미지 줄이 처음 뜨는 라운드에서 디코딩에 실패한다.
+    // 27: 면역·무시 물건 6종(풍선·통굽부츠·방진고글·만능우산·겨냥표적·가벼운돌). 구버전 게스트는
+    //     그 이름을 모르는 아이템으로 접어 땅 기술 면역·입장 데미지·날씨·체중 위력이 갈린다.
+    // 28: 지속 시간을 늘리는 물건 6종(빛의점토·날씨 돌 넷·그라운드코트). 구버전 게스트는 판이
+    //     걷히는 턴을 다르게 세어 세 턴 동안 데미지·필드 효과가 갈린다.
+    // 29: 허브·무효화 물건 5종(하양허브·멘탈허브·흉내허브·클리어참·은밀망토). 은밀망토가 막은
+    //     부가효과는 확률을 안 굴려 rng 소비 횟수까지 갈린다.
+    // 30: 방아쇠 하나에 랭크를 올리고 사라지는 물건 10종(약점보험·구근·충전지·눈덩이·빛이끼·
+    //     허탕보험·씨앗 넷). 구버전 게스트는 그 랭크를 안 올려 뒤 라운드의 데미지·명중이 갈린다.
+    // 31: 기술의 성질(접촉·펀치·소리)에 답하는 물건 8종. 끈기갈고리손톱이 조이기 턴 난수를
+    //     굴리지 않아 rng 소비 횟수까지 갈리고, 접촉 반응은 때린 쪽의 HP 를 깎는다.
+    // 32: 운에 걸린 물건 5종(선제공격손톱·기합의머리띠·스타열매·미클열매·애슈열매). 턴마다,
+    //     그리고 치명적인 히트마다 난수를 한 번씩 더 굴려 구버전과 소비 횟수가 갈린다.
+    // 33: 진화의휘석 — 스냅샷에 `canStillEvolve` 가 늘었다. 구버전 피어는 안 보내므로 휘석이
+    //     한쪽에서만 일해 같은 판의 데미지가 갈린다.
+    static let protocolVersion = 33
     case join(version: Int, participant: LobbyParticipant, snapshot: BattleSnapshot)
     case lobby(MultiplayerLobby)
     case ready(participantID: UUID, ready: Bool)
@@ -647,12 +673,28 @@ struct MultiplayerBattle: Sendable {
         // 비교 클로저 안에서 rng 를 부르면 소비 횟수가 정렬 알고리즘의 비교 횟수에 딸려가고,
         // 그건 곧 피어마다 다른 rng 상태 — 이 배틀에서는 desync 다.
         let tieBreakers = actions.map { _ in rng.next() }
+        // 물건의 턴 머리 굴림은 **정렬 앞**이다 — 선공을 가져갔는지가 정렬의 입력이고, 비교
+        // 클로저 안에서 굴리면 난수 소비가 비교 횟수에 딸려간다(tie-break 와 같은 함정).
+        for index in fighters.indices {
+            events += BattleEngine.rollTurnStartItems(&fighters[index].side,
+                                                      actor: .fighter(fighters[index].id),
+                                                      rng: &rng)
+        }
         let ordered = zip(actions, tieBreakers).sorted { lhs, rhs in
             let leftFighter = fighters.first { $0.id == lhs.0.attackerID }!
             let rightFighter = fighters.first { $0.id == rhs.0.attackerID }!
             let leftPriority = leftFighter.side.move(at: lhs.0.moveIndex).turnPriority
             let rightPriority = rightFighter.side.move(at: rhs.0.moveIndex).turnPriority
             if leftPriority != rightPriority { return leftPriority > rightPriority }
+            // 후공 물건(느림보꼬리·만복향로)은 우선도 **뒤**, 스피드 **앞**이다 — 아무리 빨라도
+            // 뒤로 가지만 우선도는 이기지 못한다(1v1 `firstMoverIsA` 와 같은 순서).
+            // 선공 물건(선제공격손톱·애슈열매)은 우선도 **뒤**, 후공 물건 **앞**이다.
+            let leftHurries = BattleEngine.movesFirst(leftFighter.side)
+            let rightHurries = BattleEngine.movesFirst(rightFighter.side)
+            if leftHurries != rightHurries { return leftHurries }
+            let leftLags = BattleEngine.movesLast(leftFighter.side)
+            let rightLags = BattleEngine.movesLast(rightFighter.side)
+            if leftLags != rightLags { return rightLags }
             // `stats` 는 배틀 시작에 한 번 계산된 값이다. 여기서 `effectiveStats()` 를 부르던
             // 때는 비교 횟수만큼 스탯을 다시 만들었다. 마비·순풍 보정은 `orderingSpeed` 가 들고
             // 있다 — 1v1 과 같은 값을 봐야 두 모드의 순서 규칙이 갈라지지 않는다.

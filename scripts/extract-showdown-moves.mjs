@@ -188,6 +188,13 @@ function hitsMinimizedHarder(move) {
 }
 
 /**
+ * The move flags the held items ask about: `contact` (Rocky Helmet, Sticky Barb, Protective
+ * Pads), `punch` (Punching Glove) and `sound` (Throat Spray). PokéAPI carries none of the three,
+ * so Showdown's own flags are the only source — a hand-kept contact list would be ~380 ids.
+ */
+const FLAGS_READ = ['contact', 'punch', 'sound']
+
+/**
  * Does Defense Curl double this move's base power? Showdown keeps that check inside each move's
  * own `basePowerCallback` (Rollout, Ice Ball) rather than in a flag, so the callback's source is
  * the only place that answers — reading it beats hand-keeping a two-id list that goes stale.
@@ -304,7 +311,7 @@ const swiftLiteral = (value) => (typeof value === 'string' ? `"${value}"` : Stri
  * Render the override map as a Swift source file. Generated rather than parsed at runtime so
  * the table costs nothing to load and a bad extraction breaks the build instead of a battle.
  */
-function renderSwift(overrides, effects, piercing, minimized, curled, bypassingSub, substituteCost, healing) {
+function renderSwift(overrides, effects, piercing, minimized, curled, bypassingSub, substituteCost, healing, flagged) {
   const entries = Object.entries(overrides)
     .map(([id, override]) => [Number(id), override])
     .sort((a, b) => a[0] - b[0])
@@ -410,6 +417,25 @@ ${idSetLines(minimized)}
 ${idSetLines(curled)}
     ]
 
+    /// Moves that touch the target — Showdown's \`contact\` move flag. The engine implements the
+    /// contact rule once (Rocky Helmet, Sticky Barb, Protective Pads) and asks here which moves
+    /// carry the flag; PokéAPI has no contact column at all, so nothing else can answer.
+    static let makingContact: Set<Int> = [
+${idSetLines(flagged.contact)}
+    ]
+
+    /// Punching moves — Showdown's \`punch\` move flag, which Punching Glove reads.
+    static let punching: Set<Int> = [
+${idSetLines(flagged.punch)}
+    ]
+
+    /// Sound moves — Showdown's \`sound\` move flag, which Throat Spray reads. Kept apart from
+    /// \`bypassingSubstitute\` (which every sound move also carries) because the two rules differ: a
+    /// handful of non-sound moves bypass the doll too.
+    static let sound: Set<Int> = [
+${idSetLines(flagged.sound)}
+    ]
+
     /// Moves that reach the owner **through** a Substitute — every sound move, plus the few
     /// others Showdown marks with the \`bypasssub\` flag. The engine implements the doll once and
     /// asks here which moves ignore it, so a new sound move is not blocked in silence.
@@ -477,6 +503,7 @@ async function main() {
   const bypassingSub = {}
   const substituteCost = {}
   const healing = {}
+  const flagged = Object.fromEntries(FLAGS_READ.map((flag) => [flag, {}]))
   const engineWork = []
   let unmatched = 0
   let metaGapsFilled = 0
@@ -497,6 +524,7 @@ async function main() {
     const subCost = substituteCostDivisor(move)
     if (subCost) substituteCost[move.num] = { divisor: subCost, name: move.name }
     if (blockedByHealBlock(move)) healing[move.num] = move.name
+    for (const flag of FLAGS_READ) if (move.flags?.[flag]) flagged[flag][move.num] = move.name
     const reasons = engineWorkReasons(move)
     // `isNonstandard` marks moves no current game can produce (Z-moves, LGPE, CAP fakemon).
     // They reach the app only if PokéAPI hands one out, so they are not scoping work.
@@ -516,7 +544,7 @@ async function main() {
   await writeFile(workPath, `${JSON.stringify(engineWork, null, 2)}\n`)
   if (swiftPath) {
     await mkdir(dirname(swiftPath), { recursive: true })
-    await writeFile(swiftPath, renderSwift(overrides, effects, piercing, minimized, curled, bypassingSub, substituteCost, healing))
+    await writeFile(swiftPath, renderSwift(overrides, effects, piercing, minimized, curled, bypassingSub, substituteCost, healing, flagged))
   }
 
   const byField = Object.entries(fieldCounts).sort((a, b) => b[1] - a[1])
@@ -527,6 +555,7 @@ async function main() {
   console.log(`moves guards miss   ${Object.keys(piercing).length}`)
   console.log(`minimize-flagged    ${Object.keys(minimized).length}`)
   console.log(`defense-curl doubled ${Object.keys(curled).length}`)
+  for (const flag of FLAGS_READ) console.log(`${flag.padEnd(20)}${Object.keys(flagged[flag]).length}`)
   console.log(`  of those, moves PokéAPI had no meta row for: ${metaGapsFilled}`)
   console.log('\ncorrected fields')
   for (const [field, count] of byField) console.log(`  ${field.padEnd(16)}${count}`)

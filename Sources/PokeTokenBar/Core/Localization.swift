@@ -234,6 +234,7 @@ struct L {
         case .leechSeed: return "\(name)은(는) 씨뿌리기에 체력을 빨렸다! \(damage)"
         case .nightmare: return "\(name)은(는) 악몽에 시달렸다! \(damage)"
         case .hazard:    return "\(name)은(는) 발밑에 깔린 것을 밟았다! \(damage)"
+        case .heldItem:  return "\(name)은(는) 지닌 물건에 체력을 빼앗겼다! \(damage)"
         }
     }
 
@@ -338,7 +339,7 @@ struct L {
         case .taunt:      return "\(name)은(는) 도발당해서 변화기를 쓸 수 없다!"
         case .imprison:   return "\(name)은(는) 봉인된 기술을 쓸 수 없다!"
         case .healBlock:  return "\(name)은(는) 회복이 봉쇄되어 그 기술을 쓸 수 없다!"
-        case .encore, .torment, .choiceItem:
+        case .encore, .torment, .choiceItem, .assaultVest:
             // 선택만 막는 잠금이라 이 줄이 나갈 일은 없다. 비워 두면 나중에 `blocksExecution` 을
             // 켤 때 로그에 빈 줄이 조용히 나간다.
             return "\(name)은(는) 그 기술을 쓸 수 없다!"
@@ -356,6 +357,7 @@ struct L {
         case .imprison:   return "상대가 봉인한 기술"
         case .healBlock:  return "회복이 봉쇄됐다"
         case .choiceItem: return "구애로 기술 고정"
+        case .assaultVest: return "돌격조끼로 변화기 금지"
         }
     }
 
@@ -1498,6 +1500,162 @@ struct L {
         case .leftovers: return "먹다남은음식"
         case .choiceBand: return "구애머리띠"
         case .choiceSpecs: return "구애안경"
+        case .choiceScarf: return "구애스카프"
+        case .flameOrb: return "화염구슬"
+        case .toxicOrb: return "독구슬"
+        case .assaultVest: return "돌격조끼"
+        case .silverPowder: return "은가루"
+        case .softSand: return "부드러운모래"
+        case .hardStone: return "딱딱한돌"
+        case .miracleSeed: return "기적의씨"
+        case .blackGlasses: return "검은안경"
+        case .blackBelt: return "검은띠"
+        case .magnetItem: return "자석"
+        case .mysticWater: return "신비의물방울"
+        case .sharpBeak: return "예리한부리"
+        case .poisonBarb: return "독바늘"
+        case .neverMeltIce: return "녹지않는얼음"
+        case .spellTag: return "저주받은부적"
+        case .twistedSpoon: return "휘어진스푼"
+        case .charcoal: return "목탄"
+        case .dragonFang: return "용의이빨"
+        case .silkScarf: return "실크스카프"
+        case .fairyFeather: return "페어리깃털"
+        case .seaIncense: return "바다향로"
+        case .oddIncense: return "이상한향로"
+        case .rockIncense: return "바위향로"
+        case .waveIncense: return "파도향로"
+        case .roseIncense: return "장미향로"
+        case .occaBerry: return "오카열매"
+        case .passhoBerry: return "꼬시개열매"
+        case .wacanBerry: return "초나열매"
+        case .rindoBerry: return "린드열매"
+        case .yacheBerry: return "플카열매"
+        case .chopleBerry: return "로플열매"
+        case .kebiaBerry: return "으름열매"
+        case .shucaBerry: return "슈캐열매"
+        case .cobaBerry: return "바코열매"
+        case .payapaBerry: return "야파열매"
+        case .tangaBerry: return "리체열매"
+        case .chartiBerry: return "루미열매"
+        case .kasibBerry: return "수불열매"
+        case .habanBerry: return "하반열매"
+        case .colburBerry: return "마코열매"
+        case .babiriBerry: return "바리비열매"
+        case .chilanBerry: return "카리열매"
+        case .roseliBerry: return "로셀열매"
+        case .liechiBerry: return "치리열매"
+        case .ganlonBerry: return "용아열매"
+        case .salacBerry: return "캄라열매"
+        case .petayaBerry: return "야타비열매"
+        case .apicotBerry: return "규살열매"
+        case .lansatBerry: return "랑사열매"
+        case .starfBerry: return "스타열매"
+        case .micleBerry: return "미클열매"
+        case .custapBerry: return "애슈열매"
+        case .figyBerry: return "무화열매"
+        case .wikiBerry: return "위키열매"
+        case .magoBerry: return "마고열매"
+        case .aguavBerry: return "아바열매"
+        case .iapapaBerry: return "파야열매"
+        case .normalGem: return "노말주얼"
+        case .fireGem: return "불꽃주얼"
+        case .waterGem: return "물주얼"
+        case .electricGem: return "전기주얼"
+        case .grassGem: return "풀주얼"
+        case .iceGem: return "얼음주얼"
+        case .fightingGem: return "격투주얼"
+        case .poisonGem: return "독주얼"
+        case .groundGem: return "땅주얼"
+        case .flyingGem: return "비행주얼"
+        case .psychicGem: return "에스퍼주얼"
+        case .bugGem: return "벌레주얼"
+        case .rockGem: return "바위주얼"
+        case .ghostGem: return "고스트주얼"
+        case .dragonGem: return "드래곤주얼"
+        case .darkGem: return "악주얼"
+        case .steelGem: return "강철주얼"
+        case .fairyGem: return "페어리주얼"
+        case .ironBall: return "검은철구"
+        case .laggingTail: return "느림보꼬리"
+        case .fullIncense: return "만복향로"
+        case .flamePlate: return "불구슬플레이트"
+        case .splashPlate: return "물방울플레이트"
+        case .zapPlate: return "우레플레이트"
+        case .meadowPlate: return "초록플레이트"
+        case .iciclePlate: return "고드름플레이트"
+        case .fistPlate: return "주먹플레이트"
+        case .toxicPlate: return "맹독플레이트"
+        case .earthPlate: return "대지플레이트"
+        case .skyPlate: return "푸른하늘플레이트"
+        case .mindPlate: return "이상한플레이트"
+        case .insectPlate: return "비단벌레플레이트"
+        case .stonePlate: return "암석플레이트"
+        case .spookyPlate: return "원령플레이트"
+        case .dracoPlate: return "용의플레이트"
+        case .dreadPlate: return "공포플레이트"
+        case .ironPlate: return "강철플레이트"
+        case .pixiePlate: return "정령플레이트"
+        case .lightBall: return "전기구슬"
+        case .thickClub: return "굵은뼈"
+        case .metalPowder: return "금속파우더"
+        case .quickPowder: return "스피드파우더"
+        case .luckyPunch: return "럭키펀치"
+        case .stick: return "대파"
+        case .soulDew: return "마음의물방울"
+        case .adamantOrb: return "금강옥"
+        case .lustrousOrb: return "백옥"
+        case .griseousOrb: return "백금옥"
+        case .muscleBand: return "힘의머리띠"
+        case .wiseGlasses: return "박식안경"
+        case .expertBelt: return "달인의띠"
+        case .metronome: return "메트로놈"
+        case .scopeLens: return "초점렌즈"
+        case .wideLens: return "광각렌즈"
+        case .zoomLens: return "포커스렌즈"
+        case .brightPowder: return "반짝가루"
+        case .laxIncense: return "무사태평향로"
+        case .shellBell: return "조개껍질방울"
+        case .blackSludge: return "검은오물"
+        case .bigRoot: return "큰뿌리"
+        case .airBalloon: return "풍선"
+        case .heavyDutyBoots: return "통굽부츠"
+        case .safetyGoggles: return "방진고글"
+        case .utilityUmbrella: return "만능우산"
+        case .ringTarget: return "겨냥표적"
+        case .floatStone: return "가벼운돌"
+        case .lightClay: return "빛의점토"
+        case .icyRock: return "차가운바위"
+        case .smoothRock: return "보송보송바위"
+        case .heatRock: return "뜨거운바위"
+        case .dampRock: return "축축한바위"
+        case .terrainExtender: return "그라운드코트"
+        case .whiteHerb: return "하양허브"
+        case .mentalHerb: return "멘탈허브"
+        case .mirrorHerb: return "흉내허브"
+        case .clearAmulet: return "클리어참"
+        case .covertCloak: return "은밀망토"
+        case .weaknessPolicy: return "약점보험"
+        case .absorbBulb: return "구근"
+        case .cellBattery: return "충전지"
+        case .snowball: return "눈덩이"
+        case .luminousMoss: return "빛이끼"
+        case .blunderPolicy: return "허탕보험"
+        case .electricSeed: return "일렉트릭시드"
+        case .grassySeed: return "그래스시드"
+        case .mistySeed: return "미스트시드"
+        case .psychicSeed: return "사이코시드"
+        case .rockyHelmet: return "울퉁불퉁멧"
+        case .stickyBarb: return "끈적끈적바늘"
+        case .protectivePads: return "방호패드"
+        case .punchingGlove: return "펀치글러브"
+        case .loadedDice: return "속임수주사위"
+        case .bindingBand: return "조임밴드"
+        case .gripClaw: return "끈기갈고리손톱"
+        case .throatSpray: return "목스프레이"
+        case .quickClaw: return "선제공격손톱"
+        case .focusBand: return "기합의머리띠"
+        case .eviolite: return "진화의휘석"
         case .shinyCharm: return "이로치 부적"
         case .linkingCord: return "연결의끈"
         case .fireStone: return "불꽃의돌"
@@ -1615,6 +1773,153 @@ struct L {
                 return "물리 기술의 데미지가 1.5배가 돼요. 대신 대전에서 처음 낸 기술만 계속 쓰게 돼요."
             case .choiceSpecs:
                 return "특수 기술의 데미지가 1.5배가 돼요. 대신 대전에서 처음 낸 기술만 계속 쓰게 돼요."
+            case .choiceScarf:
+                return "스피드가 1.5배가 돼요. 대신 대전에서 처음 낸 기술만 계속 쓰게 돼요."
+            case .flameOrb:
+                return "대전에서 턴이 끝날 때 자신이 화상을 입어요. 화상을 이용하는 특성과 짝지어 쓰는 물건이에요."
+            case .toxicOrb:
+                return "대전에서 턴이 끝날 때 자신이 맹독에 걸려요. 독을 이용하는 특성과 짝지어 쓰는 물건이에요."
+            case .assaultVest:
+                return "특수 기술에 받는 데미지가 줄어요. 대신 대전에서 변화기를 쓸 수 없어요."
+            case .typeBoost(let type):
+                return "\(type.name) 타입 기술의 위력이 1.2배가 돼요. 대가는 없어요."
+            case .resistBerry(.normal):
+                // 노말만 규칙이 다르다 — 효과가 굉장한 노말 기술이 없어서 배율을 안 본다.
+                return "노말 타입 기술에 받는 데미지가 절반이 돼요. 한 번 막으면 열매가 사라져요."
+            case .resistBerry(let type):
+                return "효과가 굉장한 \(type.name) 타입 기술에 받는 데미지가 절반이 돼요. 한 번 막으면 열매가 사라져요."
+            case .pinchStatBoost(let stat):
+                return "HP가 1/4 이하가 되면 \(stat.name)이(가) 한 단계 올라요. 한 번만 발동하고 열매가 사라져요."
+            case .pinchCrit:
+                return "HP가 1/4 이하가 되면 급소에 맞히기 쉬워져요. 한 번만 발동하고 열매가 사라져요."
+            case .pinchHeal:
+                return "HP가 1/4 이하가 되면 최대 HP의 1/3을 회복해요. 한 번만 발동하고 열매가 사라져요."
+            case .gem(let type):
+                return "\(type.name) 타입 기술 하나의 위력이 1.3배가 돼요. 그 기술을 쓰면 주얼이 사라져요."
+            case .ironBall:
+                return "스피드가 절반이 되고 땅에 발이 닿아요. 느릴수록 강한 기술과 함께 쓰는 물건이에요."
+            case .movesLast:
+                return "우선도가 같으면 아무리 빨라도 나중에 움직여요. 반격 기술과 함께 쓰는 물건이에요."
+            case .lightBall:
+                return "피카츄가 지니면 공격과 특수공격이 두 배가 돼요. 다른 포켓몬에게는 아무 일도 없어요."
+            case .thickClub:
+                return "탕구리와 텅구리가 지니면 공격이 두 배가 돼요. 다른 포켓몬에게는 아무 일도 없어요."
+            case .metalPowder:
+                return "메타몽이 지니면 방어가 두 배가 돼요. 다른 포켓몬에게는 아무 일도 없어요."
+            case .quickPowder:
+                return "메타몽이 지니면 스피드가 두 배가 돼요. 다른 포켓몬에게는 아무 일도 없어요."
+            case .luckyPunch:
+                return "럭키가 지니면 급소에 잘 맞혀요. 다른 포켓몬에게는 아무 일도 없어요."
+            case .leek:
+                return "파오리와 창파나이트가 지니면 급소에 잘 맞혀요. 다른 포켓몬에게는 아무 일도 없어요."
+            case .soulDew:
+                return "라티아스와 라티오스가 지니면 특수공격과 특수방어가 1.5배가 돼요."
+            case .adamantOrb:
+                return "디아루가가 지니면 드래곤·강철 타입 기술의 위력이 1.2배가 돼요."
+            case .lustrousOrb:
+                return "펄기아가 지니면 드래곤·물 타입 기술의 위력이 1.2배가 돼요."
+            case .griseousOrb:
+                return "기라티나가 지니면 드래곤·고스트 타입 기술의 위력이 1.2배가 돼요."
+            case .muscleBand:
+                return "물리 기술의 위력이 1.1배가 돼요. 특수 기술에는 아무 일도 없어요."
+            case .wiseGlasses:
+                return "특수 기술의 위력이 1.1배가 돼요. 물리 기술에는 아무 일도 없어요."
+            case .expertBelt:
+                return "효과가 굉장한 기술의 위력이 1.2배가 돼요. 그 밖의 기술은 그대로예요."
+            case .metronome:
+                return "같은 기술을 이어서 쓸수록 위력이 올라가요. 다섯 번째부터 두 배에서 멈춰요."
+            case .scopeLens:
+                return "급소에 맞히기 쉬워져요."
+            case .wideLens:
+                return "기술의 명중률이 1.1배가 돼요."
+            case .zoomLens:
+                return "상대가 먼저 움직인 턴에는 기술의 명중률이 1.2배가 돼요."
+            case .dullsFoeAim:
+                return "상대 기술의 명중률이 0.9배가 돼요."
+            case .shellBell:
+                return "기술로 준 데미지의 1/8만큼 회복해요."
+            case .bigRoot:
+                return "체력을 흡수하는 기술의 회복량이 1.3배가 돼요."
+            case .blackSludge:
+                return "독타입이 지니면 턴 끝에 회복하고, 그 밖의 포켓몬은 오히려 체력이 줄어요."
+            case .airBalloon:
+                return "공중에 떠서 땅타입 기술을 맞지 않아요. 다른 기술에 맞으면 터져서 사라져요."
+            case .heavyDutyBoots:
+                return "땅에 깔린 압정이나 스텔스록을 밟지 않아요."
+            case .safetyGoggles:
+                return "모래바람에 체력이 줄지 않아요."
+            case .utilityUmbrella:
+                return "쨍쨍한 햇살과 비의 위력 보정을 받지 않아요."
+            case .ringTarget:
+                return "원래 통하지 않는 타입의 기술도 맞게 돼요. 특성으로 막는 기술은 그대로예요."
+            case .floatStone:
+                return "몸무게가 절반이 돼요. 몸무게로 위력이 정해지는 기술에 덜 아파요."
+            case .lightClay:
+                return "리플렉터와 빛의장막이 5턴 대신 8턴 동안 이어져요."
+            case .icyRock:
+                return "내가 부른 싸라기눈이 5턴 대신 8턴 동안 이어져요."
+            case .smoothRock:
+                return "내가 부른 모래바람이 5턴 대신 8턴 동안 이어져요."
+            case .heatRock:
+                return "내가 부른 쨍쨍한 햇살이 5턴 대신 8턴 동안 이어져요."
+            case .dampRock:
+                return "내가 부른 비가 5턴 대신 8턴 동안 이어져요."
+            case .terrainExtender:
+                return "내가 깐 필드가 5턴 대신 8턴 동안 이어져요."
+            case .whiteHerb:
+                return "능력이 떨어지면 한 번만 원래대로 돌려주고 사라져요."
+            case .mentalHerb:
+                return "도발처럼 기술을 못 고르게 하는 상태를 한 번 풀어주고 사라져요."
+            case .mirrorHerb:
+                return "상대가 능력을 올리면 똑같이 따라 올리고 사라져요."
+            case .clearAmulet:
+                return "상대가 내 능력을 떨어뜨릴 수 없어요."
+            case .covertCloak:
+                return "공격 기술에 덤으로 붙는 효과를 받지 않아요."
+            case .weaknessPolicy:
+                return "효과가 굉장한 기술에 맞으면 공격과 특수공격이 크게 올라가고 사라져요."
+            case .absorbBulb:
+                return "물타입 기술에 맞으면 특수공격이 올라가고 사라져요."
+            case .cellBattery:
+                return "전기타입 기술에 맞으면 공격이 올라가고 사라져요."
+            case .snowball:
+                return "얼음타입 기술에 맞으면 공격이 올라가고 사라져요."
+            case .luminousMoss:
+                return "물타입 기술에 맞으면 특수방어가 올라가고 사라져요."
+            case .blunderPolicy:
+                return "내 기술이 빗나가면 스피드가 크게 올라가고 사라져요."
+            case .electricSeed, .grassySeed:
+                return "해당 필드 위에서 방어가 올라가고 사라져요."
+            case .mistySeed, .psychicSeed:
+                return "해당 필드 위에서 특수방어가 올라가고 사라져요."
+            case .rockyHelmet:
+                return "몸이 닿는 기술로 나를 때린 상대가 체력을 조금 잃어요."
+            case .stickyBarb:
+                return "매 턴 체력이 조금 줄지만, 몸이 닿는 기술에 맞으면 때린 상대에게 옮겨 가요."
+            case .protectivePads:
+                return "내 기술이 상대에게 닿지 않아서 접촉 반격을 받지 않아요."
+            case .punchingGlove:
+                return "펀치 기술의 위력이 조금 올라가고, 그 기술은 상대에게 닿지 않아요."
+            case .loadedDice:
+                return "여러 번 맞히는 기술이 최소 네 번 맞아요."
+            case .bindingBand:
+                return "내가 건 조이기가 상대의 체력을 더 많이 깎아요."
+            case .gripClaw:
+                return "내가 건 조이기가 일곱 턴 동안 이어져요."
+            case .throatSpray:
+                return "소리 기술을 쓰면 특수공격이 올라가고 사라져요."
+            case .quickClaw:
+                return "때때로 상대보다 먼저 움직여요."
+            case .focusBand:
+                return "때때로 쓰러질 공격을 체력 1로 버텨요."
+            case .pinchBestBoost:
+                return "체력이 얼마 안 남으면 가장 높은 능력이 올라가고 사라져요."
+            case .pinchSureHit:
+                return "체력이 얼마 안 남으면 다음 기술 하나가 반드시 맞고 사라져요."
+            case .pinchHurry:
+                return "체력이 얼마 안 남으면 그 턴에 먼저 움직이고 사라져요."
+            case .eviolite:
+                return "아직 더 진화할 수 있는 포켓몬이 지니면 방어와 특수방어가 올라가요."
             case nil:
                 // 지닌물건 갈래인데 효과가 없는 조합 — `bagUse` 가 둘을 함께 정하므로 도달 불가다.
                 return ""
@@ -1649,12 +1954,95 @@ struct L {
         case .leftovers: return "턴 끝 HP 회복"
         case .choiceBand: return "물리 ×1.5 / 기술 고정"
         case .choiceSpecs: return "특수 ×1.5 / 기술 고정"
+        case .choiceScarf: return "스피드 ×1.5 / 기술 고정"
+        case .flameOrb: return "턴 끝 자신이 화상"
+        case .toxicOrb: return "턴 끝 자신이 맹독"
+        case .assaultVest: return "특수 방어 ×1.5 / 변화기 금지"
+        case .typeBoost(let type): return "\(type.name) 기술 ×1.2"
+        case .resistBerry(.normal): return "노말 데미지 절반 / 1회"
+        case .resistBerry(let type): return "\(type.name) 약점 절반 / 1회"
+        case .pinchStatBoost(let stat): return "위급할 때 \(stat.name) +1"
+        case .pinchCrit: return "위급할 때 급소율 상승"
+        case .pinchHeal: return "위급할 때 HP 1/3 회복"
+        case .gem(let type): return "\(type.name) 기술 ×1.3 / 1회"
+        case .ironBall: return "스피드 1/2 / 땅에 닿음"
+        case .movesLast: return "같은 우선도면 후공"
+        case .lightBall: return "피카츄 공격·특공 ×2"
+        case .thickClub: return "탕구리 계열 공격 ×2"
+        case .metalPowder: return "메타몽 방어 ×2"
+        case .quickPowder: return "메타몽 스피드 ×2"
+        case .luckyPunch: return "럭키 급소율 상승"
+        case .leek: return "파오리 계열 급소율 상승"
+        case .soulDew: return "라티 남매 특공·특방 ×1.5"
+        case .adamantOrb: return "디아루가 드래곤·강철 ×1.2"
+        case .lustrousOrb: return "펄기아 드래곤·물 ×1.2"
+        case .griseousOrb: return "기라티나 드래곤·고스트 ×1.2"
+        case .muscleBand: return "물리 ×1.1"
+        case .wiseGlasses: return "특수 ×1.1"
+        case .expertBelt: return "효과 굉장 ×1.2"
+        case .metronome: return "같은 기술 연속 시 위력 상승"
+        case .scopeLens: return "급소율 상승"
+        case .wideLens: return "명중 ×1.1"
+        case .zoomLens: return "후공이면 명중 ×1.2"
+        case .dullsFoeAim: return "상대 명중 ×0.9"
+        case .shellBell: return "준 데미지의 1/8 회복"
+        case .bigRoot: return "흡수 회복 ×1.3"
+        case .blackSludge: return "독타입 회복 / 그 외 데미지"
+        case .airBalloon: return "땅타입 면역 / 맞으면 터짐"
+        case .heavyDutyBoots: return "입장 함정 무시"
+        case .safetyGoggles: return "모래바람 데미지 무시"
+        case .utilityUmbrella: return "햇살·비 위력 보정 무시"
+        case .ringTarget: return "타입 면역 해제"
+        case .floatStone: return "몸무게 1/2"
+        case .lightClay: return "장막 8턴"
+        case .icyRock: return "싸라기눈 8턴"
+        case .smoothRock: return "모래바람 8턴"
+        case .heatRock: return "쨍쨍한 햇살 8턴"
+        case .dampRock: return "비 8턴"
+        case .terrainExtender: return "필드 8턴"
+        case .whiteHerb: return "떨어진 능력 원복 / 1회"
+        case .mentalHerb: return "선택 잠금 해제 / 1회"
+        case .mirrorHerb: return "상대 능력 상승 따라하기 / 1회"
+        case .clearAmulet: return "능력 하락 차단"
+        case .covertCloak: return "부가효과 차단"
+        case .weaknessPolicy: return "효과 굉장에 맞으면 공격·특공 +2 / 1회"
+        case .absorbBulb: return "물 기술에 맞으면 특공 +1 / 1회"
+        case .cellBattery: return "전기 기술에 맞으면 공격 +1 / 1회"
+        case .snowball: return "얼음 기술에 맞으면 공격 +1 / 1회"
+        case .luminousMoss: return "물 기술에 맞으면 특방 +1 / 1회"
+        case .blunderPolicy: return "기술이 빗나가면 스피드 +2 / 1회"
+        case .electricSeed: return "일렉트릭필드에서 방어 +1 / 1회"
+        case .grassySeed: return "그래스필드에서 방어 +1 / 1회"
+        case .mistySeed: return "미스트필드에서 특방 +1 / 1회"
+        case .psychicSeed: return "사이코필드에서 특방 +1 / 1회"
+        case .rockyHelmet: return "접촉 기술로 때린 상대 HP 1/6"
+        case .stickyBarb: return "매 턴 HP 1/8 감소 / 접촉 시 상대에게 이동"
+        case .protectivePads: return "내 기술의 접촉 해제"
+        case .punchingGlove: return "펀치 기술 위력 ×1.1 / 접촉 해제"
+        case .loadedDice: return "다단 기술 최소 4회"
+        case .bindingBand: return "내가 건 조이기 잔뎀 1/6"
+        case .gripClaw: return "내가 건 조이기 7턴"
+        case .throatSpray: return "소리 기술을 쓰면 특공 +1 / 1회"
+        case .quickClaw: return "20% 확률로 선공"
+        case .focusBand: return "10% 확률로 HP 1 버팀"
+        case .pinchBestBoost: return "위급 시 최고 능력 +1 / 1회"
+        case .pinchSureHit: return "위급 시 다음 기술 필중 / 1회"
+        case .pinchHurry: return "위급 시 그 턴 선공 / 1회"
+        case .eviolite: return "미진화 개체의 방어·특방 ×1.5"
         case nil:        return ""   // `bagUse` 가 둘을 함께 정하므로 도달 불가다
         }
     }
+    /// 지닌물건 표시 자리의 이름표 — 소유 포켓몬 상세 카드와 배틀 칸 배지가 함께 쓴다.
+    var heldItemSectionTitle: String { "지닌 물건" }
+    /// 벗기기 — 물건을 개체에서 떼어 가방으로 돌려보낸다.
+    var heldItemTakeOff: String { "벗기기" }
+
     /// 이미 지니고 있는 물건을 또 지니게 할 수는 없다 — 가방이 비활성 사유로 쓴다. "포켓몬이
     /// 필요해요" 로 뭉개면 재고도 동행도 있는데 거절당한 사용자가 이유를 알 수 없다.
     var heldItemAlreadyHeld: String { "이미 지니고 있어요" }
+    /// 테라 타입 표시 자리의 이름표 — 상세 카드가 쓴다.
+    var teraTypeSectionTitle: String { "테라 타입" }
+
     /// 테라피스(#3) — 성격과 달리 대전 성능을 바꾸므로 문구도 "테라 타입" 을 밝힌다.
     var teraShardEffectHint: String { "테라 타입 랜덤 변경" }
     /// 바뀐 타입을 알리는 줄 — 어떤 타입이 됐는지가 이 아이템의 결과 전부다.

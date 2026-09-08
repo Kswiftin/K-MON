@@ -113,7 +113,11 @@ final class HeldItemTests: XCTestCase {
         XCTAssertEqual(ItemKind.lifeOrb.heldBattleEffect, .lifeOrb)
         XCTAssertEqual(ItemKind.focusSash.heldBattleEffect, .focusSash)
         XCTAssertEqual(ItemKind.leftovers.heldBattleEffect, .leftovers)
-        // 효과 셋이 전부 아이템을 갖는다 — 아이템 없는 효과는 아무도 못 켜는 죽은 갈래다.
+        // 효과가 전부 아이템을 갖는다 — 아이템 없는 효과는 아무도 못 켤 수 있는 죽은 갈래다.
+        //
+        // 강철 타입 강화는 오래 예외였다: 본가에서 그 자리는 금속코트인데 이 저장소에서 그건
+        // 진화 아이템이고 가방 갈래(`ItemKind.bagUse`)는 아이템당 하나뿐이라 두 쓰임을 겹칠 수
+        // 없었다. 강철플레이트가 들어오면서 그 구멍이 메워졌고(`PlateTests`), 예외도 없앴다.
         for effect in HeldItemEffect.allCases {
             XCTAssertTrue(ItemKind.allCases.contains { $0.heldBattleEffect == effect },
                           "\(effect) 를 주는 아이템이 없다")
@@ -467,6 +471,59 @@ final class HeldItemTests: XCTestCase {
         XCTAssertFalse(s.canGiveHeldItem(.lifeOrb))
         XCTAssertFalse(s.giveHeldItem(.lifeOrb))
         XCTAssertEqual(s.itemCount(.lifeOrb), 1)
+    }
+
+    // MARK: - 개체 → 가방 (벗기기)
+
+    /// 벗기면 가방으로 돌아온다. 이 길이 없으면 한 번 지닌 개체를 **빈 손으로 되돌릴 방법이 아예
+    /// 없다** — 다른 물건으로 덮어쓰는 것만 가능해 "아무것도 안 지닌" 상태를 고를 수 없었다.
+    func testTakingTheHeldItemReturnsItToTheBag() {
+        let s = store(inventory: [.lifeOrb: 1], held: .leftovers)
+        XCTAssertTrue(s.canTakeHeldItem)
+        XCTAssertTrue(s.takeHeldItem())
+        XCTAssertNil(s.state.active?.heldItem)
+        XCTAssertEqual(s.itemCount(.leftovers), 1, "벗긴 물건이 가방으로 돌아온다")
+        XCTAssertEqual(s.itemCount(.lifeOrb), 1, "다른 재고는 건드리지 않는다")
+    }
+
+    /// 빈 손이면 벗길 것이 없다 — 통과시키면 아무 일도 안 하는 버튼이 활성으로 보인다.
+    func testTakingWithNothingHeldIsRefused() {
+        let s = store(inventory: [.lifeOrb: 1])
+        XCTAssertFalse(s.canTakeHeldItem)
+        XCTAssertFalse(s.takeHeldItem())
+        XCTAssertEqual(s.itemCount(.lifeOrb), 1)
+    }
+
+    /// 화면이 들고 있는 개체 값은 **복사본**이다 — 팝오버가 열린 채 물건을 벗기면 그 복사본은
+    /// 여전히 물건을 들고 있어 "벗기기를 눌렀는데 그대로" 로 보인다. 활성 개체는 세이브의 활성
+    /// 값을 답해 그 어긋남을 막는다.
+    func testTheHolderLookupAnswersWithTheLiveActiveValue() {
+        let s = store(held: .leftovers)
+        let stale = s.state.active!
+        XCTAssertEqual(s.heldItem(of: stale), .leftovers)
+        XCTAssertTrue(s.takeHeldItem())
+        XCTAssertNil(s.heldItem(of: stale), "벗긴 뒤에는 복사본을 물어도 빈 손이어야 한다")
+    }
+
+    /// 박스 개체는 자기 값이 답이다 — 활성 값으로 뭉개면 박스 개체 전부가 동행의 물건을 쥔 것처럼
+    /// 보인다.
+    func testTheHolderLookupUsesTheBoxedValueForOtherMons() {
+        let s = store(held: .leftovers)
+        var boxed = s.state.active!
+        boxed.id = UUID()
+        boxed.heldItem = .lifeOrb
+        XCTAssertEqual(s.heldItem(of: boxed), .lifeOrb)
+    }
+
+    /// 벗긴 결과가 세이브에 실린다 — 저장을 안 하면 앱을 다시 켤 때 물건이 다시 붙어 있고
+    /// 가방에도 하나 남아 하나가 둘이 된다.
+    func testTakingSurvivesTheSave() {
+        let url = storeStateURL("helditem-take")
+        let s = store(at: url, held: .leftovers)
+        XCTAssertTrue(s.takeHeldItem())
+        let decoded = try! JSONDecoder().decode(CompanionState.self, from: Data(contentsOf: url))
+        XCTAssertNil(decoded.active?.heldItem)
+        XCTAssertEqual(decoded.inventory[ItemKind.leftovers.rawValue], 1)
     }
 
     /// 세이브에 실린다 — 저장을 안 하면 앱을 다시 켤 때 지닌물건이 사라진다.

@@ -270,6 +270,129 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
     /// 위 셋과 갈리는 점은 대가가 HP 가 아니라 선택이라는 것이다: 묶는 자리는 배틀 쪽
     /// (`BattleSide.choiceLockedMoveID`)이고, 이 축에서는 배율만 답한다.
     case choiceBand, choiceSpecs
+    /// 구애스카프 — 배율이 데미지가 아니라 **스피드**에 붙는 세 번째 구애다. 대가는 같다(기술 고정).
+    case choiceScarf
+    /// 구슬 2종 — 턴 끝에 **주인에게** 상태를 건다. 대가가 아니라 상태 자체가 목적인 물건이라
+    /// (근성이 화상의 물리 반감을 무시한다) 엔진이 얹는 것은 상태 하나뿐이다.
+    case flameOrb, toxicOrb
+    /// 돌격조끼 — 특수방어 1.5배를 주고 **변화기를 못 쓴다**. 대가가 기술 분류라 잠금 자리는
+    /// 도발과 같다(`MoveSelectionLock`).
+    case assaultVest
+    /// 타입 강화 도구 — 지닌 개체가 **그 타입 기술**을 낼 때만 위력이 오른다(×1.2). 대가가 없는
+    /// 대신 폭이 좁다: 한 타입만 오르고, 상성표를 안 보는 기술(발버둥·변화기)은 안 오른다.
+    ///
+    /// 강철 타입 도구(금속코트)가 빠져 있다 — 이 저장소에서 금속코트는 **진화 아이템**이고
+    /// 가방 갈래(`bagUse`)는 하나뿐이라 같은 아이템에 두 쓰임을 겹칠 수 없다.
+    /// `magnet` 이 아니라 `magnetItem` 인 것은 이름 충돌 회피다.
+    case silverPowder, softSand, hardStone, miracleSeed
+    case blackGlasses, blackBelt, magnetItem, mysticWater
+    case sharpBeak, poisonBarb, neverMeltIce, spellTag
+    case twistedSpoon, charcoal, dragonFang, silkScarf
+    case fairyFeather, seaIncense, oddIncense, rockIncense
+    case waveIncense, roseIncense
+    /// 약점 반감 열매 18종 — 그 타입 기술에 **효과가 굉장할 때** 데미지가 절반이 되고 열매가
+    /// 사라진다. 카리열매(노말)만 배율과 무관하게 반감한다: 노말은 어느 타입에게도 효과가 굉장하지
+    /// 않아서, 같은 규칙을 주면 아무 일도 못 하는 죽은 물건이 된다(본가도 이 하나만 예외다).
+    case occaBerry, passhoBerry, wacanBerry, rindoBerry, yacheBerry, chopleBerry
+    case kebiaBerry, shucaBerry, cobaBerry, payapaBerry, tangaBerry, chartiBerry
+    case kasibBerry, habanBerry, colburBerry, babiriBerry, chilanBerry, roseliBerry
+    /// 위급 열매 6종 — HP 가 최대의 1/4 이하일 때 한 번 일하고 사라진다. 다섯은 랭크를 하나
+    /// 올리고 랑사열매만 급소 단계를 올린다.
+    case liechiBerry, ganlonBerry, salacBerry, petayaBerry, apicotBerry, lansatBerry
+    /// 위급 열매 셋 — 랭크·회복이 아니라 **그 다음 행동**에 답한다. 스타열매는 능력 하나를 두
+    /// 단계 올리고, 애슈열매는 그 턴의 선공을 가져가고, 미클열매는 다음 기술을 반드시 맞힌다.
+    case starfBerry, micleBerry, custapBerry
+    /// 성격 회복 열매 5종 — 같은 위급 조건에서 최대 HP 의 1/3 을 회복한다.
+    ///
+    /// **본가의 "성격이 싫어하는 맛이면 혼란" 은 넣지 않았다.** 혼란은 남은 턴을 난수로 뽑는데,
+    /// 열매가 터지는 두 자리 중 턴 끝(`BattleEngine.endOfTurnResidual`)에는 두 피어가 공유하는
+    /// 난수원이 없다 — 구슬 2종이 화상·맹독으로 제한된 것과 같은 제약이다. 그래서 다섯은 같은
+    /// 효과를 주는 다섯 물건이다(향로와 신비의물방울이 같은 효과인 것과 같다).
+    case figyBerry, wikiBerry, magoBerry, aguavBerry, iapapaBerry
+    /// 주얼 18종 — 그 타입 기술 **하나**를 1.3 배로 만들고 사라진다. 타입 강화 도구(×1.2 상시)와
+    /// 갈리는 점은 그것이다: 폭이 같고 배율이 크되 한 번뿐이다.
+    case normalGem, fireGem, waterGem, electricGem, grassGem, iceGem
+    case fightingGem, poisonGem, groundGem, flyingGem, psychicGem, bugGem
+    case rockGem, ghostGem, dragonGem, darkGem, steelGem, fairyGem
+    /// 대가만 있는 물건 셋. 검은철구는 스피드를 절반으로 만들고 지닌 개체를 **땅에 닿게** 한다
+    /// (자이로볼처럼 느릴수록 강한 기술과 짝지어 쓴다). 느림보꼬리·만복향로는 같은 우선도에서
+    /// 뒤로 밀린다 — 되돌려주는 기술(카운터 부류)과 짝이다.
+    ///
+    /// 끈적끈적바늘은 여기 없다: 접촉 기술 판정이 이 저장소의 기술 데이터에 없어서, 넣으면 주인만
+    /// 깎이고 상대에게는 아무 일도 안 하는 물건이 된다.
+    case ironBall, laggingTail, fullIncense
+    /// 플레이트 17종 — 그 타입 기술의 위력을 1.2 배로 만든다(타입 강화 도구와 **같은 효과**다).
+    /// 아르세우스의 폼체인지가 이 엔진에 없어서 남는 일이 배율뿐이라, 효과 갈래를 새로 만들지 않고
+    /// `typeBoost` 를 그대로 쓴다. 노말 플레이트는 본가에도 없다(아르세우스의 기본형).
+    ///
+    /// 강철 자리(`ironPlate`)가 여기서 처음 채워진다 — 본가의 강철 강화 도구는 금속코트인데
+    /// 이 저장소에서 그건 진화 아이템이라 배틀 효과를 겹칠 수 없었다.
+    case flamePlate, splashPlate, zapPlate, meadowPlate, iciclePlate, fistPlate
+    case toxicPlate, earthPlate, skyPlate, mindPlate, insectPlate, stonePlate
+    case spookyPlate, dracoPlate, dreadPlate, ironPlate, pixiePlate
+    /// 특정 종에게만 일하는 물건 10종 — 전기구슬(피카츄)·굵은뼈(탕구리 계열)·금속파우더·
+    /// 스피드파우더(메타몽)·럭키펀치(럭키)·대파(파오리 계열)·마음의물방울(라티 남매)·보옥 셋.
+    ///
+    /// 종을 묻는 자리는 **하나**다(`BattleSide.heldEffect`) — 엉뚱한 종이 쥐면 효과가 통째로
+    /// 없어진다. 배율을 곱하는 자리마다 종을 다시 물으면 한 자리만 빠뜨렸을 때 그 배율만
+    /// 아무에게나 붙는다.
+    ///
+    /// 기라티나의 백금옥은 본가에서 폼도 바꾸지만 여기서는 배율만 남는다(폼체인지가 없다).
+    /// 심해의이빨·심해의비늘은 이 저장소에서 진화 아이템이라 빠졌다.
+    case lightBall, thickClub, metalPowder, quickPowder, luckyPunch
+    case stick, soulDew, adamantOrb, lustrousOrb, griseousOrb
+    /// 일반 배틀 도구 12종 — 앞의 물건들과 갈리는 점은 **조건이 물건 밖에 있다**는 것이다.
+    /// 힘의머리띠·박식안경은 기술 분류를, 달인의띠는 상성을, 메트로놈은 같은 기술을 이어 쓴
+    /// 횟수를, 포커스렌즈는 상대가 이번 턴 이미 움직였는지를 본다. 그래서 축이 값이 아니라
+    /// 물음이고(`HeldItemEffect.outgoingDamageScale`·`accuracyScale`), 엔진은 한 자리에서만 묻는다.
+    ///
+    /// 반짝가루와 무사태평향로는 **같은 효과**다(느림보꼬리·만복향로와 같은 자리).
+    case muscleBand, wiseGlasses, expertBelt, metronome, scopeLens
+    case wideLens, zoomLens, brightPowder, laxIncense
+    case shellBell, blackSludge, bigRoot
+    /// 면역·무시 물건 6종 — 앞의 도구들이 배율을 **얹는** 반면 이쪽은 이미 있는 규칙 한 줄을
+    /// 지닌 개체에게만 **건너뛴다**. 풍선은 땅에 닿지 않게 하고(맞으면 터진다), 통굽부츠는 입장
+    /// 데미지를, 방진고글은 날씨 잔뎀을, 만능우산은 볕·비의 위력 보정을 지운다. 겨냥표적은
+    /// 반대로 지닌 쪽의 타입 면역을 지워 **더 맞게** 하고, 가벼운돌은 체중을 절반으로 만든다.
+    ///
+    /// 탈출보타(조이기 탈출)는 여기 없다 — 이 엔진에는 교체를 막는 규칙 자체가 없어서, 넣으면
+    /// 아무것도 풀지 않는 물건이 된다(교체 강제 부류와 함께 간다).
+    case airBalloon, heavyDutyBoots, safetyGoggles, utilityUmbrella, ringTarget, floatStone
+    /// 지속 시간을 늘리는 물건 6종 — 빛의점토는 장막을, 날씨 돌 넷은 자기 날씨를, 그라운드코트는
+    /// 필드를 5턴에서 8턴으로 늘린다.
+    ///
+    /// 앞의 물건들과 갈리는 점은 **묻는 순간**이다: 효과가 지닌 개체가 아니라 판에 붙으므로, 거는
+    /// 그 자리에서 한 번 묻고 판은 누가 걸었는지를 안 들고 있는다(들면 교체·기절마다 주인을
+    /// 따라다녀야 하고, 주인이 쓰러진 뒤 장막의 길이가 무슨 뜻인지 답할 수 없다).
+    case lightClay, icyRock, smoothRock, heatRock, dampRock, terrainExtender
+    /// 허브·무효화 물건 5종 — 앞의 물건들이 배율이나 면역을 상시로 얹는 것과 달리, 이쪽은 **다른
+    /// 기전이 이미 한 일**에 답한다: 랭크가 내려간 뒤(하양허브), 선택 잠금이 걸린 뒤(멘탈허브),
+    /// 상대가 랭크를 올린 뒤(흉내허브)에 움직인다. 클리어참·은밀망토는 그 일이 일어나기 전에 막는다.
+    ///
+    /// 파워허브(2턴 기술 즉발)와 특성가드(특성 변경 차단)는 없다 — 이 엔진에는 2턴 기술도 특성을
+    /// 바꾸는 기술도 없어서 아무 일도 하지 않는 물건이 된다.
+    case whiteHerb, mentalHerb, mirrorHerb, clearAmulet, covertCloak
+    /// 맞으면·빗나가면·필드 위에서 **한 번 랭크를 올리고 사라지는** 물건 10종. 약점보험은 효과가
+    /// 굉장한 히트에, 구근·충전지·눈덩이·빛이끼는 자기 타입 히트에, 허탕보험은 **자기 기술이
+    /// 빗나갔을 때**, 씨앗 넷은 발밑의 필드에 답한다.
+    ///
+    /// 위급 열매(`pinchAction`)와 갈리는 점은 방아쇠뿐이다 — 저기는 HP, 여기는 맞은 히트·빗나감·
+    /// 필드다. 올리는 랭크는 셋 다 같은 값(`StatChange` 목록)으로 답해 올리는 자리를 하나로 둔다.
+    case weaknessPolicy, absorbBulb, cellBattery, snowball, luminousMoss, blunderPolicy
+    case electricSeed, grassySeed, mistySeed, psychicSeed
+    /// 기술의 **성질**에 답하는 물건 8종 — 접촉(울퉁불퉁멧·끈적끈적바늘·방호패드)·펀치
+    /// (펀치글러브)·소리(목스프레이)·다단(속임수주사위)·조이기(조임밴드·끈기갈고리손톱)다.
+    ///
+    /// 성질은 PokéAPI 에 없다(접촉·펀치·소리 플래그가 없는 테이블이다) — 쇼다운 데이터가 어느
+    /// 기술인지 답하고(`ShowdownMoveData.makingContact` 등) 엔진은 규칙만 구현한다.
+    case rockyHelmet, stickyBarb, protectivePads, punchingGlove
+    case loadedDice, bindingBand, gripClaw, throatSpray
+    /// 확률로 일하는 물건 둘 — 선제공격손톱은 20% 로 선공을 가져가고, 기합의머리띠는 10% 로
+    /// 치명적인 히트를 HP 1 에서 버틴다. 둘 다 소모품이 아니다.
+    case quickClaw, focusBand
+    /// 진화의휘석 — **아직 진화할 수 있는** 개체의 방어·특수방어를 1.5 배로 만든다. 조건이 종
+    /// 번호가 아니라 진화 라인에 있어서 스냅샷이 답을 싣고 온다(`BattleSnapshot.canStillEvolve`).
+    case eviolite
     /// R7 decor is inventory, not a second currency or store.
     // Mini Home furniture. The original three are the free campus starter set.
     case roomBed, roomTable, roomLamp
@@ -284,7 +407,39 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
     var evolutionRule: EvolutionItemRule? {
         switch self {
         case .rareCandy, .mint, .shinyCharm, .heartScale, .teraShard,
-             .lifeOrb, .focusSash, .leftovers, .choiceBand, .choiceSpecs,
+             .lifeOrb, .focusSash, .leftovers, .choiceBand, .choiceSpecs, .choiceScarf,
+             .flameOrb, .toxicOrb, .assaultVest,
+             .silverPowder, .softSand, .hardStone, .miracleSeed, .blackGlasses, .blackBelt,
+             .magnetItem, .mysticWater, .sharpBeak, .poisonBarb, .neverMeltIce, .spellTag,
+             .twistedSpoon, .charcoal, .dragonFang, .silkScarf, .fairyFeather, .seaIncense,
+             .oddIncense, .rockIncense, .waveIncense, .roseIncense,
+             .occaBerry, .passhoBerry, .wacanBerry, .rindoBerry, .yacheBerry, .chopleBerry,
+             .kebiaBerry, .shucaBerry, .cobaBerry, .payapaBerry, .tangaBerry, .chartiBerry,
+             .kasibBerry, .habanBerry, .colburBerry, .babiriBerry, .chilanBerry, .roseliBerry,
+             .liechiBerry, .ganlonBerry, .salacBerry, .petayaBerry, .apicotBerry, .lansatBerry,
+             .starfBerry, .micleBerry, .custapBerry,
+             .figyBerry, .wikiBerry, .magoBerry, .aguavBerry, .iapapaBerry,
+             .normalGem, .fireGem, .waterGem, .electricGem, .grassGem, .iceGem,
+             .fightingGem, .poisonGem, .groundGem, .flyingGem, .psychicGem, .bugGem,
+             .rockGem, .ghostGem, .dragonGem, .darkGem, .steelGem, .fairyGem,
+             .ironBall, .laggingTail, .fullIncense,
+             .flamePlate, .splashPlate, .zapPlate, .meadowPlate, .iciclePlate, .fistPlate,
+             .toxicPlate, .earthPlate, .skyPlate, .mindPlate, .insectPlate, .stonePlate,
+             .spookyPlate, .dracoPlate, .dreadPlate, .ironPlate, .pixiePlate,
+             .lightBall, .thickClub, .metalPowder, .quickPowder, .luckyPunch,
+             .stick, .soulDew, .adamantOrb, .lustrousOrb, .griseousOrb,
+             .muscleBand, .wiseGlasses, .expertBelt, .metronome, .scopeLens,
+             .wideLens, .zoomLens, .brightPowder, .laxIncense,
+             .shellBell, .blackSludge, .bigRoot,
+             .airBalloon, .heavyDutyBoots, .safetyGoggles, .utilityUmbrella, .ringTarget,
+             .floatStone,
+             .lightClay, .icyRock, .smoothRock, .heatRock, .dampRock, .terrainExtender,
+             .whiteHerb, .mentalHerb, .mirrorHerb, .clearAmulet, .covertCloak,
+             .weaknessPolicy, .absorbBulb, .cellBattery, .snowball, .luminousMoss,
+             .blunderPolicy, .electricSeed, .grassySeed, .mistySeed, .psychicSeed,
+             .rockyHelmet, .stickyBarb, .protectivePads, .punchingGlove,
+             .loadedDice, .bindingBand, .gripClaw, .throatSpray,
+             .quickClaw, .focusBand, .eviolite,
              .roomBed, .roomTable, .roomLamp, .lovelyVanity, .lovelySofa, .lovelyHeartLamp,
              .retroArcade, .retroRadio, .retroTV, .naturePlant, .natureBench, .natureLantern: return nil
         case .linkingCord: return .plainTrade
@@ -348,7 +503,40 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
         case .mint:       return .mint
         case .heartScale: return .heartScale
         case .teraShard:  return .teraShard
-        case .lifeOrb, .focusSash, .leftovers, .choiceBand, .choiceSpecs: return .heldItem
+        case .lifeOrb, .focusSash, .leftovers, .choiceBand, .choiceSpecs, .choiceScarf,
+             .flameOrb, .toxicOrb, .assaultVest,
+             .silverPowder, .softSand, .hardStone, .miracleSeed, .blackGlasses, .blackBelt,
+             .magnetItem, .mysticWater, .sharpBeak, .poisonBarb, .neverMeltIce, .spellTag,
+             .twistedSpoon, .charcoal, .dragonFang, .silkScarf, .fairyFeather, .seaIncense,
+             .oddIncense, .rockIncense, .waveIncense, .roseIncense,
+             .occaBerry, .passhoBerry, .wacanBerry, .rindoBerry, .yacheBerry, .chopleBerry,
+             .kebiaBerry, .shucaBerry, .cobaBerry, .payapaBerry, .tangaBerry, .chartiBerry,
+             .kasibBerry, .habanBerry, .colburBerry, .babiriBerry, .chilanBerry, .roseliBerry,
+             .liechiBerry, .ganlonBerry, .salacBerry, .petayaBerry, .apicotBerry, .lansatBerry,
+             .starfBerry, .micleBerry, .custapBerry,
+             .figyBerry, .wikiBerry, .magoBerry, .aguavBerry, .iapapaBerry,
+             .normalGem, .fireGem, .waterGem, .electricGem, .grassGem, .iceGem,
+             .fightingGem, .poisonGem, .groundGem, .flyingGem, .psychicGem, .bugGem,
+             .rockGem, .ghostGem, .dragonGem, .darkGem, .steelGem, .fairyGem,
+             .ironBall, .laggingTail, .fullIncense,
+             .flamePlate, .splashPlate, .zapPlate, .meadowPlate, .iciclePlate, .fistPlate,
+             .toxicPlate, .earthPlate, .skyPlate, .mindPlate, .insectPlate, .stonePlate,
+             .spookyPlate, .dracoPlate, .dreadPlate, .ironPlate, .pixiePlate,
+             .lightBall, .thickClub, .metalPowder, .quickPowder, .luckyPunch,
+             .stick, .soulDew, .adamantOrb, .lustrousOrb, .griseousOrb,
+             .muscleBand, .wiseGlasses, .expertBelt, .metronome, .scopeLens,
+             .wideLens, .zoomLens, .brightPowder, .laxIncense,
+             .shellBell, .blackSludge, .bigRoot,
+             .airBalloon, .heavyDutyBoots, .safetyGoggles, .utilityUmbrella, .ringTarget,
+             .floatStone,
+             .lightClay, .icyRock, .smoothRock, .heatRock, .dampRock, .terrainExtender,
+             .whiteHerb, .mentalHerb, .mirrorHerb, .clearAmulet, .covertCloak,
+             .weaknessPolicy, .absorbBulb, .cellBattery, .snowball, .luminousMoss,
+             .blunderPolicy, .electricSeed, .grassySeed, .mistySeed, .psychicSeed,
+             .rockyHelmet, .stickyBarb, .protectivePads, .punchingGlove,
+             .loadedDice, .bindingBand, .gripClaw, .throatSpray,
+             .quickClaw, .focusBand, .eviolite:
+            return .heldItem
         case .shinyCharm: return .passive
         case .roomBed, .roomTable, .roomLamp, .lovelyVanity, .lovelySofa, .lovelyHeartLamp,
              .retroArcade, .retroRadio, .retroTV, .naturePlant, .natureBench, .natureLantern:
@@ -379,7 +567,212 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
         case .leftovers:   return .leftovers
         case .choiceBand:  return .choiceBand
         case .choiceSpecs: return .choiceSpecs
-        default:          return nil
+        case .choiceScarf: return .choiceScarf
+        case .flameOrb:    return .flameOrb
+        case .toxicOrb:    return .toxicOrb
+        case .assaultVest: return .assaultVest
+        case .lightBall:   return .lightBall
+        case .thickClub:   return .thickClub
+        case .metalPowder: return .metalPowder
+        case .quickPowder: return .quickPowder
+        case .luckyPunch:  return .luckyPunch
+        case .stick:       return .leek
+        case .soulDew:     return .soulDew
+        case .adamantOrb:  return .adamantOrb
+        case .lustrousOrb: return .lustrousOrb
+        case .griseousOrb: return .griseousOrb
+        case .ironBall:    return .ironBall
+        case .laggingTail, .fullIncense: return .movesLast
+        case .muscleBand:  return .muscleBand
+        case .wiseGlasses: return .wiseGlasses
+        case .expertBelt:  return .expertBelt
+        case .metronome:   return .metronome
+        case .scopeLens:   return .scopeLens
+        case .wideLens:    return .wideLens
+        case .zoomLens:    return .zoomLens
+        // 두 물건이 같은 효과다 — 느림보꼬리·만복향로와 같은 자리다.
+        case .brightPowder, .laxIncense: return .dullsFoeAim
+        case .shellBell:   return .shellBell
+        case .blackSludge: return .blackSludge
+        case .bigRoot:     return .bigRoot
+        case .airBalloon:     return .airBalloon
+        case .heavyDutyBoots: return .heavyDutyBoots
+        case .safetyGoggles:  return .safetyGoggles
+        case .utilityUmbrella: return .utilityUmbrella
+        case .ringTarget:     return .ringTarget
+        case .floatStone:     return .floatStone
+        case .lightClay:      return .lightClay
+        case .icyRock:        return .icyRock
+        case .smoothRock:     return .smoothRock
+        case .heatRock:       return .heatRock
+        case .dampRock:       return .dampRock
+        case .terrainExtender: return .terrainExtender
+        case .whiteHerb:   return .whiteHerb
+        case .mentalHerb:  return .mentalHerb
+        case .mirrorHerb:  return .mirrorHerb
+        case .clearAmulet: return .clearAmulet
+        case .covertCloak: return .covertCloak
+        case .weaknessPolicy: return .weaknessPolicy
+        case .absorbBulb:  return .absorbBulb
+        case .cellBattery: return .cellBattery
+        case .snowball:    return .snowball
+        case .luminousMoss: return .luminousMoss
+        case .blunderPolicy: return .blunderPolicy
+        case .electricSeed: return .electricSeed
+        case .grassySeed:  return .grassySeed
+        case .mistySeed:   return .mistySeed
+        case .psychicSeed: return .psychicSeed
+        case .rockyHelmet: return .rockyHelmet
+        case .stickyBarb:  return .stickyBarb
+        case .protectivePads: return .protectivePads
+        case .punchingGlove: return .punchingGlove
+        case .loadedDice:  return .loadedDice
+        case .bindingBand: return .bindingBand
+        case .gripClaw:    return .gripClaw
+        case .throatSpray: return .throatSpray
+        case .quickClaw:   return .quickClaw
+        case .focusBand:   return .focusBand
+        case .eviolite:    return .eviolite
+        default:
+            // 타입 강화 도구와 열매는 표에서 답한다 — 50여 종을 여기 다시 나열하면 하나 빠뜨렸을 때
+            // "가방에서는 지니게 되는데 배틀에서는 아무 일도 안 하는" 물건이 생긴다.
+            return (typeEnhancedType ?? plateType).map { HeldItemEffect.typeBoost($0) }
+                ?? berryEffect
+                ?? gemType.map { HeldItemEffect.gem($0) }
+        }
+    }
+
+    /// 이 열매가 배틀에서 하는 일 — 열매가 아니면 nil.
+    ///
+    /// 표를 아이템 쪽에 두는 이유는 타입 강화 도구(`typeEnhancedType`)와 같다: 물건마다 갈리는
+    /// 것이 payload 하나뿐이라, 효과 쪽에 두면 29줄짜리 스위치가 두 벌 생긴다.
+    var berryEffect: HeldItemEffect? {
+        switch self {
+        case .occaBerry:   return .resistBerry(.fire)
+        case .passhoBerry: return .resistBerry(.water)
+        case .wacanBerry:  return .resistBerry(.electric)
+        case .rindoBerry:  return .resistBerry(.grass)
+        case .yacheBerry:  return .resistBerry(.ice)
+        case .chopleBerry: return .resistBerry(.fighting)
+        case .kebiaBerry:  return .resistBerry(.poison)
+        case .shucaBerry:  return .resistBerry(.ground)
+        case .cobaBerry:   return .resistBerry(.flying)
+        case .payapaBerry: return .resistBerry(.psychic)
+        case .tangaBerry:  return .resistBerry(.bug)
+        case .chartiBerry: return .resistBerry(.rock)
+        case .kasibBerry:  return .resistBerry(.ghost)
+        case .habanBerry:  return .resistBerry(.dragon)
+        case .colburBerry: return .resistBerry(.dark)
+        case .babiriBerry: return .resistBerry(.steel)
+        case .chilanBerry: return .resistBerry(.normal)
+        case .roseliBerry: return .resistBerry(.fairy)
+        case .liechiBerry: return .pinchStatBoost(.atk)
+        case .ganlonBerry: return .pinchStatBoost(.def)
+        case .salacBerry:  return .pinchStatBoost(.spe)
+        case .petayaBerry: return .pinchStatBoost(.spa)
+        case .apicotBerry: return .pinchStatBoost(.spd)
+        case .lansatBerry: return .pinchCrit
+        case .starfBerry:  return .pinchBestBoost
+        case .micleBerry:  return .pinchSureHit
+        case .custapBerry: return .pinchHurry
+        case .figyBerry, .wikiBerry, .magoBerry, .aguavBerry, .iapapaBerry: return .pinchHeal
+        default: return nil
+        }
+    }
+
+    /// 이 플레이트가 올려 주는 기술 타입 — 플레이트가 아니면 nil.
+    ///
+    /// 타입 강화 도구 표(`typeEnhancedType`)와 나눠 두는 이유는 값이 아니라 물음이 다르기
+    /// 때문이다: 저 표는 "이 도구가 강화 도구인가" 도 겸해 상점가·스프라이트가 그걸로 갈린다.
+    /// 플레이트를 거기 섞으면 이름 규칙이 다른 17종이 그 분기를 함께 타 파일명이 어긋난다.
+    var plateType: PokemonType? {
+        switch self {
+        case .flamePlate:  return .fire
+        case .splashPlate: return .water
+        case .zapPlate:    return .electric
+        case .meadowPlate: return .grass
+        case .iciclePlate: return .ice
+        case .fistPlate:   return .fighting
+        case .toxicPlate:  return .poison
+        case .earthPlate:  return .ground
+        case .skyPlate:    return .flying
+        case .mindPlate:   return .psychic
+        case .insectPlate: return .bug
+        case .stonePlate:  return .rock
+        case .spookyPlate: return .ghost
+        case .dracoPlate:  return .dragon
+        case .dreadPlate:  return .dark
+        case .ironPlate:   return .steel
+        case .pixiePlate:  return .fairy
+        default: return nil
+        }
+    }
+
+    /// 이 주얼이 올려 주는 기술 타입 — 주얼이 아니면 nil. 표를 아이템 쪽에 두는 이유는 타입 강화
+    /// 도구(`typeEnhancedType`)와 같다.
+    var gemType: PokemonType? {
+        switch self {
+        case .normalGem:   return .normal
+        case .fireGem:     return .fire
+        case .waterGem:    return .water
+        case .electricGem: return .electric
+        case .grassGem:    return .grass
+        case .iceGem:      return .ice
+        case .fightingGem: return .fighting
+        case .poisonGem:   return .poison
+        case .groundGem:   return .ground
+        case .flyingGem:   return .flying
+        case .psychicGem:  return .psychic
+        case .bugGem:      return .bug
+        case .rockGem:     return .rock
+        case .ghostGem:    return .ghost
+        case .dragonGem:   return .dragon
+        case .darkGem:     return .dark
+        case .steelGem:    return .steel
+        case .fairyGem:    return .fairy
+        default: return nil
+        }
+    }
+
+    /// 케이스명을 PokéAPI 아이템명으로 바꾼다(`occaBerry` → `occa-berry`). 열매 29종의 파일명을
+    /// 손으로 적지 않는 이유는 규칙이 하나라서다 — 손으로 적으면 하나가 어긋나도 오류 없이
+    /// 화면에 이모지만 남는다.
+    var kebabRawValue: String {
+        rawValue.reduce(into: "") { out, character in
+            if character.isUppercase { out += "-" + character.lowercased() }
+            else { out.append(character) }
+        }
+    }
+
+    /// 이 아이템이 위력을 올려 주는 기술 타입 — 타입 강화 도구가 아니면 nil.
+    ///
+    /// 표를 아이템 쪽에 두는 이유는 이 값이 곧 아이템의 정체라서다: 물건마다 갈리는 것이 타입
+    /// 하나뿐이라, 효과 쪽에 두면 22줄짜리 스위치가 두 벌 생긴다.
+    var typeEnhancedType: PokemonType? {
+        switch self {
+        case .silverPowder: return .bug
+        case .softSand: return .ground
+        case .hardStone: return .rock
+        case .miracleSeed: return .grass
+        case .blackGlasses: return .dark
+        case .blackBelt: return .fighting
+        case .magnetItem: return .electric
+        case .mysticWater: return .water
+        case .sharpBeak: return .flying
+        case .poisonBarb: return .poison
+        case .neverMeltIce: return .ice
+        case .spellTag: return .ghost
+        case .twistedSpoon: return .psychic
+        case .charcoal: return .fire
+        case .dragonFang: return .dragon
+        case .silkScarf: return .normal
+        case .fairyFeather: return .fairy
+        case .seaIncense: return .water
+        case .oddIncense: return .psychic
+        case .rockIncense: return .rock
+        case .waveIncense: return .water
+        case .roseIncense: return .grass
+        default: return nil
         }
     }
 
@@ -399,6 +792,67 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
         case .lifeOrb: return "life-orb"
         case .focusSash: return "focus-sash"
         case .leftovers: return "leftovers"
+        case .choiceBand: return "choice-band"
+        case .choiceSpecs: return "choice-specs"
+        case .choiceScarf: return "choice-scarf"
+        case .flameOrb: return "flame-orb"
+        case .toxicOrb: return "toxic-orb"
+        case .assaultVest: return "assault-vest"
+        case .silverPowder: return "silver-powder"
+        case .softSand: return "soft-sand"
+        case .hardStone: return "hard-stone"
+        case .miracleSeed: return "miracle-seed"
+        case .blackGlasses: return "black-glasses"
+        case .blackBelt: return "black-belt"
+        case .magnetItem: return "magnet"
+        case .mysticWater: return "mystic-water"
+        case .sharpBeak: return "sharp-beak"
+        case .poisonBarb: return "poison-barb"
+        case .neverMeltIce: return "never-melt-ice"
+        case .spellTag: return "spell-tag"
+        case .twistedSpoon: return "twisted-spoon"
+        case .charcoal: return "charcoal"
+        case .dragonFang: return "dragon-fang"
+        case .silkScarf: return "silk-scarf"
+        case .fairyFeather: return "fairy-feather"
+        case .seaIncense: return "sea-incense"
+        case .oddIncense: return "odd-incense"
+        case .rockIncense: return "rock-incense"
+        case .waveIncense: return "wave-incense"
+        case .roseIncense: return "rose-incense"
+        // 열매는 케이스명이 곧 API 아이템명이다(위 `kebabRawValue`).
+        case _ where berryEffect != nil || gemType != nil || plateType != nil: return kebabRawValue
+        case .lightBall: return "light-ball"
+        case .thickClub: return "thick-club"
+        case .metalPowder: return "metal-powder"
+        case .quickPowder: return "quick-powder"
+        case .luckyPunch: return "lucky-punch"
+        case .stick: return "stick"
+        case .soulDew: return "soul-dew"
+        case .adamantOrb: return "adamant-orb"
+        case .lustrousOrb: return "lustrous-orb"
+        case .griseousOrb: return "griseous-orb"
+        case .ironBall: return "iron-ball"
+        case .laggingTail: return "lagging-tail"
+        case .fullIncense: return "full-incense"
+        // 일반 배틀 도구 12종은 케이스명이 곧 API 아이템명이다(열매·주얼과 같은 규칙).
+        case .muscleBand, .wiseGlasses, .expertBelt, .metronome, .scopeLens,
+             .wideLens, .zoomLens, .brightPowder, .laxIncense,
+             .shellBell, .blackSludge, .bigRoot,
+             .airBalloon, .safetyGoggles, .ringTarget, .floatStone,
+             .lightClay, .icyRock, .smoothRock, .heatRock, .dampRock, .terrainExtender,
+             .whiteHerb, .mentalHerb,
+             .weaknessPolicy, .absorbBulb, .cellBattery, .snowball, .luminousMoss,
+             .electricSeed, .grassySeed, .mistySeed, .psychicSeed,
+             .rockyHelmet, .stickyBarb, .protectivePads, .bindingBand, .gripClaw,
+             .quickClaw, .focusBand, .eviolite:
+            return kebabRawValue
+        // 9세대 물건 셋도 PokéAPI 에 스프라이트가 없다(통굽부츠·만능우산과 같은 자리).
+        case .mirrorHerb, .clearAmulet, .covertCloak, .blunderPolicy,
+             .punchingGlove, .loadedDice, .throatSpray: return nil
+        // 통굽부츠·만능우산은 PokéAPI 에 스프라이트가 없다(8세대 아이템) — 규칙에서 파생시키면
+        // 화면에 깨진 이미지가 남으므로 이모지 폴백만 쓴다(민트·테라피스와 같은 자리).
+        case .heavyDutyBoots, .utilityUmbrella: return nil
         default: return evolutionRule?.apiItemName
         }
     }
@@ -431,6 +885,88 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
         case .teraShard: return "💎"
         case .lifeOrb: return "🔮"; case .focusSash: return "🎗️"; case .leftovers: return "🍱"
         case .choiceBand: return "🎽"; case .choiceSpecs: return "🕶️"
+        case .choiceScarf: return "🧣"
+        case .flameOrb: return "🔥"; case .toxicOrb: return "☠️"
+        case .assaultVest: return "🦺"
+        case .silverPowder: return "✨"
+        case .softSand: return "🏖️"
+        case .hardStone: return "🪨"
+        case .miracleSeed: return "🌱"
+        case .blackGlasses: return "🕶"
+        case .blackBelt: return "🥋"
+        case .magnetItem: return "🧲"
+        case .mysticWater: return "💧"
+        case .sharpBeak: return "🪶"
+        case .poisonBarb: return "🧪"
+        case .neverMeltIce: return "🧊"
+        case .spellTag: return "🏷️"
+        case .twistedSpoon: return "🥄"
+        case .charcoal: return "🪵"
+        case .dragonFang: return "🦷"
+        case .silkScarf: return "🎀"
+        case .fairyFeather: return "🪽"
+        case .seaIncense: return "🌊"
+        case .oddIncense: return "🌀"
+        case .rockIncense: return "⛰️"
+        case .waveIncense: return "🌀"
+        case .roseIncense: return "🌹"
+        // 열매는 갈래로 이모지를 나눈다 — 29개를 서로 다른 과일로 적으면 화면에서 어느 것이 무엇을
+        // 하는 열매인지 오히려 읽기 어렵다(갈래가 곧 효과다).
+        case .occaBerry, .passhoBerry, .wacanBerry, .rindoBerry, .yacheBerry, .chopleBerry,
+             .kebiaBerry, .shucaBerry, .cobaBerry, .payapaBerry, .tangaBerry, .chartiBerry,
+             .kasibBerry, .habanBerry, .colburBerry, .babiriBerry, .chilanBerry, .roseliBerry:
+            return "🫐"
+        case .liechiBerry, .ganlonBerry, .salacBerry, .petayaBerry, .apicotBerry, .lansatBerry,
+             .starfBerry, .micleBerry, .custapBerry:
+            return "🍒"
+        case .figyBerry, .wikiBerry, .magoBerry, .aguavBerry, .iapapaBerry:
+            return "🍑"
+        case .normalGem, .fireGem, .waterGem, .electricGem, .grassGem, .iceGem,
+             .fightingGem, .poisonGem, .groundGem, .flyingGem, .psychicGem, .bugGem,
+             .rockGem, .ghostGem, .dragonGem, .darkGem, .steelGem, .fairyGem:
+            return "💎"
+        case .flamePlate, .splashPlate, .zapPlate, .meadowPlate, .iciclePlate, .fistPlate,
+             .toxicPlate, .earthPlate, .skyPlate, .mindPlate, .insectPlate, .stonePlate,
+             .spookyPlate, .dracoPlate, .dreadPlate, .ironPlate, .pixiePlate:
+            return "🪨"
+        case .lightBall: return "🔆"
+        case .thickClub: return "🦴"
+        case .metalPowder: return "🥈"
+        case .quickPowder: return "💨"
+        case .luckyPunch: return "🥊"
+        case .stick: return "🥬"
+        case .soulDew: return "💧"
+        case .adamantOrb: return "🔷"
+        case .lustrousOrb: return "🤍"
+        case .griseousOrb: return "🟣"
+        case .ironBall: return "⚫"
+        case .laggingTail: return "🐌"
+        case .fullIncense: return "🕯️"
+        case .muscleBand: return "💪"; case .wiseGlasses: return "🤓"
+        case .expertBelt: return "🥋"; case .metronome: return "🎼"
+        case .scopeLens: return "🔭"; case .wideLens: return "🔍"; case .zoomLens: return "🔎"
+        case .brightPowder: return "🌟"; case .laxIncense: return "🕯️"
+        case .shellBell: return "🐚"; case .blackSludge: return "🛢️"; case .bigRoot: return "🌳"
+        case .airBalloon: return "🎈"; case .heavyDutyBoots: return "🥾"
+        case .safetyGoggles: return "🥽"; case .utilityUmbrella: return "☂️"
+        case .ringTarget: return "🎯"; case .floatStone: return "🪨"
+        case .lightClay: return "🧱"; case .icyRock: return "🧊"
+        case .smoothRock: return "🏜️"; case .heatRock: return "🔥"
+        case .dampRock: return "💦"; case .terrainExtender: return "🧭"
+        case .whiteHerb: return "🌿"; case .mentalHerb: return "🍀"
+        case .mirrorHerb: return "🪞"; case .clearAmulet: return "🔮"
+        case .covertCloak: return "🧥"
+        case .weaknessPolicy: return "📄"; case .absorbBulb: return "🫧"
+        case .cellBattery: return "🔋"; case .snowball: return "❄️"
+        case .luminousMoss: return "🌱"; case .blunderPolicy: return "📋"
+        case .electricSeed: return "⚡"; case .grassySeed: return "🌾"
+        case .mistySeed: return "🌫️"; case .psychicSeed: return "🔯"
+        case .rockyHelmet: return "⛑️"; case .stickyBarb: return "🌵"
+        case .protectivePads: return "🧤"; case .punchingGlove: return "🥊"
+        case .loadedDice: return "🎲"; case .bindingBand: return "🎗️"
+        case .gripClaw: return "🪝"; case .throatSpray: return "💨"
+        case .quickClaw: return "🐾"; case .focusBand: return "🎽"
+        case .eviolite: return "🪨"
         case .roomBed: return "🛏️"; case .roomTable: return "🪑"; case .roomLamp: return "💡"
         case .lovelyVanity: return "🪞"; case .lovelySofa: return "🩷"; case .lovelyHeartLamp: return "💕"
         case .retroArcade: return "🕹️"; case .retroRadio: return "📻"; case .retroTV: return "📺"
@@ -448,7 +984,33 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
         case .lifeOrb: return HeldItemBalance.lifeOrbPrice
         case .focusSash: return HeldItemBalance.focusSashPrice
         case .leftovers: return HeldItemBalance.leftoversPrice
-        case .choiceBand, .choiceSpecs: return HeldItemBalance.choicePrice
+        case .choiceBand, .choiceSpecs, .choiceScarf: return HeldItemBalance.choicePrice
+        case .flameOrb, .toxicOrb: return HeldItemBalance.orbPrice
+        case .assaultVest: return HeldItemBalance.assaultVestPrice
+        case _ where typeEnhancedType != nil: return HeldItemBalance.typeEnhancerPrice
+        case _ where berryEffect != nil: return HeldItemBalance.berryPrice
+        case _ where gemType != nil: return HeldItemBalance.gemPrice
+        // 플레이트는 타입 강화 도구와 효과가 같으니 값도 같다 — 달리 두면 같은 물건이 두 값이 된다.
+        case _ where plateType != nil: return HeldItemBalance.typeEnhancerPrice
+        case .ironBall, .laggingTail, .fullIncense: return HeldItemBalance.drawbackPrice
+        // 종 전용은 쥘 수 있는 개체가 하나뿐이라 값을 싸게 둔다 — 비싸게 두면 그 종을 안 가진
+        // 사용자에게는 값만 큰 장식이 된다.
+        case .lightBall, .thickClub, .metalPowder, .quickPowder, .luckyPunch,
+             .stick, .soulDew, .adamantOrb, .lustrousOrb, .griseousOrb:
+            return HeldItemBalance.speciesBoundPrice
+        case .muscleBand, .wiseGlasses, .expertBelt, .metronome, .scopeLens,
+             .wideLens, .zoomLens, .brightPowder, .laxIncense,
+             .shellBell, .blackSludge, .bigRoot,
+             .airBalloon, .heavyDutyBoots, .safetyGoggles, .utilityUmbrella, .ringTarget,
+             .floatStone,
+             .lightClay, .icyRock, .smoothRock, .heatRock, .dampRock, .terrainExtender,
+             .whiteHerb, .mentalHerb, .mirrorHerb, .clearAmulet, .covertCloak,
+             .weaknessPolicy, .absorbBulb, .cellBattery, .snowball, .luminousMoss,
+             .blunderPolicy, .electricSeed, .grassySeed, .mistySeed, .psychicSeed,
+             .rockyHelmet, .stickyBarb, .protectivePads, .punchingGlove,
+             .loadedDice, .bindingBand, .gripClaw, .throatSpray,
+             .quickClaw, .focusBand, .eviolite:
+            return HeldItemBalance.battleToolPrice
         case .roomBed: return 1_500
         case .roomTable: return 1_000
         case .roomLamp: return 800
@@ -561,6 +1123,38 @@ enum Mint {
 /// 아이템 종류와 따로 두는 이유는 엔진이다: 엔진은 "무엇이 붙었나" 가 아니라 "무엇을 얹나" 만
 /// 알면 되고, 같은 효과를 주는 아이템이 늘어도(본가의 조개껍질방울 부류) 엔진은 그대로다.
 enum HeldItemEffect: Sendable, Equatable, CaseIterable {
+    /// payload 를 든 갈래가 생겨 자동 합성이 끊긴다 — 손으로 짓되 **타입 강화는 표에서 만든다**
+    /// (18줄을 손으로 적으면 타입 하나가 빠져도 컴파일이 통과한다).
+    static var allCases: [HeldItemEffect] {
+        // 한 표현식으로 이어 붙이면 타입체커가 시간 안에 못 푼다(CI 빌드 실패, 2026-09-09).
+        // 조각마다 타입을 못박아 추론을 끊는다.
+        var all: [HeldItemEffect] = [.lifeOrb, .focusSash, .leftovers, .choiceBand, .choiceSpecs,
+                                     .choiceScarf, .flameOrb, .toxicOrb, .assaultVest,
+                                     .pinchCrit, .pinchHeal]
+        all += PokemonType.allCases.map(HeldItemEffect.typeBoost)
+        all += PokemonType.allCases.map(HeldItemEffect.resistBerry)
+        all += HeldItemEffect.pinchRaisedStats.map(HeldItemEffect.pinchStatBoost)
+        all += PokemonType.allCases.map(HeldItemEffect.gem)
+        let plain: [HeldItemEffect] = [
+            .ironBall, .movesLast, .lightBall, .thickClub, .metalPowder, .quickPowder,
+            .luckyPunch, .leek, .soulDew, .adamantOrb, .lustrousOrb, .griseousOrb,
+            .muscleBand, .wiseGlasses, .expertBelt, .metronome, .scopeLens,
+            .wideLens, .zoomLens, .dullsFoeAim, .shellBell, .bigRoot, .blackSludge,
+            .airBalloon, .heavyDutyBoots, .safetyGoggles, .utilityUmbrella, .ringTarget,
+            .floatStone,
+            .lightClay, .icyRock, .smoothRock, .heatRock, .dampRock, .terrainExtender,
+            .whiteHerb, .mentalHerb, .mirrorHerb, .clearAmulet, .covertCloak,
+            .weaknessPolicy, .absorbBulb, .cellBattery, .snowball, .luminousMoss,
+            .blunderPolicy, .electricSeed, .grassySeed, .mistySeed, .psychicSeed,
+            .rockyHelmet, .stickyBarb, .protectivePads, .punchingGlove,
+            .loadedDice, .bindingBand, .gripClaw, .throatSpray,
+            .quickClaw, .focusBand,
+            .pinchBestBoost, .pinchSureHit, .pinchHurry,
+        ]
+        all += plain
+        return all
+    }
+
     /// 데미지가 1.3배가 되고 그 대가로 매 턴 최대 HP 의 1/10 을 잃는다.
     case lifeOrb
     /// 만피에서 치명적인 한 방을 HP 1 로 버틴다. 배틀 안에서 1회만이다.
@@ -569,6 +1163,77 @@ enum HeldItemEffect: Sendable, Equatable, CaseIterable {
     case leftovers
     /// 한 가지 데미지 계통을 1.5 배로 만들고, 그 대가로 처음 낸 기술 하나에 묶인다.
     case choiceBand, choiceSpecs
+    /// 스피드를 1.5 배로 만들고, 같은 대가로 처음 낸 기술 하나에 묶인다.
+    case choiceScarf
+    /// 턴 끝에 주인을 화상 / 맹독으로 만든다. 걸리고 나면 더 할 일이 없다(상태가 일을 이어받는다).
+    case flameOrb, toxicOrb
+    /// 특수 기술에 대한 방어를 1.5 배로 만들고, 그 대가로 변화기를 못 쓴다.
+    case assaultVest
+    /// 한 타입의 기술 위력을 1.2 배로 만든다 — 대가가 없는 대신 폭이 타입 하나로 좁다.
+    /// 타입을 payload 로 든 유일한 갈래라, `allCases` 를 손으로 짓는다(아래).
+    case typeBoost(PokemonType)
+    /// 한 타입의 기술에 받는 데미지를 절반으로 깎고 **사라진다** — 약점 반감 열매다. 타입 강화
+    /// 도구와 payload 는 같지만 방향이 반대라(때리는 쪽 / 맞는 쪽) 다른 갈래다.
+    case resistBerry(PokemonType)
+    /// HP 가 최대의 1/4 이하일 때 랭크를 하나 올리고 사라진다 — 위급 열매 5종.
+    /// payload 가 `BattleStat` 이지만 **올릴 수 있는 스탯은 다섯뿐이다**(`pinchRaisedStats`) —
+    /// 명중률·회피율은 그 자리에 열매가 없어서, `allCases` 에 넣으면 아이템 없는 죽은 갈래가 된다.
+    case pinchStatBoost(BattleStat)
+    /// 같은 위급 조건에서 급소 단계를 올린다(랑사열매) — 랭크가 아니라 급소라 갈래가 따로다.
+    case pinchCrit
+    /// 같은 위급 조건에서 최대 HP 의 1/3 을 회복한다 — 성격 회복 열매 5종.
+    case pinchHeal
+    /// 한 타입의 기술 **하나**를 1.3 배로 만들고 사라진다 — 주얼 18종. 타입 강화 도구
+    /// (`typeBoost`)와 payload 는 같지만 축이 다르다: 저기는 상시, 여기는 1회용이다.
+    case gem(PokemonType)
+    /// 스피드가 절반이 되고 지닌 개체가 **땅에 닿는다** — 검은철구.
+    case ironBall
+    /// 같은 우선도 안에서 뒤로 밀린다 — 느림보꼬리·만복향로.
+    case movesLast
+    /// 특정 종에게만 일하는 열 갈래. 종 조건은 `restrictedSpecies` 한 곳에 있고, 배율·급소는
+    /// 다른 물건과 **같은 축**으로 답한다(`statScale`·`bonusCritStages`·`boostedMoveTypes`) —
+    /// 그래야 엔진이 "종 전용" 이라는 개념을 몰라도 된다.
+    case lightBall, thickClub, metalPowder, quickPowder
+    case luckyPunch, leek, soulDew
+    case adamantOrb, lustrousOrb, griseousOrb
+    /// 일반 배틀 도구 — **조건이 물건 밖에 있는** 첫 부류다. 힘의머리띠·박식안경은 기술 분류를,
+    /// 달인의띠는 상성을, 메트로놈은 같은 기술을 이어 쓴 횟수를 본다(`outgoingDamageScale`).
+    case muscleBand, wiseGlasses, expertBelt, metronome
+    /// 급소 단계를 올린다 — 럭키펀치·대파와 **같은 축**이고 크기만 다르다(+1).
+    case scopeLens
+    /// 명중을 올린다. 포커스렌즈는 상대가 이번 턴 이미 움직였을 때만 올린다(`accuracyScale`).
+    case wideLens, zoomLens
+    /// 상대의 명중을 깎는다 — 반짝가루·무사태평향로가 같은 효과라 갈래가 하나다.
+    /// 회피 랭크가 아니라 명중 배율인 이유는 본가와 같다: 랭크로 두면 랭크를 되돌리는 기술이
+    /// 물건까지 지운다.
+    case dullsFoeAim
+    /// 넣은 데미지의 일부를 회복한다(조개껍질방울) / 드레인 회복을 키운다(큰뿌리).
+    case shellBell, bigRoot
+    /// 턴 끝에 독 타입이면 회복, 아니면 데미지 — 한 물건이 두 답을 낸다(`endOfTurnHPChange`).
+    case blackSludge
+    /// 규칙 한 줄을 **건너뛰는** 여섯 갈래. 앞의 물건들이 배율을 얹는 것과 반대로, 이쪽은 이미
+    /// 있는 규칙(땅 접지·입장 데미지·날씨·타입 면역·체중)이 지닌 개체에게만 안 걸리게 한다.
+    case airBalloon, heavyDutyBoots, safetyGoggles, utilityUmbrella, ringTarget, floatStone
+    /// 판에 거는 것을 오래 가게 하는 여섯 갈래 — 묻는 자리가 지닌 개체가 아니라 **거는 순간**이다.
+    case lightClay, icyRock, smoothRock, heatRock, dampRock, terrainExtender
+    /// 다른 기전이 이미 한 일에 답하는 다섯 갈래 — 랭크·선택 잠금·부가효과다.
+    case whiteHerb, mentalHerb, mirrorHerb, clearAmulet, covertCloak
+    /// 방아쇠 하나에 랭크를 올리고 사라지는 열 갈래 — 맞은 히트·빗나간 내 기술·발밑의 필드다.
+    case weaknessPolicy, absorbBulb, cellBattery, snowball, luminousMoss, blunderPolicy
+    case electricSeed, grassySeed, mistySeed, psychicSeed
+    /// 기술의 성질에 답하는 여덟 갈래 — 접촉·펀치·소리·다단·조이기다.
+    case rockyHelmet, stickyBarb, protectivePads, punchingGlove
+    case loadedDice, bindingBand, gripClaw, throatSpray
+    /// 확률로 일하는 둘 — 손톱은 순서를, 머리띠는 치명적인 히트를 본다.
+    case quickClaw, focusBand
+    /// 위급일 때 **그 다음 행동**에 답하는 셋. 랭크·회복 갈래(`pinchAction`)와 자리를 나눈 이유는
+    /// 묻는 시점이다: 스타열매만 턴 끝이고, 애슈·미클은 턴이 시작될 때(순서를 재기 전) 답한다.
+    case pinchBestBoost, pinchSureHit, pinchHurry
+    /// 아직 진화할 수 있는 개체에게만 붙는 갈래 — 진화의휘석이다.
+    case eviolite
+
+    /// 위급 열매가 올릴 수 있는 스탯 — 본가에 열매가 있는 다섯뿐이다.
+    static let pinchRaisedStats: [BattleStat] = [.atk, .def, .spa, .spd, .spe]
 
     /// 이 물건이 1.5 배로 만드는 데미지 계통 — 묶는 대가와 짝이다. `nil` 이면 배율이 없다.
     ///
@@ -578,13 +1243,547 @@ enum HeldItemEffect: Sendable, Equatable, CaseIterable {
         switch self {
         case .choiceBand:  return .physical
         case .choiceSpecs: return .special
-        case .lifeOrb, .focusSash, .leftovers: return nil
+        case .lifeOrb, .focusSash, .leftovers, .choiceScarf,
+             .flameOrb, .toxicOrb, .assaultVest, .typeBoost,
+             .resistBerry, .pinchStatBoost, .pinchCrit, .pinchHeal,
+             .gem, .ironBall, .movesLast,
+             .lightBall, .thickClub, .metalPowder, .quickPowder, .luckyPunch, .leek,
+             .soulDew, .adamantOrb, .lustrousOrb, .griseousOrb,
+             .muscleBand, .wiseGlasses, .expertBelt, .metronome, .scopeLens,
+             .wideLens, .zoomLens, .dullsFoeAim, .shellBell, .bigRoot, .blackSludge,
+             .airBalloon, .heavyDutyBoots, .safetyGoggles, .utilityUmbrella, .ringTarget,
+             .floatStone,
+             .lightClay, .icyRock, .smoothRock, .heatRock, .dampRock, .terrainExtender,
+             .whiteHerb, .mentalHerb, .mirrorHerb, .clearAmulet, .covertCloak,
+             .weaknessPolicy, .absorbBulb, .cellBattery, .snowball, .luminousMoss,
+             .blunderPolicy, .electricSeed, .grassySeed, .mistySeed, .psychicSeed,
+             .rockyHelmet, .stickyBarb, .protectivePads, .punchingGlove,
+             .loadedDice, .bindingBand, .gripClaw, .throatSpray,
+             .quickClaw, .focusBand, .pinchBestBoost, .pinchSureHit, .pinchHurry,
+             .eviolite: return nil
         }
     }
 
-    /// 이 물건이 기술 하나로 **묶는가** — 구애 2종이다. 배율 축과 나눈 이유는 둘이 같이 갈 이유가
-    /// 없어서다(배율 없이 묶는 물건도, 묶지 않고 올리는 물건도 본가에 있다).
-    var locksIntoOneMove: Bool { boostedDamageClass != nil }
+    /// 이 물건이 **막아 주는** 데미지 계통 — 그 계통의 방어 스탯이 1.5 배가 된다. 올리는 축
+    /// (`boostedDamageClass`)과 나눈 이유는 방향이 반대라서다: 저기는 때리는 쪽, 여기는 맞는 쪽이다.
+    var guardedDamageClass: MoveDamageClass? {
+        switch self {
+        case .assaultVest: return .special
+        case .lifeOrb, .focusSash, .leftovers, .choiceBand, .choiceSpecs, .choiceScarf,
+             .flameOrb, .toxicOrb, .typeBoost,
+             .resistBerry, .pinchStatBoost, .pinchCrit, .pinchHeal,
+             .gem, .ironBall, .movesLast,
+             .lightBall, .thickClub, .metalPowder, .quickPowder, .luckyPunch, .leek,
+             .soulDew, .adamantOrb, .lustrousOrb, .griseousOrb,
+             .muscleBand, .wiseGlasses, .expertBelt, .metronome, .scopeLens,
+             .wideLens, .zoomLens, .dullsFoeAim, .shellBell, .bigRoot, .blackSludge,
+             .airBalloon, .heavyDutyBoots, .safetyGoggles, .utilityUmbrella, .ringTarget,
+             .floatStone,
+             .lightClay, .icyRock, .smoothRock, .heatRock, .dampRock, .terrainExtender,
+             .whiteHerb, .mentalHerb, .mirrorHerb, .clearAmulet, .covertCloak,
+             .weaknessPolicy, .absorbBulb, .cellBattery, .snowball, .luminousMoss,
+             .blunderPolicy, .electricSeed, .grassySeed, .mistySeed, .psychicSeed,
+             .rockyHelmet, .stickyBarb, .protectivePads, .punchingGlove,
+             .loadedDice, .bindingBand, .gripClaw, .throatSpray,
+             .quickClaw, .focusBand, .pinchBestBoost, .pinchSureHit, .pinchHurry,
+             .eviolite: return nil
+        }
+    }
+
+    /// 이 물건이 턴 끝에 **주인에게** 거는 상태 — 구슬 2종이다. 상대에게 거는 것이 아니므로
+    /// 기술의 2차효과 자리가 아니라 턴 끝 잔뎀 자리(`BattleEngine.endOfTurnResidual`)에서 돈다.
+    ///
+    /// **난수를 쓰는 상태(잠듦·혼란)를 여기 두면 안 된다** — 그 자리에는 rng 가 없어서 두 피어가
+    /// 갈린다. `HeldItemVarietyTests` 가 그 규칙을 잠근다.
+    var selfInflictedStatus: Status? {
+        switch self {
+        case .flameOrb: return .burn
+        case .toxicOrb: return .toxic
+        case .lifeOrb, .focusSash, .leftovers, .choiceBand, .choiceSpecs, .choiceScarf,
+             .assaultVest, .typeBoost,
+             .resistBerry, .pinchStatBoost, .pinchCrit, .pinchHeal,
+             .gem, .ironBall, .movesLast,
+             .lightBall, .thickClub, .metalPowder, .quickPowder, .luckyPunch, .leek,
+             .soulDew, .adamantOrb, .lustrousOrb, .griseousOrb,
+             .muscleBand, .wiseGlasses, .expertBelt, .metronome, .scopeLens,
+             .wideLens, .zoomLens, .dullsFoeAim, .shellBell, .bigRoot, .blackSludge,
+             .airBalloon, .heavyDutyBoots, .safetyGoggles, .utilityUmbrella, .ringTarget,
+             .floatStone,
+             .lightClay, .icyRock, .smoothRock, .heatRock, .dampRock, .terrainExtender,
+             .whiteHerb, .mentalHerb, .mirrorHerb, .clearAmulet, .covertCloak,
+             .weaknessPolicy, .absorbBulb, .cellBattery, .snowball, .luminousMoss,
+             .blunderPolicy, .electricSeed, .grassySeed, .mistySeed, .psychicSeed,
+             .rockyHelmet, .stickyBarb, .protectivePads, .punchingGlove,
+             .loadedDice, .bindingBand, .gripClaw, .throatSpray,
+             .quickClaw, .focusBand, .pinchBestBoost, .pinchSureHit, .pinchHurry,
+             .eviolite: return nil
+        }
+    }
+
+    /// 이 물건이 위력을 올려 주는 기술 타입 — 타입 강화 도구·플레이트는 하나, 보옥 셋은 둘이다.
+    /// 데미지 계통 축(`boostedDamageClass`)과 나눈 이유는 재는 것이 달라서다: 저기는 물리·특수,
+    /// 여기는 타입이다.
+    ///
+    /// **집합인 이유는 보옥이다.** 하나만 답하는 축으로 두면 디아루가의 강철 기술처럼 둘째 타입이
+    /// 조용히 안 오른다(값이 nil 이 아니라 "다른 타입" 이라 오류도 안 난다).
+    var boostedMoveTypes: Set<PokemonType> {
+        switch self {
+        case .typeBoost(let type): return [type]
+        case .adamantOrb:  return [.dragon, .steel]
+        case .lustrousOrb: return [.dragon, .water]
+        case .griseousOrb: return [.dragon, .ghost]
+        default: return []
+        }
+    }
+
+    /// 스피드를 1.5 배로 만드는가 — 구애스카프뿐이다. 데미지 배율 축과 나눈 이유는 곱하는 자리가
+    /// 달라서다(저기는 데미지 계산, 여기는 `BattleSide.effectiveSpeed`).
+    var boostsSpeed: Bool { self == .choiceScarf }
+
+    /// 이 물건이 변화기를 **막는가** — 돌격조끼뿐이다. 방어 배율(`guardedDamageClass`)과 나눈
+    /// 이유는 둘이 같이 갈 이유가 없어서다(막기만 하는 물건도, 올리기만 하는 물건도 있을 수 있다).
+    var blocksStatusMoves: Bool { self == .assaultVest }
+
+    /// 이 물건이 기술 하나로 **묶는가** — 구애 3종이다. 배율 축에서 파생하지 않고 직접 답한다:
+    /// 구애스카프는 데미지 배율이 없는데도 묶으므로, `boostedDamageClass != nil` 로 두면 스카프만
+    /// 대가 없이 스피드를 얻는다(실제로 그렇게 시작했다). `default:` 를 두지 않아 새 물건은
+    /// 묶는지 여부를 반드시 밝혀야 한다.
+    var locksIntoOneMove: Bool {
+        switch self {
+        case .choiceBand, .choiceSpecs, .choiceScarf: return true
+        case .lifeOrb, .focusSash, .leftovers, .flameOrb, .toxicOrb, .assaultVest,
+             .typeBoost, .resistBerry, .pinchStatBoost, .pinchCrit, .pinchHeal,
+             .gem, .ironBall, .movesLast,
+             .lightBall, .thickClub, .metalPowder, .quickPowder, .luckyPunch, .leek,
+             .soulDew, .adamantOrb, .lustrousOrb, .griseousOrb,
+             .muscleBand, .wiseGlasses, .expertBelt, .metronome, .scopeLens,
+             .wideLens, .zoomLens, .dullsFoeAim, .shellBell, .bigRoot, .blackSludge,
+             .airBalloon, .heavyDutyBoots, .safetyGoggles, .utilityUmbrella, .ringTarget,
+             .floatStone,
+             .lightClay, .icyRock, .smoothRock, .heatRock, .dampRock, .terrainExtender,
+             .whiteHerb, .mentalHerb, .mirrorHerb, .clearAmulet, .covertCloak,
+             .weaknessPolicy, .absorbBulb, .cellBattery, .snowball, .luminousMoss,
+             .blunderPolicy, .electricSeed, .grassySeed, .mistySeed, .psychicSeed,
+             .rockyHelmet, .stickyBarb, .protectivePads, .punchingGlove,
+             .loadedDice, .bindingBand, .gripClaw, .throatSpray,
+             .quickClaw, .focusBand, .pinchBestBoost, .pinchSureHit, .pinchHurry,
+             .eviolite: return false
+        }
+    }
+
+    /// 이 물건이 **들어오는 히트**를 반감하는가 — 약점 반감 열매다. 상성 배율을 인자로 받는
+    /// 이유는 조건이 물건이 아니라 그 히트에 있어서다: 같은 열매가 약점 히트에서만 일한다.
+    ///
+    /// **노말 열매(카리열매)만 배율을 안 본다.** 노말은 어느 타입에게도 효과가 굉장하지 않아
+    /// 같은 규칙을 주면 영영 안 터지는 죽은 물건이 된다(본가도 이 하나만 예외다).
+    func halvesIncomingHit(moveType: PokemonType, effectiveness: Double) -> Bool {
+        guard case .resistBerry(let type) = self, type == moveType else { return false }
+        return type == .normal || effectiveness > 1
+    }
+
+    /// HP 가 최대의 1/4 이하로 내려갔을 때 하는 일 — 위급 열매가 아니면 nil.
+    ///
+    /// 세 갈래를 한 축으로 묶는 이유는 엔진이다: 엔진은 "위급일 때 무엇을 하나" 만 물으면 되고,
+    /// 갈래별로 따로 물으면 새 위급 열매가 늘 때 묻는 자리를 하나 빠뜨린다.
+    var pinchAction: PinchAction? {
+        switch self {
+        case .pinchStatBoost(let stat): return .raise(stat)
+        case .pinchCrit:                return .sharpenCrit
+        case .pinchHeal:                return .heal
+        case .pinchBestBoost:           return .raiseBest
+        case .lifeOrb, .focusSash, .leftovers, .choiceBand, .choiceSpecs, .choiceScarf,
+             .flameOrb, .toxicOrb, .assaultVest, .typeBoost, .resistBerry,
+             .gem, .ironBall, .movesLast,
+             .lightBall, .thickClub, .metalPowder, .quickPowder, .luckyPunch, .leek,
+             .soulDew, .adamantOrb, .lustrousOrb, .griseousOrb,
+             .muscleBand, .wiseGlasses, .expertBelt, .metronome, .scopeLens,
+             .wideLens, .zoomLens, .dullsFoeAim, .shellBell, .bigRoot, .blackSludge,
+             .airBalloon, .heavyDutyBoots, .safetyGoggles, .utilityUmbrella, .ringTarget,
+             .floatStone,
+             .lightClay, .icyRock, .smoothRock, .heatRock, .dampRock, .terrainExtender,
+             .whiteHerb, .mentalHerb, .mirrorHerb, .clearAmulet, .covertCloak,
+             .weaknessPolicy, .absorbBulb, .cellBattery, .snowball, .luminousMoss,
+             .blunderPolicy, .electricSeed, .grassySeed, .mistySeed, .psychicSeed,
+             .rockyHelmet, .stickyBarb, .protectivePads, .punchingGlove,
+             .loadedDice, .bindingBand, .gripClaw, .throatSpray,
+             .quickClaw, .focusBand, .pinchSureHit, .pinchHurry, .eviolite: return nil
+        }
+    }
+
+    /// **아직 진화할 수 있는 개체에게만** 일하는가 — 진화의휘석이다.
+    ///
+    /// 종 조건(`restrictedSpecies`)과 자리를 나눈 이유는 답이 어디 있느냐다: 종 조건은 번호만 보면
+    /// 되지만 이 조건은 진화 라인에 있어서 스냅샷이 실어 와야 한다. 묻는 자리는 종 조건과 같은
+    /// `BattleSide.heldEffect` 하나다.
+    var requiresUnevolvedHolder: Bool { self == .eviolite }
+
+    /// 이 물건이 **어떤 종에게만** 일하는가 — nil 이면 누구나 쓸 수 있다.
+    ///
+    /// 이 조건을 묻는 자리는 `BattleSide.heldEffect` 하나다. 배율을 곱하는 자리마다 물으면 한
+    /// 자리만 빠뜨렸을 때 그 배율만 아무에게나 붙고, 화면에는 아무 오류도 안 보인다.
+    var restrictedSpecies: Set<Int>? {
+        switch self {
+        case .lightBall:  return [25]                 // 피카츄
+        case .thickClub:  return [104, 105]           // 탕구리·텅구리
+        case .metalPowder, .quickPowder: return [132] // 메타몽
+        case .luckyPunch: return [113]                // 럭키
+        case .leek:       return [83, 865]            // 파오리·창파나이트
+        case .soulDew:    return [380, 381]           // 라티아스·라티오스
+        case .adamantOrb: return [483]                // 디아루가
+        case .lustrousOrb: return [484]               // 펄기아
+        case .griseousOrb: return [487]               // 기라티나
+        default: return nil
+        }
+    }
+
+    /// 이 물건이 그 능력치에 곱하는 분수 — 없으면 nil. 랭크·특성·화상 **뒤**에 곱한다(본가 순서).
+    ///
+    /// 스탯 하나를 payload 로 들지 않고 물음으로 두는 이유는 두 스탯을 함께 올리는 물건이 있어서다
+    /// (전기구슬은 공격·특공, 마음의물방울은 특공·특방).
+    func statScale(_ stat: BattleStat) -> (numerator: Int, denominator: Int)? {
+        switch (self, stat) {
+        case (.lightBall, .atk), (.lightBall, .spa),
+             (.thickClub, .atk),
+             (.metalPowder, .def),
+             (.quickPowder, .spe):
+            return (2, 1)
+        case (.soulDew, .spa), (.soulDew, .spd),
+             (.eviolite, .def), (.eviolite, .spd):
+            return (3, 2)
+        default:
+            return nil
+        }
+    }
+
+    /// 이 물건이 더해 주는 급소 단계 — 럭키펀치·대파의 +2 다. 기합충전과 같은 표를 타므로 상한도
+    /// 같다(단계가 겹쳐도 표가 3 에서 막힌다).
+    var bonusCritStages: Int {
+        switch self {
+        case .luckyPunch, .leek: return 2
+        // 초점렌즈는 누구나 쥘 수 있어 종 전용 둘(+2)보다 작다 — 같은 크기면 종 전용을 쥘 이유가 없다.
+        case .scopeLens: return 1
+        default: return 0
+        }
+    }
+
+    /// 이 히트의 데미지에 곱할 분수 — 없으면 nil. 힘의머리띠·박식안경·달인의띠·메트로놈이
+    /// **한 물음**에 답한다.
+    ///
+    /// 물건마다 축을 따로 두지 않는 이유는 곱하는 자리가 하나라서다: 네 물건이 재는 것(기술 분류·
+    /// 상성·연속 사용 횟수)은 다르지만 결과는 전부 "이 데미지에 얼마를 곱하나" 다. 축을 넷으로
+    /// 나누면 엔진이 네 번 묻게 되고, 다섯째 도구가 늘 때 한 자리를 빠뜨린다.
+    ///
+    /// 상성표를 안 보는 기술(발버둥·변화기)은 `effectiveness` 가 1 로 들어오므로 달인의띠가
+    /// 저절로 빠진다 — 부르는 쪽이 게이트를 따로 두지 않아도 되는 이유다.
+    func outgoingDamageScale(damageClass: MoveDamageClass, effectiveness: Double,
+                             consecutiveUses: Int,
+                             isPunch: Bool) -> (numerator: Int, denominator: Int)? {
+        switch self {
+        case .punchingGlove where isPunch,
+             .muscleBand where damageClass == .physical,
+             .wiseGlasses where damageClass == .special:
+            return (HeldItemBalance.damageToolNumerator, HeldItemBalance.damageToolDenominator)
+        case .expertBelt where effectiveness > 1:
+            return (HeldItemBalance.expertBeltNumerator, HeldItemBalance.expertBeltDenominator)
+        case .metronome:
+            // 첫 사용이 기본 위력이다 — `consecutiveMoveUses` 는 이 기술을 쓰는 턴에 이미 올라
+            // 있다(리프블레이드의 `doublingStreakPower` 와 같은 셈).
+            let steps = min(HeldItemBalance.metronomeMaxSteps, max(0, consecutiveUses - 1))
+            guard steps > 0 else { return nil }
+            return (HeldItemBalance.damageToolDenominator
+                        + HeldItemBalance.metronomeStepNumerator * steps,
+                    HeldItemBalance.damageToolDenominator)
+        default:
+            return nil
+        }
+    }
+
+    /// 이 물건이 **주인의** 명중에 곱하는 분수 — 없으면 nil. 포커스렌즈만 조건을 인자로 받는다
+    /// (상대가 이번 턴 이미 움직였을 때만 일한다).
+    func accuracyScale(targetAlreadyMoved: Bool) -> (numerator: Int, denominator: Int)? {
+        switch self {
+        case .wideLens:
+            return (HeldItemBalance.wideLensNumerator, HeldItemBalance.accuracyDenominator)
+        case .zoomLens where targetAlreadyMoved:
+            return (HeldItemBalance.zoomLensNumerator, HeldItemBalance.accuracyDenominator)
+        default:
+            return nil
+        }
+    }
+
+    /// 이 물건이 **상대의** 명중에 곱하는 분수 — 반짝가루·무사태평향로다. 올리는 축
+    /// (`accuracyScale`)과 나눈 이유는 방향이 반대라서다(때리는 쪽 / 맞는 쪽).
+    var foeAccuracyScale: (numerator: Int, denominator: Int)? {
+        self == .dullsFoeAim
+            ? (HeldItemBalance.dullFoeAimNumerator, HeldItemBalance.accuracyDenominator) : nil
+    }
+
+    /// 넣은 데미지를 나눠 회복하는 몫 — 조개껍질방울이다. 드레인 기술이 아니어도 회복한다.
+    var damageDealtHealDivisor: Int? { self == .shellBell ? HeldItemBalance.shellBellDivisor : nil }
+
+    /// 드레인 기술의 **회복만** 키우는 분수 — 큰뿌리다. 데미지는 그대로다.
+    var drainHealScale: (numerator: Int, denominator: Int)? {
+        self == .bigRoot ? (HeldItemBalance.bigRootNumerator, HeldItemBalance.bigRootDenominator)
+                         : nil
+    }
+
+    /// 턴 끝에 HP 를 얼마나 움직이나 — 먹다남은음식과 검은오물이 **같은 물음**에 답한다.
+    ///
+    /// 회복과 데미지를 한 축으로 묶는 이유는 검은오물이다: 같은 물건이 지닌 개체의 타입에 따라
+    /// 회복이 되기도 데미지가 되기도 한다. 축을 둘로 나누면 그 물건이 두 축에 반씩 걸려, 한쪽만
+    /// 보는 자리에서 조용히 아무 일도 안 한다.
+    func endOfTurnHPChange(holderTypes: [PokemonType]) -> ResidualHPChange? {
+        switch self {
+        case .leftovers: return .heal(divisor: HeldItemBalance.leftoversDivisor)
+        // 끈적끈적바늘은 쥔 쪽을 깎는다 — 접촉으로 옮겨 가기 전까지 매 턴이다.
+        case .stickyBarb: return .hurt(divisor: HeldItemBalance.stickyBarbDivisor)
+        case .blackSludge:
+            return holderTypes.contains(.poison)
+                ? .heal(divisor: HeldItemBalance.leftoversDivisor)
+                : .hurt(divisor: HeldItemBalance.blackSludgeHurtDivisor)
+        default: return nil
+        }
+    }
+
+    /// 턴 끝에 물건이 움직이는 HP — 방향이 값의 부호가 아니라 갈래다(부호로 두면 회복 자리가
+    /// 음수를 그대로 더해 로그가 "회복 -6" 을 낸다).
+    enum ResidualHPChange: Equatable, Sendable {
+        case heal(divisor: Int)
+        case hurt(divisor: Int)
+    }
+
+    /// 이 물건이 **한 번만** 올려 주는 기술 타입 — 주얼이다. 상시 강화(`boostedMoveTypes`)와
+    /// 나눈 이유는 소모다: 한 축으로 접으면 상시 도구가 첫 기술에 사라지거나 주얼이 영원히 남는다.
+    var oneShotBoostedMoveType: PokemonType? {
+        if case .gem(let type) = self { return type }
+        return nil
+    }
+
+    /// 스피드를 절반으로 만드는가 — 검은철구뿐이다. 올리는 축(`boostsSpeed`)과 나눈 이유는
+    /// 방향이 반대라서다(한 축에 부호를 실으면 배율을 곱하는 자리가 둘 중 하나를 잊는다).
+    var halvesSpeed: Bool { self == .ironBall }
+
+    /// 이 물건이 지닌 개체의 **발**을 어느 쪽으로 옮기는가 — nil 이면 타입·특성이 정하는 대로다.
+    ///
+    /// 내려놓는 검은철구와 띄우는 풍선을 한 축에 두는 이유는 묻는 자리가 같아서다: 땅 기술 면역
+    /// (`BattleEngine.typeMultiplier`)·발밑 함정(`applyEntryHazards`)·필드 효과가 전부
+    /// `BattleField.isGrounded` 하나를 본다. 축을 둘로 나누면 한 자리만 한쪽 물건을 빠뜨려
+    /// "지진은 맞는데 그래스필드는 안 받는" 반쪽 접지가 생긴다.
+    var groundContact: GroundContact? {
+        switch self {
+        case .ironBall:   return .grounded
+        case .airBalloon: return .airborne
+        default:          return nil
+        }
+    }
+
+    /// 발이 어디 있나 — 물건이 정하는 두 답. 참·거짓 하나로 두지 않는 이유는 "물건이 아무 말도
+    /// 안 한다"(nil)와 "땅에 닿는다"(false)가 다른 뜻이라서다.
+    enum GroundContact: Equatable, Sendable {
+        case grounded, airborne
+    }
+
+    /// 입장할 때 발밑에 깔린 것을 **통째로** 건너뛰는가 — 통굽부츠다. 뜬 개체가 압정을 피하는 것
+    /// (`groundContact`)과 나눈 이유는 범위다: 부츠는 스텔스록까지 피하고, 뜬 개체는 못 피한다.
+    var ignoresEntryHazards: Bool { self == .heavyDutyBoots }
+
+    /// 턴 끝의 날씨 데미지를 막는가 — 방진고글이다.
+    var blocksWeatherResidual: Bool { self == .safetyGoggles }
+
+    /// 볕·비의 **위력 보정**을 안 받는가 — 만능우산이다. 날씨 잔뎀 축(`blocksWeatherResidual`)과
+    /// 나눈 이유는 두 물건이 서로의 일을 안 하기 때문이다: 우산은 모래에 깎이고, 고글은 볕 아래서
+    /// 불꽃 기술이 그대로 세진다. 한 축으로 접으면 둘 중 하나가 본가에 없는 면역을 얻는다.
+    var ignoresWeatherPowerScale: Bool { self == .utilityUmbrella }
+
+    /// 지닌 개체의 **타입 면역**이 사라지는가 — 겨냥표적이다. 특성 면역(부유·타오르는불꽃)은
+    /// 그대로다: 본가와 같고, 상성표를 보는 자리와 특성을 보는 자리가 이미 갈려 있어 저절로 그렇다.
+    var ignoresTypeImmunity: Bool { self == .ringTarget }
+
+    /// 체중에 곱하는 분수 — 가벼운돌이다. 읽는 자리는 `BattleSide.effectiveWeightHectograms`
+    /// 하나다(체중을 보는 기술이 넷이라, 기술마다 물으면 한 기술만 돌을 못 본다).
+    var weightScale: (numerator: Int, denominator: Int)? {
+        self == .floatStone ? (HeldItemBalance.floatStoneNumerator,
+                               HeldItemBalance.floatStoneDenominator) : nil
+    }
+
+    /// 이 물건이 판에 거는 것을 **몇 턴** 가게 하나 — 안 늘리면 nil(그 상태의 기본 턴).
+    ///
+    /// 날씨·필드·진영 상태를 한 물음으로 묶는 이유는 세 자리가 같은 것을 묻기 때문이다: "지금 이
+    /// 개체가 거는 이것이 몇 턴 가나". 축을 셋으로 나누면 새 물건이 늘 때 세 자리 중 하나를
+    /// 빠뜨리고, 그 자리는 조용히 기본 턴으로 돈다(늘어나지 않은 것이 결함으로 안 보인다).
+    func extendedTurns(of subject: FieldDuration) -> Int? {
+        switch (self, subject) {
+        // 빛의점토는 **장막만** 늘린다. 목록을 적지 않고 "데미지를 반으로 깎는가" 를 묻는 이유는
+        // 그것이 장막의 정의라서다 — 새 장막이 늘어도 이 자리는 그대로 맞는다. 순풍·부적은
+        // 깎지 않으므로 저절로 빠진다(순풍이 한 턴 더 불면 그 턴의 선공이 통째로 뒤집힌다).
+        case (.lightClay, .sideCondition(let condition))
+                where condition.halves(.physical) || condition.halves(.special):
+            return HeldItemBalance.extendedFieldTurns
+        case (.icyRock, .weather(.snow)), (.smoothRock, .weather(.sandstorm)),
+             (.heatRock, .weather(.sun)), (.dampRock, .weather(.rain)),
+             (.terrainExtender, .terrain):
+            return HeldItemBalance.extendedFieldTurns
+        default:
+            return nil
+        }
+    }
+
+    /// 판에 걸리는 것 세 부류 — `extendedTurns(of:)` 가 무엇의 턴인지 밝히는 인자다.
+    enum FieldDuration: Equatable, Sendable {
+        case weather(BattleWeather)
+        case terrain(BattleTerrain)
+        case sideCondition(BattleSideCondition)
+    }
+
+    /// 내려간 랭크를 **0 으로 되돌리는가** — 하양허브다. 막는 클리어참과 나눈 이유는 시점이다:
+    /// 저기는 내려가기 전, 여기는 내려간 뒤라서 한 축으로 접으면 둘 중 하나가 반대편 일을 한다.
+    var restoresLoweredStages: Bool { self == .whiteHerb }
+
+    /// 기술 선택을 막는 상태를 **푸는가** — 멘탈허브다.
+    var clearsSelectionLocks: Bool { self == .mentalHerb }
+
+    /// 상대가 올린 랭크를 **따라 올리는가** — 흉내허브다.
+    var copiesFoeStatBoosts: Bool { self == .mirrorHerb }
+
+    /// 남이 내리는 랭크를 막는가 — 클리어참이다. 하얀안개(`BattleField.blocksStatDrop`)와 **같은
+    /// 물음**이라 묻는 자리도 같다: 자기 하락(인파이트)은 막지 않는다.
+    var blocksStatDrop: Bool { self == .clearAmulet }
+
+    /// 공격기에 딸린 **부가효과**(상태·풀죽음·랭크 하락)를 막는가 — 은밀망토다. 변화기가 본래 하는
+    /// 일은 못 막는다: 부가효과는 데미지에 얹힌 덤이고, 울부짖기의 하락은 그 기술 자체다.
+    var blocksAddedEffects: Bool { self == .covertCloak }
+
+    /// 맞은 히트에 답해 올리는 랭크 — 안 답하면 nil. 조건이 물건 밖(히트의 타입·상성)에 있어
+    /// 값이 아니라 물음이다.
+    ///
+    /// **데미지가 실제로 들어간 히트만** 이 물음에 온다(부르는 쪽이 그렇게 부른다) — 흘린 기술에
+    /// 답하면 땅 타입이 전기를 무효로 만든 턴에 충전지가 터진다.
+    func stageGainOnHit(moveType: PokemonType, effectiveness: Double) -> [StatChange]? {
+        switch self {
+        case .weaknessPolicy where effectiveness > 1:
+            return [StatChange(stat: .atk, change: HeldItemBalance.policyStages),
+                    StatChange(stat: .spa, change: HeldItemBalance.policyStages)]
+        case .absorbBulb where moveType == .water:
+            return [StatChange(stat: .spa, change: HeldItemBalance.reactorStages)]
+        case .cellBattery where moveType == .electric:
+            return [StatChange(stat: .atk, change: HeldItemBalance.reactorStages)]
+        case .snowball where moveType == .ice:
+            return [StatChange(stat: .atk, change: HeldItemBalance.reactorStages)]
+        case .luminousMoss where moveType == .water:
+            return [StatChange(stat: .spd, change: HeldItemBalance.reactorStages)]
+        default:
+            return nil
+        }
+    }
+
+    /// **자기 기술이 빗나갔을 때** 올리는 랭크 — 허탕보험이다. 맞은 히트 축과 나눈 이유는 주인이
+    /// 반대라서다(저기는 맞는 쪽, 여기는 때리는 쪽).
+    var stageGainOnOwnMiss: [StatChange]? {
+        self == .blunderPolicy
+            ? [StatChange(stat: .spe, change: HeldItemBalance.policyStages)] : nil
+    }
+
+    /// 발밑의 필드에 답해 올리는 랭크 — 씨앗 넷이다. 맞은 히트 축과 나눈 이유는 방아쇠가 히트가
+    /// 아니라서다: 아무도 때리지 않아도 터진다.
+    ///
+    /// **터지는 시점이 본가와 다르다.** 본가는 필드가 깔리거나 개체가 나오는 순간이지만, 이 엔진에는
+    /// 출전 훅이 네 모드에 흩어져 있어 부를 자리가 없다 — 그래서 두 피어가 반드시 함께 지나는
+    /// 턴 끝(`BattleEngine.endOfTurnWeather`)에서 본다. 한 턴 늦게 오를 뿐 결과는 같다.
+    func stageGainOnTerrain(_ terrain: BattleTerrain) -> [StatChange]? {
+        switch (self, terrain) {
+        case (.electricSeed, .electric), (.grassySeed, .grassy):
+            return [StatChange(stat: .def, change: HeldItemBalance.reactorStages)]
+        case (.mistySeed, .misty), (.psychicSeed, .psychic):
+            return [StatChange(stat: .spd, change: HeldItemBalance.reactorStages)]
+        default:
+            return nil
+        }
+    }
+
+    /// 이 턴의 **선공을 가져갈 확률**(%) — 없으면 nil. 선제공격손톱은 늘 20% 이고, 애슈열매는
+    /// 위급일 때만 100% 다(그래서 위급 여부를 인자로 받는다).
+    ///
+    /// 확률 하나로 묻는 이유는 부르는 자리다: 턴이 시작될 때 한 번만 굴려 두 물건을 같은 값으로
+    /// 답하게 하면, 순서를 재는 세 모드는 "이 개체가 선공을 가져갔나" 만 보면 된다.
+    func turnStartHurryChance(pinched: Bool) -> Int? {
+        switch self {
+        case .quickClaw:  return HeldItemBalance.quickClawPercent
+        case .pinchHurry: return pinched ? 100 : nil
+        default:          return nil
+        }
+    }
+
+    /// 위급일 때 **다음 기술을 반드시 맞히는가** — 미클열매다. 명중을 곱하는 축(`accuracyScale`)과
+    /// 나눈 이유는 한 번뿐이라서다: 배율은 상시고 이쪽은 한 기술에만 붙는다.
+    var makesNextMoveHitAtPinch: Bool { self == .pinchSureHit }
+
+    /// 이 턴에 선공을 가져간 뒤 **사라지는가** — 열매는 한 번이고 손톱은 상시다.
+    var isConsumedWhenHurrying: Bool { self == .pinchHurry }
+
+    /// 치명적인 히트를 HP 1 에서 버틸 확률(%) — 기합의머리띠다. 기합의띠(`focusSash`)와 갈리는
+    /// 점은 둘이다: 만피 조건이 없고, 확률이며 소모되지 않는다.
+    var survivesLethalHitPercent: Int? {
+        self == .focusBand ? HeldItemBalance.focusBandPercent : nil
+    }
+
+    /// **소리 기술을 쓰면** 올리는 랭크 — 목스프레이다. 맞은 히트·빗나감·필드 축과 나눈 이유는
+    /// 방아쇠가 기술의 성질이라서다: 맞고 안 맞고를 보지 않는다(쓴 것만으로 터진다).
+    var stageGainOnOwnSoundMove: [StatChange]? {
+        self == .throatSpray
+            ? [StatChange(stat: .spa, change: HeldItemBalance.reactorStages)] : nil
+    }
+
+    /// 접촉 기술로 때린 쪽이 잃는 최대 HP 의 분모 — 울퉁불퉁멧이다. 없으면 nil.
+    var contactDamageDivisor: Int? {
+        self == .rockyHelmet ? HeldItemBalance.rockyHelmetDivisor : nil
+    }
+
+    /// 접촉으로 **때린 쪽에게 옮겨 가는가** — 끈적끈적바늘이다. 소모(`heldItemConsumed`)와 다르다:
+    /// 없어지는 것이 아니라 상대가 쥐게 되므로, 옮기는 자리가 받는 쪽도 함께 만져야 한다.
+    var transfersOnContact: Bool { self == .stickyBarb }
+
+    /// 이 물건을 쥔 쪽의 기술이 **접촉에서 빠지는가** — 방호패드는 전부, 펀치글러브는 펀치만이다.
+    /// 인자를 받는 이유는 펀치글러브다: 같은 물건이 기술에 따라 답이 갈린다.
+    func suppressesContact(isPunch: Bool) -> Bool {
+        switch self {
+        case .protectivePads: return true
+        case .punchingGlove:  return isPunch
+        default:              return false
+        }
+    }
+
+    /// 다단 기술이 최소 몇 번 맞나 — 속임수주사위다. 없으면 nil(뽑은 횟수 그대로다).
+    var minimumMultiHits: Int? { self == .loadedDice ? HeldItemBalance.loadedDiceFloor : nil }
+
+    /// 이 물건을 쥔 쪽이 **거는** 조이기의 잔뎀 분모 — 조임밴드다. 쥔 쪽이 아니라 걸린 쪽이 깎이는
+    /// 물건이라, 거는 자리가 걸린 쪽에 값을 적어 둔다(`BattleSide.trapDamageDivisor`).
+    var trapDamageDivisor: Int? { self == .bindingBand ? HeldItemBalance.bindingBandDivisor : nil }
+
+    /// 이 물건을 쥔 쪽이 거는 조이기가 몇 턴 가나 — 끈기갈고리손톱이다. 값이 있으면 4~5턴 난수를
+    /// **굴리지 않는다**(두 피어가 같은 물건을 보므로 rng 소비가 갈리지 않는다).
+    var trapTurns: Int? { self == .gripClaw ? HeldItemBalance.gripClawTrapTurns : nil }
+
+    /// 맞으면 사라지는가 — 풍선이다. 약점 반감 열매처럼 히트를 깎고 사라지는 것이 아니라 **데미지가
+    /// 들어간 사실만** 보므로 조건을 물건 쪽에서 답한다(깎는 자리와 없애는 자리가 갈리지 않는다).
+    var consumedWhenHit: Bool { self == .airBalloon }
+
+    /// 같은 우선도 안에서 뒤로 밀리는가 — 느림보꼬리·만복향로다. 스피드 배율이 아니라 별도 축인
+    /// 이유는 규칙이 다르기 때문이다: 아무리 빨라도 뒤로 가고, 우선도는 이기지 못한다.
+    var movesLast: Bool { self == .movesLast }
+
+    /// 위급 열매가 하는 일 — HP 가 아니라 **행동**이 갈리므로 값 하나로 접지 않는다.
+    enum PinchAction: Equatable, Sendable {
+        /// 스타열매 — 능력 하나를 두 단계 올린다. **본가는 무작위지만** 이 엔진의 턴 끝 자리에는
+        /// 두 피어가 공유하는 난수원이 없어, 종족값이 가장 높은 능력을 올린다(같은 스냅샷을 보는
+        /// 두 피어가 같은 능력을 고른다). 같은 값이면 `HeldItemBalance` 의 나열 순서가 정한다.
+        case raiseBest
+        /// 랭크를 하나 올린다.
+        case raise(BattleStat)
+        /// 급소 단계를 올린다(기합충전과 같은 자리에 붙는다).
+        case sharpenCrit
+        /// 최대 HP 의 1/3 을 회복한다.
+        case heal
+    }
 }
 
 /// 지닌물건 3종 밸런스 상수 — 수치의 정본이다. 엔진과 문구가 각자 리터럴을 들면 설명이 실제와
@@ -609,8 +1808,109 @@ enum HeldItemBalance {
     /// 배율이 한 계통에만 붙고 기술 하나에 묶인다.
     static let choicePrice = 4_500
 
+    /// 타입 강화 도구의 상점가 — 지닌물건 중 **가장 싸다**. 배율이 1.2 로 가장 작고 한 타입에만
+    /// 붙어서, 값을 올리면 생명의구슬(모든 기술 ×1.3)을 살 이유만 남는다.
+    static let typeEnhancerPrice = 2_800
+    /// 타입 강화 배율 — 본가와 같은 ×1.2. 정수 분수로 곱하는 이유는 다른 배율과 같다.
+    static let typeEnhancerNumerator = 12
+    static let typeEnhancerDenominator = 10
+
+    /// 열매 29종의 상점가 — 지닌물건 중 **가장 싸다**. 한 배틀에서 딱 한 번 일하고 사라지는
+    /// 1회용이라, 상시로 일하는 타입 강화 도구(2,800)보다 비싸면 아무도 살 이유가 없다.
+    /// (재고는 배틀이 깎지 않는다 — 이 저장소에서 "사라진다" 는 그 배틀 안에서만이다.)
+    static let berryPrice = 1_800
+    /// 약점 반감 열매의 배율 — 본가와 같은 절반. 정수 분수로 곱하는 이유는 다른 배율과 같다.
+    static let resistBerryNumerator = 1
+    static let resistBerryDenominator = 2
+    /// 위급 열매가 터지는 문턱 — 최대 HP 의 1/4 **이하**다.
+    static let pinchThresholdDivisor = 4
+    /// 성격 회복 열매의 회복량 — 최대 HP 의 1/3(본가 7세대 이후 값이다. 6세대까지의 1/8 은
+    /// 위급에서 한 방을 더 버티지 못해 열매를 쥘 이유가 없다).
+    static let pinchHealDivisor = 3
+    /// 위급 열매가 올리는 랭크 — 하나다(본가와 같다).
+    static let pinchStatStages = 1
+
+    /// 주얼의 배율 — 본가 6세대 이후와 같은 ×1.3(5세대의 ×1.5 는 1회용치고 과하다).
+    static let gemNumerator = 13
+    static let gemDenominator = 10
+    /// 주얼의 상점가 — 배율은 생명의구슬과 같지만 한 번뿐이라 훨씬 싸다.
+    static let gemPrice = 2_000
+    /// 대가만 있는 물건 셋(검은철구·느림보꼬리·만복향로)의 상점가 — 성능을 **깎는** 물건이라
+    /// 값을 낮게 둔다. 0 원으로 두지 않는 이유는 자이로볼·카운터 조합에서 실제로 이득이라서다.
+    static let drawbackPrice = 900
+    /// 선제공격손톱이 선공을 가져갈 확률(%) — 본가와 같은 20% 다.
+    static let quickClawPercent = 20
+    /// 기합의머리띠가 버틸 확률(%) — 본가와 같은 10% 다.
+    static let focusBandPercent = 10
+    /// 울퉁불퉁멧이 때린 쪽에서 깎는 몫 — 최대 HP 의 1/6(본가와 같다).
+    static let rockyHelmetDivisor = 6
+    /// 끈적끈적바늘이 쥔 쪽에서 매 턴 깎는 몫 — 최대 HP 의 1/8(본가와 같다).
+    static let stickyBarbDivisor = 8
+    /// 속임수주사위가 보장하는 다단 횟수 — 최소 4회(본가와 같다).
+    static let loadedDiceFloor = 4
+    /// 조임밴드가 키운 조이기 잔뎀의 분모 — 1/8 이 1/6 이 된다(본가와 같다).
+    static let bindingBandDivisor = 6
+    /// 끈기갈고리손톱이 만드는 조이기 턴 — 7턴(본가와 같다). 기본은 4~5턴 난수다.
+    static let gripClawTrapTurns = 7
+    /// 보험 둘이 올리는 랭크 — 두 단계다(본가와 같다). 한 번뿐인 대신 크다.
+    static let policyStages = 2
+    /// 타입 반응 넷과 씨앗 넷이 올리는 랭크 — 한 단계다.
+    static let reactorStages = 1
+    /// 지속 시간을 늘리는 물건이 만드는 턴 — 본가와 같은 8턴이다(기본은 5턴). 한 상수인 이유는
+    /// 여섯 물건이 같은 값을 주기 때문이다 — 물건마다 리터럴을 들면 하나만 조용히 어긋난다.
+    static let extendedFieldTurns = 8
+    /// 가벼운돌이 체중에 곱하는 분수 — 본가와 같은 절반이다.
+    static let floatStoneNumerator = 1
+    static let floatStoneDenominator = 2
+    /// 종 전용 물건의 상점가 — 쥘 수 있는 개체가 하나뿐이라 싸게 둔다.
+    static let speciesBoundPrice = 1_200
+
+    /// 구슬 2종의 상점가 — 둘이 같은 값이다(거는 상태만 갈릴 뿐 같은 물건이다). 지닌물건 중
+    /// **가장 싸다**: 주는 것이 강화가 아니라 상태이상이라, 근성 같은 특성과 짝지어야 이득이 되고
+    /// 그냥 지니면 손해다. 값을 올리면 아무도 실험해 보지 않는 물건이 된다.
+    static let orbPrice = 3_000
+    /// 돌격조끼의 상점가 — 기합의띠(4,000)와 같은 방어 쪽 물건이지만 대가(변화기 금지)가 커서
+    /// 그보다 싸게 둔다.
+    static let assaultVestPrice = 3_800
+    /// 돌격조끼의 특수방어 배율 — 구애와 같은 3/2 지만 상수를 따로 둔다. 둘을 한 상수로 묶으면
+    /// 한쪽 밸런스를 조정할 때 다른 쪽이 조용히 따라 움직인다.
+    static let assaultVestNumerator = 3
+    static let assaultVestDenominator = 2
+
+    /// 일반 배틀 도구 12종의 상점가 — 하나로 둔다. 배율이 작고(×1.1~×1.2) 조건이 붙어 있어
+    /// 타입 강화 도구(2,800)보다 약하고, 값을 물건마다 달리 두면 그 차이가 밸런스가 아니라
+    /// 취향처럼 읽힌다.
+    static let battleToolPrice = 2_500
+
+    /// 힘의머리띠·박식안경의 배율 — 본가와 같은 ×1.1. 메트로놈의 분모도 같은 값을 쓴다
+    /// (같은 자리에서 곱하는 분수라 분모가 갈리면 반올림이 물건마다 달라진다).
+    static let damageToolNumerator = 11
+    static let damageToolDenominator = 10
+    /// 달인의띠 — 효과가 굉장한 히트만 ×1.2(본가와 같다).
+    static let expertBeltNumerator = 12
+    static let expertBeltDenominator = 10
+    /// 메트로놈 — 같은 기술을 이어 쓸 때마다 +0.2, 다섯 번째부터 ×2.0 에서 멈춘다(본가와 같다).
+    static let metronomeStepNumerator = 2
+    static let metronomeMaxSteps = 5
+
+    /// 명중 배율의 분모 — 광각렌즈(×1.1)·포커스렌즈(×1.2)·반짝가루 부류(×0.9)가 함께 쓴다.
+    static let accuracyDenominator = 10
+    static let wideLensNumerator = 11
+    static let zoomLensNumerator = 12
+    static let dullFoeAimNumerator = 9
+
+    /// 조개껍질방울 — 넣은 데미지의 1/8 을 회복한다(본가와 같다).
+    static let shellBellDivisor = 8
+    /// 큰뿌리 — 드레인 회복이 ×1.3 이다(본가와 같다). 데미지는 안 바뀐다.
+    static let bigRootNumerator = 13
+    static let bigRootDenominator = 10
+    /// 검은오물 — 독 타입이 아니면 턴 끝에 최대 HP 의 1/8 을 잃는다. 회복 쪽 몫은
+    /// 먹다남은음식과 같은 1/16 이라 `leftoversDivisor` 를 그대로 쓴다.
+    static let blackSludgeHurtDivisor = 8
+
     /// 구애 배율 — 정수 분수로 곱한다(생명의구슬과 같은 이유: 부동소수 오차가 끼면 두 피어의
-    /// 데미지가 갈린다).
+    /// 데미지가 갈린다). 스피드 배율(구애스카프)도 같은 값을 쓴다 — 셋이 같은 물건 계열이라
+    /// 배율이 갈리면 어느 하나가 이유 없이 세진다.
     static let choiceNumerator = 3
     static let choiceDenominator = 2
 }
@@ -810,6 +2110,12 @@ struct EvoLine: Sendable {
         self.names = names
         self.genderRate = genderRate
         self.evolutionMoveNames = evolutionMoveNames
+    }
+
+    /// 이 종이 **더 진화하나** — 진화의휘석이 보는 조건이다(라인에 없는 종은 `false`).
+    /// 스냅샷을 만드는 자리가 손으로 종 번호를 세지 않게 라인이 답한다.
+    func canEvolveFurther(from speciesID: Int) -> Bool {
+        tree.node(withID: speciesID)?.children.isEmpty == false
     }
 
     func localizedName(_ id: Int) -> String {
