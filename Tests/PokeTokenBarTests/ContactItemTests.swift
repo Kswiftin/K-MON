@@ -178,6 +178,15 @@ final class ContactItemTests: XCTestCase {
                                              minimumHits: HeldItemBalance.loadedDiceFloor)
             XCTAssertTrue((4...5).contains(loaded), "seed \(seed) 에서 \(loaded) 회 맞았다")
         }
+        // 하한이 기술의 상한을 넘지는 않는다 — 2~3회 기술이 네 번 맞으면 안 된다.
+        var narrow = move(3, power: 15)
+        narrow.minHits = 2
+        narrow.maxHits = 3
+        for seed in UInt64(1)...6 {
+            var narrowRNG = SplitMix64(seed: seed)
+            let hits = narrow.hitCount(rng: &narrowRNG, minimumHits: HeldItemBalance.loadedDiceFloor)
+            XCTAssertEqual(hits, 3, "seed \(seed) 에서 \(hits) 회 맞았다")
+        }
         // 단발 기술은 주사위가 만지지 않는다 — 몸통박치기가 네 번 맞으면 안 된다.
         var rng = SplitMix64(seed: 3)
         XCTAssertEqual(move(33).hitCount(rng: &rng,
