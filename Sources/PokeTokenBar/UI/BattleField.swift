@@ -955,40 +955,66 @@ enum BattleSwitchInputPolicy {
 
 /// 최근 `BattleFieldMetrics.logLines` 줄만, **고정 높이**로. 세 모드가 같은 칸을 쓴다 — 멀티만
 /// 높이·줄바꿈 제한이 없던 동안은 긴 줄이 감겨 아래 기술 버튼을 밀어냈다.
-/// `ScrollView` 를 쓰지 않는 이유는 `BattleFieldMetrics.logLines` 주석에 있다.
+/// 기본은 `ScrollView` 를 쓰지 않는다(이유는 `BattleFieldMetrics.logLines` 주석). `isScrollable`
+/// 을 켠 화면(레이드)만 고정 높이 안쪽 스크롤로 지난 줄까지 본다 — 칸 높이가 여전히 고정이라
+/// 팝오버 본체 스크롤 안에 둬도 실제로 스크롤된다.
 struct BattleLogBox: View {
     let lines: [BattleLog.Line]
     /// 내 편 줄을 오른쪽·진하게, 상대 줄을 왼쪽·연하게 가르는 기준. **집합**인 이유는 2대2 다 —
     /// 내 편 두 칸이 각자 다른 주인(`.fighter`)이라 하나로는 한 칸만 내 편으로 읽힌다.
     /// 비어 있으면 어느 줄도 내 편이 아니다(관전 화면).
     let myActors: Set<BattleActor>
+    /// 칸 높이를 이만큼 고정한다. 기본은 `BattleFieldMetrics.logHeight`(최근 N줄만).
+    var boxHeight: CGFloat = BattleFieldMetrics.logHeight
+    /// 켜면 최근 N줄로 자르지 않고 **전체 줄을 칸 안에서 스크롤**로 본다. 칸 높이는 여전히
+    /// `boxHeight` 로 고정이라(`.frame(height:)`) 팝오버 본체 스크롤 안에 둬도 중첩 스크롤이
+    /// 실제로 동작한다(`전투 채팅` 이 82pt 고정으로 같은 자리에서 이미 쓰는 패턴 —
+    /// `NestedScrollGuardTests.verticalScrollViews` 가 높이 안 묶인 중첩만 막는다).
+    var isScrollable = false
 
-    init(lines: [BattleLog.Line], myActor: BattleActor?) {
+    init(lines: [BattleLog.Line], myActor: BattleActor?,
+         boxHeight: CGFloat = BattleFieldMetrics.logHeight, isScrollable: Bool = false) {
         self.lines = lines
         self.myActors = myActor.map { [$0] } ?? []
+        self.boxHeight = boxHeight
+        self.isScrollable = isScrollable
     }
 
-    init(lines: [BattleLog.Line], myActors: Set<BattleActor>) {
+    init(lines: [BattleLog.Line], myActors: Set<BattleActor>,
+         boxHeight: CGFloat = BattleFieldMetrics.logHeight, isScrollable: Bool = false) {
         self.lines = lines
         self.myActors = myActors
+        self.boxHeight = boxHeight
+        self.isScrollable = isScrollable
     }
 
     var body: some View {
+        Group {
+            if isScrollable {
+                ScrollView { rows(lines) }
+            } else {
+                rows(Array(lines.suffix(BattleFieldMetrics.logLines)))
+            }
+        }
+        .padding(.horizontal, 6)
+        .padding(.vertical, 5)
+        .frame(maxWidth: .infinity, alignment: .topLeading)
+        .frame(height: boxHeight)
+        // 고정 높이는 **보고하는** 높이만 고정한다 — 넘친 줄은 칸 밖에 그려져 기술 버튼 위에 겹친다.
+        // 줄 수가 칸에 맞는지는 `testTheLogBoxIsTallEnoughForTheLinesItDraws` 가 지키고, 이 clip 은
+        // 그 가드를 넘어선 경우에도 조작을 가리지 않게 하는 두 번째 방어선이다(스크롤 모드는
+        // 넘친 줄이 스크롤 대상이라 clip 이 오히려 맞는 동작이다).
+        .clipped()
+        .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.05)))
+    }
+
+    private func rows(_ lines: [BattleLog.Line]) -> some View {
         VStack(alignment: .leading, spacing: 2) {
-            ForEach(Array(lines.suffix(BattleFieldMetrics.logLines).enumerated()), id: \.offset) { _, line in
+            ForEach(Array(lines.enumerated()), id: \.offset) { _, line in
                 BattleLogRow(line: line, isMine: line.actor.map { myActors.contains($0) })
             }
             Spacer(minLength: 0)
         }
-        .padding(.horizontal, 6)
-        .padding(.vertical, 5)
-        .frame(maxWidth: .infinity, minHeight: BattleFieldMetrics.logHeight,
-               maxHeight: BattleFieldMetrics.logHeight, alignment: .topLeading)
-        // 고정 높이는 **보고하는** 높이만 고정한다 — 넘친 줄은 칸 밖에 그려져 기술 버튼 위에 겹친다.
-        // 줄 수가 칸에 맞는지는 `testTheLogBoxIsTallEnoughForTheLinesItDraws` 가 지키고, 이 clip 은
-        // 그 가드를 넘어선 경우에도 조작을 가리지 않게 하는 두 번째 방어선이다.
-        .clipped()
-        .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.05)))
     }
 }
 

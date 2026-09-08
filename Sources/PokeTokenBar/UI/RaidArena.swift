@@ -91,6 +91,10 @@ struct RaidArenaView: View {
     /// 파티 칸 스프라이트. 두 칸이 나란히 서므로 웨이브 런의 좁은 카드와 같은 치수를 쓴다.
     private static let partySpriteSize: CGFloat = 40
 
+    /// 다른 배틀 화면의 로그 칸(`BattleFieldMetrics.logHeight`, 4줄)보다 키운 값 — 4인 파티라
+    /// 줄이 금방 밀려나므로 스크롤과 함께 한 번에 더 많이 보여 준다.
+    private static let logBoxHeight: CGFloat = 130
+
     private var me: Cell? { party.first { $0.id == myID } }
 
     var body: some View {
@@ -98,7 +102,14 @@ struct RaidArenaView: View {
             header
             field
             prompt
-            if !logLines.isEmpty { BattleLogBox(lines: logLines, myActor: .fighter(myID)) }
+            if !logLines.isEmpty {
+                // 레이드는 파티가 4명이라 로그가 금방 밀려난다 — 최근 4줄만 보여 주는 다른 배틀
+                // 화면과 달리 칸을 키우고 스크롤을 켜 지난 턴의 기술까지 되짚어 볼 수 있게 한다.
+                // 이 화면(`RaidView`)이 팝오버 본체와 별개로 자기 스크롤을 갖고 있어(중첩 스크롤
+                // 가드의 예외 목록) 높이를 고정한 안쪽 스크롤이 실제로 동작한다.
+                BattleLogBox(lines: logLines, myActor: .fighter(myID),
+                             boxHeight: Self.logBoxHeight, isScrollable: true)
+            }
         }
     }
 
