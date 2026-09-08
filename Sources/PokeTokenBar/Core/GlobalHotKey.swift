@@ -33,8 +33,11 @@ struct KeyCombo: Equatable, Sendable, Codable {
 /// 기준), 메뉴바 유틸리티들이 여전히 이 경로를 쓴다.
 @MainActor
 final class GlobalHotKey {
-    private var hotKeyRef: EventHotKeyRef?
-    private var eventHandler: EventHandlerRef?
+    // `OpaquePointer` 계열이라 Sendable 이 아니다 — `@MainActor` 클래스의 `deinit` 은 항상
+    // nonisolated 라 그냥 두면 그 자리에서 못 읽는다. 실제로는 `register`/`unregister`(둘 다
+    // MainActor) 와 `deinit` 에서만 손대고, deinit 시점엔 다른 참조가 없어 경합이 없다.
+    private nonisolated(unsafe) var hotKeyRef: EventHotKeyRef?
+    private nonisolated(unsafe) var eventHandler: EventHandlerRef?
     private var action: (() -> Void)?
     /// 4바이트 서명 — "PKMN". 이 앱이 등록한 핫키임을 나타내는 태그일 뿐, 다른 앱과 절대
     /// 안 겹쳐야 하는 값은 아니다(Carbon 이 프로세스별로 핸들러를 가른다).
