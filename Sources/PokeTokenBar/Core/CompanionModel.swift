@@ -260,6 +260,10 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
     /// 진화용 지닌물건(위 `kingsRock` 부류)과 이름이 겹치지만 다른 물건이다: 그쪽은 "쓰면 진화하는
     /// 아이템" 으로 취급하고 배틀을 안 지난다. 효과는 `heldBattleEffect` 가 답한다.
     case lifeOrb, focusSash, leftovers
+    /// 구애 2종 — 데미지 1.5 배를 주고 **기술 하나로 묶인다**(교체할 때까지 처음 낸 기술만 낸다).
+    /// 위 셋과 갈리는 점은 대가가 HP 가 아니라 선택이라는 것이다: 묶는 자리는 배틀 쪽
+    /// (`BattleSide.choiceLockedMoveID`)이고, 이 축에서는 배율만 답한다.
+    case choiceBand, choiceSpecs
     /// R7 decor is inventory, not a second currency or store.
     // Mini Home furniture. The original three are the free campus starter set.
     case roomBed, roomTable, roomLamp
@@ -274,7 +278,7 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
     var evolutionRule: EvolutionItemRule? {
         switch self {
         case .rareCandy, .mint, .shinyCharm, .heartScale, .teraShard,
-             .lifeOrb, .focusSash, .leftovers,
+             .lifeOrb, .focusSash, .leftovers, .choiceBand, .choiceSpecs,
              .roomBed, .roomTable, .roomLamp, .lovelyVanity, .lovelySofa, .lovelyHeartLamp,
              .retroArcade, .retroRadio, .retroTV, .naturePlant, .natureBench, .natureLantern: return nil
         case .linkingCord: return .plainTrade
@@ -338,7 +342,7 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
         case .mint:       return .mint
         case .heartScale: return .heartScale
         case .teraShard:  return .teraShard
-        case .lifeOrb, .focusSash, .leftovers: return .heldItem
+        case .lifeOrb, .focusSash, .leftovers, .choiceBand, .choiceSpecs: return .heldItem
         case .shinyCharm: return .passive
         case .roomBed, .roomTable, .roomLamp, .lovelyVanity, .lovelySofa, .lovelyHeartLamp,
              .retroArcade, .retroRadio, .retroTV, .naturePlant, .natureBench, .natureLantern:
@@ -364,9 +368,11 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
     /// 배틀에서는 아무 일도 안 하는" 아이템이 생긴다.
     var heldBattleEffect: HeldItemEffect? {
         switch self {
-        case .lifeOrb:    return .lifeOrb
-        case .focusSash:  return .focusSash
-        case .leftovers:  return .leftovers
+        case .lifeOrb:     return .lifeOrb
+        case .focusSash:   return .focusSash
+        case .leftovers:   return .leftovers
+        case .choiceBand:  return .choiceBand
+        case .choiceSpecs: return .choiceSpecs
         default:          return nil
         }
     }
@@ -418,6 +424,7 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
         case .heartScale: return "💗"
         case .teraShard: return "💎"
         case .lifeOrb: return "🔮"; case .focusSash: return "🎗️"; case .leftovers: return "🍱"
+        case .choiceBand: return "🎽"; case .choiceSpecs: return "🕶️"
         case .roomBed: return "🛏️"; case .roomTable: return "🪑"; case .roomLamp: return "💡"
         case .lovelyVanity: return "🪞"; case .lovelySofa: return "🩷"; case .lovelyHeartLamp: return "💕"
         case .retroArcade: return "🕹️"; case .retroRadio: return "📻"; case .retroTV: return "📺"
@@ -435,6 +442,7 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
         case .lifeOrb: return HeldItemBalance.lifeOrbPrice
         case .focusSash: return HeldItemBalance.focusSashPrice
         case .leftovers: return HeldItemBalance.leftoversPrice
+        case .choiceBand, .choiceSpecs: return HeldItemBalance.choicePrice
         case .roomBed: return 1_500
         case .roomTable: return 1_000
         case .roomLamp: return 800
@@ -553,6 +561,24 @@ enum HeldItemEffect: Sendable, Equatable, CaseIterable {
     case focusSash
     /// 턴 끝에 최대 HP 의 1/16 을 회복한다.
     case leftovers
+    /// 한 가지 데미지 계통을 1.5 배로 만들고, 그 대가로 처음 낸 기술 하나에 묶인다.
+    case choiceBand, choiceSpecs
+
+    /// 이 물건이 1.5 배로 만드는 데미지 계통 — 묶는 대가와 짝이다. `nil` 이면 배율이 없다.
+    ///
+    /// **물건 이름이 아니라 이 축으로 묻는다**: 데미지 자리가 `== .choiceBand` 를 직접 보면
+    /// 세 번째 구애 물건이 늘어난 날 그 자리만 조용히 빠진다.
+    var boostedDamageClass: MoveDamageClass? {
+        switch self {
+        case .choiceBand:  return .physical
+        case .choiceSpecs: return .special
+        case .lifeOrb, .focusSash, .leftovers: return nil
+        }
+    }
+
+    /// 이 물건이 기술 하나로 **묶는가** — 구애 2종이다. 배율 축과 나눈 이유는 둘이 같이 갈 이유가
+    /// 없어서다(배율 없이 묶는 물건도, 묶지 않고 올리는 물건도 본가에 있다).
+    var locksIntoOneMove: Bool { boostedDamageClass != nil }
 }
 
 /// 지닌물건 3종 밸런스 상수 — 수치의 정본이다. 엔진과 문구가 각자 리터럴을 들면 설명이 실제와
@@ -572,6 +598,15 @@ enum HeldItemBalance {
     static let lifeOrbPrice = 5_000
     static let focusSashPrice = 4_000
     static let leftoversPrice = 3_500
+    /// 구애 2종의 상점가 — 둘이 같은 값이다(물리·특수로 갈릴 뿐 같은 물건이라, 값을 달리 두면
+    /// 물리 어태커가 싸다는 뜻 없는 차별이 된다). 생명의구슬(5,000)보다 싼 이유는 대가가 크다:
+    /// 배율이 한 계통에만 붙고 기술 하나에 묶인다.
+    static let choicePrice = 4_500
+
+    /// 구애 배율 — 정수 분수로 곱한다(생명의구슬과 같은 이유: 부동소수 오차가 끼면 두 피어의
+    /// 데미지가 갈린다).
+    static let choiceNumerator = 3
+    static let choiceDenominator = 2
 }
 
 /// 테라피스 밸런스 상수 — 테라스탈 타입을 무작위로 바꾸는 소모품(#3).

@@ -1585,6 +1585,8 @@ struct L {
         case .lifeOrb: return t("생명의구슬", "Life Orb", "いのちのたま")
         case .focusSash: return t("기합의띠", "Focus Sash", "きあいのタスキ")
         case .leftovers: return t("먹다남은음식", "Leftovers", "たべのこし")
+        case .choiceBand: return t("구애머리띠", "Choice Band", "こだわりハチマキ")
+        case .choiceSpecs: return t("구애안경", "Choice Specs", "こだわりメガネ")
         case .shinyCharm: return t("이로치 부적", "Shiny Charm", "ひかるおまもり")
         case .linkingCord: return t("연결의끈", "Linking Cord", "つながりのヒモ")
         case .fireStone: return t("불꽃의돌", "Fire Stone", "ほのおのいし")
@@ -1710,6 +1712,14 @@ struct L {
                 return t("대전에서 턴이 끝날 때마다 최대 HP의 1/16을 회복해요.",
                          "In battle it restores 1/16 of its max HP at the end of each turn.",
                          "対戦で毎ターンの終わりに最大HPの1/16を回復します。")
+            case .choiceBand:
+                return t("물리 기술의 데미지가 1.5배가 돼요. 대신 대전에서 처음 낸 기술만 계속 쓰게 돼요.",
+                         "Physical move damage becomes 1.5×. In exchange it can only use the first move it picked.",
+                         "物理技のダメージが1.5倍になります。代わりに最初に出した技しか使えなくなります。")
+            case .choiceSpecs:
+                return t("특수 기술의 데미지가 1.5배가 돼요. 대신 대전에서 처음 낸 기술만 계속 쓰게 돼요.",
+                         "Special move damage becomes 1.5×. In exchange it can only use the first move it picked.",
+                         "特殊技のダメージが1.5倍になります。代わりに最初に出した技しか使えなくなります。")
             case nil:
                 // 지닌물건 갈래인데 효과가 없는 조합 — `bagUse` 가 둘을 함께 정하므로 도달 불가다.
                 return ""
@@ -1746,6 +1756,8 @@ struct L {
         case .lifeOrb:   return t("데미지 ×1.3 / 자해", "1.3× damage / recoil", "ダメージ1.3倍 / 反動")
         case .focusSash: return t("만피에서 한 방 버티기", "Survive one hit at full HP", "満タンで一撃耐える")
         case .leftovers: return t("턴 끝 HP 회복", "Heals each turn", "ターン終わりに回復")
+        case .choiceBand: return t("물리 ×1.5 / 기술 고정", "1.5× physical / locked in", "物理1.5倍 / 技固定")
+        case .choiceSpecs: return t("특수 ×1.5 / 기술 고정", "1.5× special / locked in", "特殊1.5倍 / 技固定")
         case nil:        return ""   // `bagUse` 가 둘을 함께 정하므로 도달 불가다
         }
     }

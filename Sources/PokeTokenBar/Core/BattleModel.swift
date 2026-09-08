@@ -2286,6 +2286,11 @@ enum BattleEngine {
         if attacker.heldEffect == .lifeOrb {
             damage = damage * HeldItemBalance.lifeOrbNumerator / HeldItemBalance.lifeOrbDenominator
         }
+        // 구애 2종도 같은 자리에서 얹는다 — 한 계통만 올리므로 물건이 아니라
+        // `boostedDamageClass` 로 묻는다(물건 이름을 직접 보면 세 번째 구애가 늘 때 빠진다).
+        if attacker.heldEffect?.boostedDamageClass == move.damageClass {
+            damage = damage * HeldItemBalance.choiceNumerator / HeldItemBalance.choiceDenominator
+        }
         // 장막은 **급소를 못 막는다**(3세대 이후). 급소가 뚫지 못하면 장막 한 장으로 판이 잠긴다.
         // 고정 데미지·일격필살은 여기 오기 전에 빠져나가므로 장막을 타지 않는다(본가와 같다).
         if !isCritical, field.halvesDamage(move.damageClass, against: defenderTeam) { damage /= 2 }
@@ -2956,6 +2961,13 @@ extension BattleEngine {
         } else {
             attacker.lastMoveID = move.id
             attacker.consecutiveMoveUses = 1
+        }
+        // 구애는 **실제로 기술이 나간 순간** 묶는다(선택한 순간이 아니다) — 못 움직인 턴에 묶으면
+        // 잠깨기·마비로 굳은 턴이 기술을 하나 정해 버린다. 무브셋에 없는 기술(발버둥)은 묶지
+        // 않는다: 묶으면 그 뒤로 고를 수 있는 칸이 하나도 없다.
+        if attacker.heldEffect?.locksIntoOneMove == true, attacker.choiceLockedMoveID == nil,
+           attacker.moves.contains(where: { $0.id == move.id }) {
+            attacker.choiceLockedMoveID = move.id
         }
         events.append(.move(actor, moveID: move.id))
         return true

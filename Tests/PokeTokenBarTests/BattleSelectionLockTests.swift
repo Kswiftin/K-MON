@@ -44,14 +44,26 @@ final class BattleSelectionLockTests: XCTestCase {
                                         field: &field, rng: &rng)
     }
 
-    private func side(moves: [MoveSpec]) -> BattleSide {
+    private func side(moves: [MoveSpec], holding item: ItemKind? = nil) -> BattleSide {
         var snapshot = BattleSnapshot(speciesID: 25, name: "테스트", trainer: nil, level: 50,
                                       nature: nil, isShiny: false, types: [.normal],
                                       base: BattleStats(hp: 100, atk: 100, def: 100,
                                                         spa: 100, spd: 100, spe: 100),
                                       weightHectograms: 100)
         snapshot.moves = moves
+        snapshot.heldItem = item
         return BattleSide(snapshot)
+    }
+
+    /// 한 방의 데미지 — 같은 seed 로 두 번 재서 **배율만** 비교한다(난수가 끼면 비교가 흐려진다).
+    private func damage(of move: MoveSpec, holding item: ItemKind?) -> Int {
+        var attacker = side(moves: [move], holding: item)
+        var defender = side(moves: [move])
+        let events = use(move, by: &attacker, on: &defender, seed: 11)
+        return events.compactMap { event -> Int? in
+            guard case .damage(_, let amount, let cause) = event, cause == .move else { return nil }
+            return amount
+        }.reduce(0, +)
     }
 
     // MARK: 데이터가 답한다
@@ -294,5 +306,70 @@ final class BattleSelectionLockTests: XCTestCase {
         XCTAssertFalse(target.has(.taunt), "도발이 제 시간에 풀리지 않았다")
         XCTAssertTrue(ended.contains(.volatileEnded(.b, .taunt)))
         XCTAssertNil(target.selectionLock(forMoveAt: 1))
+    }
+
+    // MARK: 구애 2종 — 잠그는 것이 상대가 아니라 자기 물건이다
+
+    /// 구애 2종은 지닌물건 축을 그대로 탄다 — 가방·와이어 검증·상점이 이 한 축을 보므로
+    /// 하나라도 빠지면 "가방에서는 지니게 되는데 배틀에서는 아무 일도 안 하는" 물건이 된다.
+    func testTheChoiceItemsRideTheHeldItemAxis() {
+        for kind in [ItemKind.choiceBand, .choiceSpecs] {
+            XCTAssertEqual(kind.bagUse, .heldItem, "\(kind) 가 지닌물건 갈래가 아니다")
+            XCTAssertNotNil(kind.heldBattleEffect, "\(kind) 가 배틀에서 하는 일이 없다")
+            XCTAssertNotNil(kind.shopPrice, "\(kind) 를 상점에서 못 산다")
+            XCTAssertNil(kind.evolutionRule)
+            XCTAssertTrue(MultiplayerValidation.validHeldItem(kind), "피어의 \(kind) 가 반려된다")
+        }
+        XCTAssertEqual(ItemKind.choiceBand.heldBattleEffect?.boostedDamageClass, .physical)
+        XCTAssertEqual(ItemKind.choiceSpecs.heldBattleEffect?.boostedDamageClass, .special)
+    }
+
+    /// 구애머리띠는 **물리만** 1.5 배로 만든다 — 특수까지 올리면 안경과 같은 물건이 된다.
+    func testTheChoiceBandRaisesOnlyPhysicalDamage() {
+        let physical = damage(of: attackMove(33), holding: .choiceBand)
+        let bare = damage(of: attackMove(33), holding: nil)
+        XCTAssertEqual(physical, bare * HeldItemBalance.choiceNumerator / HeldItemBalance.choiceDenominator)
+
+        let special = damage(of: attackMove(34, damageClass: .special), holding: .choiceBand)
+        XCTAssertEqual(special, damage(of: attackMove(34, damageClass: .special), holding: nil),
+                       "머리띠가 특수 기술까지 올렸다")
+    }
+
+    func testTheChoiceSpecsRaiseOnlySpecialDamage() {
+        let special = damage(of: attackMove(34, damageClass: .special), holding: .choiceSpecs)
+        let bare = damage(of: attackMove(34, damageClass: .special), holding: nil)
+        XCTAssertEqual(special, bare * HeldItemBalance.choiceNumerator / HeldItemBalance.choiceDenominator)
+        XCTAssertEqual(damage(of: attackMove(33), holding: .choiceSpecs),
+                       damage(of: attackMove(33), holding: nil), "안경이 물리 기술까지 올렸다")
+    }
+
+    /// 대가는 선택이다 — 처음 낸 기술 하나로 묶이고 나머지 칸이 막힌다.
+    func testAChoiceItemLocksTheFirstMoveItUsed() {
+        var mon = side(moves: [attackMove(33), attackMove(34)], holding: .choiceBand)
+        var target = side(moves: [attackMove(33)])
+        use(attackMove(33), by: &mon, on: &target)
+
+        XCTAssertEqual(mon.choiceLockedMoveID, 33)
+        XCTAssertNil(mon.selectionLock(forMoveAt: 0))
+        XCTAssertEqual(mon.selectionLock(forMoveAt: 1), .choiceItem)
+    }
+
+    /// 구애를 안 지녔으면 아무것도 묶이지 않는다 — 잠금 조건이 뒤집혀 있으면 이 테스트가 빨개진다.
+    func testAMonWithoutAChoiceItemStaysFree() {
+        var mon = side(moves: [attackMove(33), attackMove(34)], holding: .leftovers)
+        var target = side(moves: [attackMove(33)])
+        use(attackMove(33), by: &mon, on: &target)
+
+        XCTAssertNil(mon.choiceLockedMoveID)
+        XCTAssertNil(mon.selectionLock(forMoveAt: 1))
+    }
+
+    /// 발버둥으로는 묶이지 않는다 — 무브셋에 없는 기술이라 묶으면 그 뒤 아무 칸도 못 고른다.
+    func testStruggleNeverBecomesTheChoiceLock() {
+        var mon = side(moves: [attackMove(33), attackMove(34)], holding: .choiceBand)
+        var target = side(moves: [attackMove(33)])
+        use(.struggle(), by: &mon, on: &target)
+
+        XCTAssertNil(mon.choiceLockedMoveID)
     }
 }
