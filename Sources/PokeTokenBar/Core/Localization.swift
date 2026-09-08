@@ -1912,7 +1912,7 @@ struct L {
             case .focusBand:
                 return "때때로 쓰러질 공격을 체력 1로 버텨요."
             case .pinchBestBoost:
-                return "체력이 얼마 안 남으면 가장 높은 능력이 크게 올라가고 사라져요."
+                return "체력이 얼마 안 남으면 가장 높은 능력이 올라가고 사라져요."
             case .pinchSureHit:
                 return "체력이 얼마 안 남으면 다음 기술 하나가 반드시 맞고 사라져요."
             case .pinchHurry:
@@ -2022,7 +2022,7 @@ struct L {
         case .throatSpray: return "소리 기술을 쓰면 특공 +1 / 1회"
         case .quickClaw: return "20% 확률로 선공"
         case .focusBand: return "10% 확률로 HP 1 버팀"
-        case .pinchBestBoost: return "위급 시 최고 능력 +2 / 1회"
+        case .pinchBestBoost: return "위급 시 최고 능력 +1 / 1회"
         case .pinchSureHit: return "위급 시 다음 기술 필중 / 1회"
         case .pinchHurry: return "위급 시 그 턴 선공 / 1회"
         case nil:        return ""   // `bagUse` 가 둘을 함께 정하므로 도달 불가다
