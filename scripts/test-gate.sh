@@ -566,13 +566,31 @@ fi
 # 커밋 전에 드러낸다.
 echo
 echo "▶ 영어 로케일 재실행 (CI 로케일 패리티)"
+# **호스트가 이미 영어면 재실행하지 않는다 — 방금 돌린 `swift test` 가 그 실행이었다.**
+# 이 검사가 존재하는 이유는 개발 Mac(ko-KR)과 CI 러너(en-US)의 격차이지 "영어로도 돌려 본다"
+# 자체가 아니다. GitHub macOS 러너에서는 본 실행이 영어였으므로 재실행이 같은 2568건을 한 번 더
+# 도는 것뿐이다(실측 51초). 로컬(한국어)에서는 그대로 돈다 — 격차를 커밋 전에 드러내는 자리다.
+#
+# **판정이 안 되면 스킵하지 않는다.** 언어를 못 읽은 것과 "영어임을 확인했다" 는 다르다
+# (관측 없음 ≠ 위반 없음). 읽지 못하면 재실행 쪽으로 넘어간다 — 낭비는 되어도 구멍은 안 난다.
+# 판정 소스는 `xctest` 가 `-AppleLanguages` 로 덮어쓰는 바로 그 값이다.
+HOST_LANGUAGE=$(defaults read -g AppleLanguages 2>/dev/null \
+  | tr -d ' \n"()' | cut -d, -f1 || true)
+if [[ "$HOST_LANGUAGE" == en || "$HOST_LANGUAGE" == en-* ]]; then
+  echo "· 호스트 언어가 $HOST_LANGUAGE — 위 swift test 가 곧 영어 로케일 실행이라 재실행하지 않습니다."
+  LOCALE_RERUN_SKIPPED=1
+else
+  LOCALE_RERUN_SKIPPED=0
+fi
 BUNDLE=$(find .build -maxdepth 4 -name '*.xctest' | head -1)
 if [[ -z "$BUNDLE" ]]; then
   echo "✗ 테스트 번들(.xctest)을 찾지 못했습니다." >&2
   exit 1
 fi
 # 계측 바이너리가 저장소 루트에 default.profraw 를 떨구지 않도록 커버리지 출력을 임시 경로로 돌린다.
-if LLVM_PROFILE_FILE="$(mktemp -d)/locale.profraw" \
+if [[ "$LOCALE_RERUN_SKIPPED" == 1 ]]; then
+  :
+elif LLVM_PROFILE_FILE="$(mktemp -d)/locale.profraw" \
      xcrun xctest -AppleLanguages "(en-US)" -XCTest All "$BUNDLE" > "$LOCALE_LOG" 2>&1; then
   # **0건도 실패다.** `xctest` 는 한 건도 돌리지 않아도 0 으로 끝나므로, 종료코드만 보면
   # "로케일 격차 없음" 과 "아무것도 보지 않았다" 가 같은 초록이 된다 — 게이트가 이미 그 구별
