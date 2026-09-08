@@ -166,6 +166,29 @@ final class ShopTests: XCTestCase {
         XCTAssertEqual(s.itemCount(.shinyCharm), 0)
     }
 
+    // MARK: 탭 분류
+
+    /// **판매품은 탭 하나에만 들어간다.** 상점 탭은 화면 쪽 필터로 갈리는데, 세 필터가 각자
+    /// `ItemKind` 를 보므로 조건이 겹치면 같은 아이템이 두 탭에 뜨고 어긋나면 **어느 탭에도 안 뜬다**
+    /// (지닌물건이 100종 넘게 늘 예정이라 '도구' 탭에서 갈라낸 자리다).
+    ///
+    /// 필터가 화면 안 private 이라 소스에서 센다 — 조건을 함수로 빼면 그 함수만 초록이고
+    /// 화면은 여전히 옛 조건을 쓸 수 있다.
+    func testEveryPurchasableItemLandsInExactlyOneTab() throws {
+        let items = store(used: 0).purchasableItems
+        for kind in items {
+            let tabs = [kind.isEvolutionItem, kind.bagUse == .heldItem,
+                        !kind.isEvolutionItem && kind.bagUse != .heldItem].filter { $0 }
+            XCTAssertEqual(tabs.count, 1, "\(kind.rawValue) 가 탭 \(tabs.count) 개에 걸린다")
+        }
+        XCTAssertTrue(items.contains { $0.bagUse == .heldItem }, "배틀 탭이 빈 목록이면 아무것도 안 잠근다")
+        let source = try SourceScan.sources().first { $0.name.contains("ShopView") }
+        let code = try XCTUnwrap(source?.code)
+        XCTAssertTrue(code.contains("case .battle:"), "상점 화면에 배틀 탭이 없다")
+        XCTAssertTrue(code.contains("$0.bagUse != .heldItem"),
+                      "'도구' 탭이 지닌물건을 그대로 두고 있다 — 두 탭에 겹쳐 뜬다")
+    }
+
     // MARK: 정렬 (가격 저렴한 순 + 구매 완료 보유형 맨 아래)
 
     /// 상점 목록은 가격 오름차순(민트 100M < 사탕 500M < 이로치 부적 3B).
