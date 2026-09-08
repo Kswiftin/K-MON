@@ -45,9 +45,11 @@ final class SafariKeyCaptureNSView: NSView {
         held = []
     }
 
-    deinit {
-        if let monitor { NSEvent.removeMonitor(monitor) }
-    }
+    // `deinit` 에서는 정리하지 않는다 — Swift 6 엄격한 동시성 모드에서 `nonisolated deinit`
+    // 이 `Any?`(`Sendable` 아님)인 이 프로퍼티에 접근할 수 없다(컴파일 오류로 CI 가 잡았다).
+    // `dismantleNSView` 가 SwiftUI 표준 생명주기 훅으로 뷰가 트리에서 빠질 때 항상
+    // `stopMonitoring()` 을 부르므로(MainActor 컨텍스트), `deinit` 의 안전망은 애초에 불필요한
+    // 중복이었다.
 
     private func handle(_ event: NSEvent) -> NSEvent? {
         if window?.firstResponder is NSTextView { return event }
