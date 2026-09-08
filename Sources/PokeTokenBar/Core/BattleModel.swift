@@ -847,7 +847,8 @@ enum BattleSideCondition: String, Codable, Sendable, Equatable, CaseIterable {
     /// 순서를 바꾸면 같은 판에서 로그 줄 순서가 달라진다.
     case stickyWeb, stealthRock, spikes, toxicSpikes
 
-    /// 지속 턴. 장막·부적은 본가의 빛의점토가 없으므로 전부 5턴이고, 순풍만 4턴이다 —
+    /// 지속 턴. 장막·부적은 5턴이고 순풍만 4턴이다 — 빛의점토를 쥔 쪽이 깔면 장막만 8턴이 된다
+    /// (`HeldItemEffect.extendedTurns(of:)`가 거는 자리에서 답한다).
     /// 한 턴 더 불면 그 턴의 선공이 통째로 뒤집힌다. 편 방어기는 개인 방어와 같이 한 턴이다.
     ///
     /// 입장 데미지는 **0** 이다 — 걷히지 않으므로 셀 턴이 없다. 저장하는 숫자도 남은 턴이 아니라
@@ -1331,12 +1332,16 @@ struct BattleField: Sendable, Equatable {
     ///
     /// 입장 데미지만 다시 깔 수 있다 — **층 상한까지**다(`maxLayers`). 상한 위는 다른 상태와 같이
     /// 실패라, 매 턴 다시 깔아도 교체 즉사가 되지 않는다.
-    mutating func start(_ condition: BattleSideCondition, for team: BattleTeamSlot) -> Bool {
+    /// - Parameter turns: 지속 턴. `nil` 이면 이 상태의 정해진 길이고, 빛의점토를 쥔 쪽이 장막을
+    ///   깔면 늘어난 값이 온다. **입장 데미지는 이 값을 안 본다** — 저장하는 숫자가 턴이 아니라
+    ///   층이라, 늘려 봐야 층이 8 이 된다.
+    mutating func start(_ condition: BattleSideCondition, for team: BattleTeamSlot,
+                        turns: Int? = nil) -> Bool {
         guard condition != .auroraVeil || weather == .snow else { return false }
         let current = layers(condition, for: team)
         guard current < (condition.isEntryHazard ? condition.maxLayers : 1) else { return false }
-        sideConditions[team, default: [:]][condition] = condition.isEntryHazard ? current + 1
-                                                                               : condition.duration
+        sideConditions[team, default: [:]][condition] =
+            condition.isEntryHazard ? current + 1 : (turns ?? condition.duration)
         return true
     }
 
@@ -1360,10 +1365,13 @@ struct BattleField: Sendable, Equatable {
     func blocksCrit(against team: BattleTeamSlot) -> Bool { has(.luckyChant, for: team) }
 
     /// 필드를 깐다. 같은 필드를 다시 깔면 실패한다(날씨와 같은 이유).
-    mutating func start(_ terrain: BattleTerrain) -> Bool {
+    /// - Parameter turns: 지속 턴. 기본은 이 상태의 정해진 길이고, 지닌물건(그라운드코트)이
+    ///   늘리면 **거는 쪽이** 그 값을 넘긴다. 판이 아니라 부르는 쪽이 정하는 이유는 판이 누가
+    ///   걸었는지를 안 들고 있어서다.
+    mutating func start(_ terrain: BattleTerrain, turns: Int = BattleTerrain.duration) -> Bool {
         guard self.terrain != terrain else { return false }
         self.terrain = terrain
-        terrainTurns = BattleTerrain.duration
+        terrainTurns = turns
         return true
     }
 
@@ -1379,10 +1387,11 @@ struct BattleField: Sendable, Equatable {
 
     /// 날씨를 건다. 같은 날씨를 다시 걸면 **실패한다**(본가와 같다) — 턴이 연장되면 한쪽이
     /// 매 턴 다시 걸어 영구 날씨가 된다.
-    mutating func start(_ weather: BattleWeather) -> Bool {
+    /// - Parameter turns: 필드와 같은 규칙이다 — 날씨 돌을 쥔 쪽이 걸면 늘어난 값이 온다.
+    mutating func start(_ weather: BattleWeather, turns: Int = BattleWeather.duration) -> Bool {
         guard self.weather != weather else { return false }
         self.weather = weather
-        weatherTurns = BattleWeather.duration
+        weatherTurns = turns
         return true
     }
 }
@@ -1902,7 +1911,9 @@ enum BattleEngine {
     ///      방진고글의 날씨 잔뎀 무시, 만능우산의 볕·비 위력 보정 무시, 겨냥표적의 타입 면역 해제,
     ///      가벼운돌의 체중 절반). 구버전 피어는 그 이름을 모르는 값으로 접어 **통하지 않던 기술이
     ///      통하고** 밟지 않던 함정을 밟는다 — 데미지가 아니라 맞고 안 맞고가 갈린다.
-    static let rulesVersion = 32
+    ///      + 지속 시간을 늘리는 물건 6종(빛의점토의 장막 8턴, 날씨 돌 넷의 날씨 8턴,
+    ///      그라운드코트의 필드 8턴). 구버전 피어는 5턴으로 세어 세 턴 동안 판을 다르게 본다.
+    static let rulesVersion = 33
 
     /// 연결이 끊긴 배틀의 승패 — 남은 HP **비율**이 앞선 쪽이 이기고, 같으면 `nil`(무효)이다.
     ///
@@ -3076,7 +3087,9 @@ extension BattleEngine {
         attacker.guardStreak = 0
         // 필드기도 상대를 보지 않는다 — 날씨기와 같은 자리다.
         if let terrain = BattleTerrain.called(byMoveID: move.id) {
-            attacker.lastMoveFailed = !field.start(terrain)
+            attacker.lastMoveFailed = !field.start(
+                terrain, turns: attacker.heldEffect?.extendedTurns(of: .terrain(terrain))
+                    ?? BattleTerrain.duration)
             return events + (attacker.lastMoveFailed ? [.immune(defenderActor)]
                                                      : [.terrainStarted(terrain)])
         }
@@ -3086,7 +3099,9 @@ extension BattleEngine {
         if let condition = BattleSideCondition.called(byMoveID: move.id) {
             let team = BattleSideCondition.landsOnFoeSide(moveID: move.id) ? defenderTeam
                                                                            : attackerTeam
-            attacker.lastMoveFailed = !field.start(condition, for: team)
+            attacker.lastMoveFailed = !field.start(
+                condition, for: team,
+                turns: attacker.heldEffect?.extendedTurns(of: .sideCondition(condition)))
             return events + (attacker.lastMoveFailed ? [.immune(defenderActor)]
                                                      : [.sideConditionStarted(team, condition)])
         }
@@ -3120,7 +3135,9 @@ extension BattleEngine {
         }
         // 날씨기는 상대를 보지 않는다 — 자기 회복기와 같은 자리에서 빠져나간다.
         if let weather = BattleWeather.called(byMoveID: move.id) {
-            attacker.lastMoveFailed = !field.start(weather)
+            attacker.lastMoveFailed = !field.start(
+                weather, turns: attacker.heldEffect?.extendedTurns(of: .weather(weather))
+                    ?? BattleWeather.duration)
             // 같은 날씨를 다시 걸면 아무 일도 없다. 변화기가 아무것도 못 한 다른 경우와 같은 줄이다.
             return events + (attacker.lastMoveFailed ? [.immune(defenderActor)]
                                                      : [.weatherStarted(weather)])

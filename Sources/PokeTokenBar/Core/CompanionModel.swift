@@ -355,6 +355,13 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
     /// 탈출보타(조이기 탈출)는 여기 없다 — 이 엔진에는 교체를 막는 규칙 자체가 없어서, 넣으면
     /// 아무것도 풀지 않는 물건이 된다(교체 강제 부류와 함께 간다).
     case airBalloon, heavyDutyBoots, safetyGoggles, utilityUmbrella, ringTarget, floatStone
+    /// 지속 시간을 늘리는 물건 6종 — 빛의점토는 장막을, 날씨 돌 넷은 자기 날씨를, 그라운드코트는
+    /// 필드를 5턴에서 8턴으로 늘린다.
+    ///
+    /// 앞의 물건들과 갈리는 점은 **묻는 순간**이다: 효과가 지닌 개체가 아니라 판에 붙으므로, 거는
+    /// 그 자리에서 한 번 묻고 판은 누가 걸었는지를 안 들고 있는다(들면 교체·기절마다 주인을
+    /// 따라다녀야 하고, 주인이 쓰러진 뒤 장막의 길이가 무슨 뜻인지 답할 수 없다).
+    case lightClay, icyRock, smoothRock, heatRock, dampRock, terrainExtender
     /// R7 decor is inventory, not a second currency or store.
     // Mini Home furniture. The original three are the free campus starter set.
     case roomBed, roomTable, roomLamp
@@ -394,6 +401,7 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
              .shellBell, .blackSludge, .bigRoot,
              .airBalloon, .heavyDutyBoots, .safetyGoggles, .utilityUmbrella, .ringTarget,
              .floatStone,
+             .lightClay, .icyRock, .smoothRock, .heatRock, .dampRock, .terrainExtender,
              .roomBed, .roomTable, .roomLamp, .lovelyVanity, .lovelySofa, .lovelyHeartLamp,
              .retroArcade, .retroRadio, .retroTV, .naturePlant, .natureBench, .natureLantern: return nil
         case .linkingCord: return .plainTrade
@@ -481,7 +489,8 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
              .wideLens, .zoomLens, .brightPowder, .laxIncense,
              .shellBell, .blackSludge, .bigRoot,
              .airBalloon, .heavyDutyBoots, .safetyGoggles, .utilityUmbrella, .ringTarget,
-             .floatStone:
+             .floatStone,
+             .lightClay, .icyRock, .smoothRock, .heatRock, .dampRock, .terrainExtender:
             return .heldItem
         case .shinyCharm: return .passive
         case .roomBed, .roomTable, .roomLamp, .lovelyVanity, .lovelySofa, .lovelyHeartLamp,
@@ -547,6 +556,12 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
         case .utilityUmbrella: return .utilityUmbrella
         case .ringTarget:     return .ringTarget
         case .floatStone:     return .floatStone
+        case .lightClay:      return .lightClay
+        case .icyRock:        return .icyRock
+        case .smoothRock:     return .smoothRock
+        case .heatRock:       return .heatRock
+        case .dampRock:       return .dampRock
+        case .terrainExtender: return .terrainExtender
         default:
             // 타입 강화 도구와 열매는 표에서 답한다 — 50여 종을 여기 다시 나열하면 하나 빠뜨렸을 때
             // "가방에서는 지니게 되는데 배틀에서는 아무 일도 안 하는" 물건이 생긴다.
@@ -750,7 +765,8 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
         case .muscleBand, .wiseGlasses, .expertBelt, .metronome, .scopeLens,
              .wideLens, .zoomLens, .brightPowder, .laxIncense,
              .shellBell, .blackSludge, .bigRoot,
-             .airBalloon, .safetyGoggles, .ringTarget, .floatStone:
+             .airBalloon, .safetyGoggles, .ringTarget, .floatStone,
+             .lightClay, .icyRock, .smoothRock, .heatRock, .dampRock, .terrainExtender:
             return kebabRawValue
         // 통굽부츠·만능우산은 PokéAPI 에 스프라이트가 없다(8세대 아이템) — 규칙에서 파생시키면
         // 화면에 깨진 이미지가 남으므로 이모지 폴백만 쓴다(민트·테라피스와 같은 자리).
@@ -851,6 +867,9 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
         case .airBalloon: return "🎈"; case .heavyDutyBoots: return "🥾"
         case .safetyGoggles: return "🥽"; case .utilityUmbrella: return "☂️"
         case .ringTarget: return "🎯"; case .floatStone: return "🪨"
+        case .lightClay: return "🧱"; case .icyRock: return "🧊"
+        case .smoothRock: return "🏜️"; case .heatRock: return "🔥"
+        case .dampRock: return "💦"; case .terrainExtender: return "🧭"
         case .roomBed: return "🛏️"; case .roomTable: return "🪑"; case .roomLamp: return "💡"
         case .lovelyVanity: return "🪞"; case .lovelySofa: return "🩷"; case .lovelyHeartLamp: return "💕"
         case .retroArcade: return "🕹️"; case .retroRadio: return "📻"; case .retroTV: return "📺"
@@ -886,7 +905,8 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
              .wideLens, .zoomLens, .brightPowder, .laxIncense,
              .shellBell, .blackSludge, .bigRoot,
              .airBalloon, .heavyDutyBoots, .safetyGoggles, .utilityUmbrella, .ringTarget,
-             .floatStone:
+             .floatStone,
+             .lightClay, .icyRock, .smoothRock, .heatRock, .dampRock, .terrainExtender:
             return HeldItemBalance.battleToolPrice
         case .roomBed: return 1_500
         case .roomTable: return 1_000
@@ -1014,7 +1034,8 @@ enum HeldItemEffect: Sendable, Equatable, CaseIterable {
                .muscleBand, .wiseGlasses, .expertBelt, .metronome, .scopeLens,
                .wideLens, .zoomLens, .dullsFoeAim, .shellBell, .bigRoot, .blackSludge,
                .airBalloon, .heavyDutyBoots, .safetyGoggles, .utilityUmbrella, .ringTarget,
-               .floatStone]
+               .floatStone,
+               .lightClay, .icyRock, .smoothRock, .heatRock, .dampRock, .terrainExtender]
     }
 
     /// 데미지가 1.3배가 되고 그 대가로 매 턴 최대 HP 의 1/10 을 잃는다.
@@ -1076,6 +1097,8 @@ enum HeldItemEffect: Sendable, Equatable, CaseIterable {
     /// 규칙 한 줄을 **건너뛰는** 여섯 갈래. 앞의 물건들이 배율을 얹는 것과 반대로, 이쪽은 이미
     /// 있는 규칙(땅 접지·입장 데미지·날씨·타입 면역·체중)이 지닌 개체에게만 안 걸리게 한다.
     case airBalloon, heavyDutyBoots, safetyGoggles, utilityUmbrella, ringTarget, floatStone
+    /// 판에 거는 것을 오래 가게 하는 여섯 갈래 — 묻는 자리가 지닌 개체가 아니라 **거는 순간**이다.
+    case lightClay, icyRock, smoothRock, heatRock, dampRock, terrainExtender
 
     /// 위급 열매가 올릴 수 있는 스탯 — 본가에 열매가 있는 다섯뿐이다.
     static let pinchRaisedStats: [BattleStat] = [.atk, .def, .spa, .spd, .spe]
@@ -1097,7 +1120,9 @@ enum HeldItemEffect: Sendable, Equatable, CaseIterable {
              .muscleBand, .wiseGlasses, .expertBelt, .metronome, .scopeLens,
              .wideLens, .zoomLens, .dullsFoeAim, .shellBell, .bigRoot, .blackSludge,
              .airBalloon, .heavyDutyBoots, .safetyGoggles, .utilityUmbrella, .ringTarget,
-             .floatStone: return nil
+             .floatStone,
+             .lightClay, .icyRock, .smoothRock, .heatRock, .dampRock,
+             .terrainExtender: return nil
         }
     }
 
@@ -1115,7 +1140,9 @@ enum HeldItemEffect: Sendable, Equatable, CaseIterable {
              .muscleBand, .wiseGlasses, .expertBelt, .metronome, .scopeLens,
              .wideLens, .zoomLens, .dullsFoeAim, .shellBell, .bigRoot, .blackSludge,
              .airBalloon, .heavyDutyBoots, .safetyGoggles, .utilityUmbrella, .ringTarget,
-             .floatStone: return nil
+             .floatStone,
+             .lightClay, .icyRock, .smoothRock, .heatRock, .dampRock,
+             .terrainExtender: return nil
         }
     }
 
@@ -1137,7 +1164,9 @@ enum HeldItemEffect: Sendable, Equatable, CaseIterable {
              .muscleBand, .wiseGlasses, .expertBelt, .metronome, .scopeLens,
              .wideLens, .zoomLens, .dullsFoeAim, .shellBell, .bigRoot, .blackSludge,
              .airBalloon, .heavyDutyBoots, .safetyGoggles, .utilityUmbrella, .ringTarget,
-             .floatStone: return nil
+             .floatStone,
+             .lightClay, .icyRock, .smoothRock, .heatRock, .dampRock,
+             .terrainExtender: return nil
         }
     }
 
@@ -1180,7 +1209,9 @@ enum HeldItemEffect: Sendable, Equatable, CaseIterable {
              .muscleBand, .wiseGlasses, .expertBelt, .metronome, .scopeLens,
              .wideLens, .zoomLens, .dullsFoeAim, .shellBell, .bigRoot, .blackSludge,
              .airBalloon, .heavyDutyBoots, .safetyGoggles, .utilityUmbrella, .ringTarget,
-             .floatStone: return false
+             .floatStone,
+             .lightClay, .icyRock, .smoothRock, .heatRock, .dampRock,
+             .terrainExtender: return false
         }
     }
 
@@ -1211,7 +1242,9 @@ enum HeldItemEffect: Sendable, Equatable, CaseIterable {
              .muscleBand, .wiseGlasses, .expertBelt, .metronome, .scopeLens,
              .wideLens, .zoomLens, .dullsFoeAim, .shellBell, .bigRoot, .blackSludge,
              .airBalloon, .heavyDutyBoots, .safetyGoggles, .utilityUmbrella, .ringTarget,
-             .floatStone: return nil
+             .floatStone,
+             .lightClay, .icyRock, .smoothRock, .heatRock, .dampRock,
+             .terrainExtender: return nil
         }
     }
 
@@ -1399,6 +1432,35 @@ enum HeldItemEffect: Sendable, Equatable, CaseIterable {
                                HeldItemBalance.floatStoneDenominator) : nil
     }
 
+    /// 이 물건이 판에 거는 것을 **몇 턴** 가게 하나 — 안 늘리면 nil(그 상태의 기본 턴).
+    ///
+    /// 날씨·필드·진영 상태를 한 물음으로 묶는 이유는 세 자리가 같은 것을 묻기 때문이다: "지금 이
+    /// 개체가 거는 이것이 몇 턴 가나". 축을 셋으로 나누면 새 물건이 늘 때 세 자리 중 하나를
+    /// 빠뜨리고, 그 자리는 조용히 기본 턴으로 돈다(늘어나지 않은 것이 결함으로 안 보인다).
+    func extendedTurns(of subject: FieldDuration) -> Int? {
+        switch (self, subject) {
+        // 빛의점토는 **장막만** 늘린다. 목록을 적지 않고 "데미지를 반으로 깎는가" 를 묻는 이유는
+        // 그것이 장막의 정의라서다 — 새 장막이 늘어도 이 자리는 그대로 맞는다. 순풍·부적은
+        // 깎지 않으므로 저절로 빠진다(순풍이 한 턴 더 불면 그 턴의 선공이 통째로 뒤집힌다).
+        case (.lightClay, .sideCondition(let condition))
+                where condition.halves(.physical) || condition.halves(.special):
+            return HeldItemBalance.extendedFieldTurns
+        case (.icyRock, .weather(.snow)), (.smoothRock, .weather(.sandstorm)),
+             (.heatRock, .weather(.sun)), (.dampRock, .weather(.rain)),
+             (.terrainExtender, .terrain):
+            return HeldItemBalance.extendedFieldTurns
+        default:
+            return nil
+        }
+    }
+
+    /// 판에 걸리는 것 세 부류 — `extendedTurns(of:)` 가 무엇의 턴인지 밝히는 인자다.
+    enum FieldDuration: Equatable, Sendable {
+        case weather(BattleWeather)
+        case terrain(BattleTerrain)
+        case sideCondition(BattleSideCondition)
+    }
+
     /// 맞으면 사라지는가 — 풍선이다. 약점 반감 열매처럼 히트를 깎고 사라지는 것이 아니라 **데미지가
     /// 들어간 사실만** 보므로 조건을 물건 쪽에서 답한다(깎는 자리와 없애는 자리가 갈리지 않는다).
     var consumedWhenHit: Bool { self == .airBalloon }
@@ -1470,6 +1532,9 @@ enum HeldItemBalance {
     /// 대가만 있는 물건 셋(검은철구·느림보꼬리·만복향로)의 상점가 — 성능을 **깎는** 물건이라
     /// 값을 낮게 둔다. 0 원으로 두지 않는 이유는 자이로볼·카운터 조합에서 실제로 이득이라서다.
     static let drawbackPrice = 900
+    /// 지속 시간을 늘리는 물건이 만드는 턴 — 본가와 같은 8턴이다(기본은 5턴). 한 상수인 이유는
+    /// 여섯 물건이 같은 값을 주기 때문이다 — 물건마다 리터럴을 들면 하나만 조용히 어긋난다.
+    static let extendedFieldTurns = 8
     /// 가벼운돌이 체중에 곱하는 분수 — 본가와 같은 절반이다.
     static let floatStoneNumerator = 1
     static let floatStoneDenominator = 2

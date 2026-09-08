@@ -129,13 +129,15 @@ final class LobbyRoleTests: XCTestCase {
         // 27 = 면역·무시 물건 6종(풍선의 땅 기술 면역과 맞으면 터짐·통굽부츠의 입장 데미지 무시·
         //      방진고글의 날씨 잔뎀 무시·만능우산의 볕과 비 위력 보정 무시·겨냥표적의 타입 면역
         //      해제·가벼운돌의 체중 절반 — 데미지가 아니라 맞고 안 맞고가 갈린다).
+        // 28 = 지속 시간을 늘리는 물건 6종(빛의점토의 장막 8턴·날씨 돌 넷의 날씨 8턴·
+        //      그라운드코트의 필드 8턴 — 구버전 게스트는 5턴에 걷힌 판으로 뒤 라운드를 본다).
         // 방은 `rulesVersion` 을 안 보므로 규칙 차이를 막을 곳이 이 값뿐이다.
         //
         // **이 값을 리터럴로 박는 테스트는 여기 하나뿐이다.** 다섯 군데에 박혀 있던 동안은 누가
         // 정당하게 올릴 때마다 무관한 테스트 넷이 같이 빨개져 진짜 회귀와 구별이 안 됐다
         // (defect-log: 버전 리터럴을 박은 테스트는 남의 정당한 상향에 깨진다). 나머지 자리는
         // 자기 기능이 들어간 버전 **이상**인지만 본다 — 그게 각자가 주장하려던 사실이다.
-        XCTAssertEqual(MultiplayerWireMessage.protocolVersion, 27)
+        XCTAssertEqual(MultiplayerWireMessage.protocolVersion, 28)
     }
 
     /// `BattleEvent` 의 case 수를 동결한다 — **늘리면 `protocolVersion` 도 올려야 한다.**

@@ -1621,6 +1621,12 @@ struct L {
         case .utilityUmbrella: return "만능우산"
         case .ringTarget: return "겨냥표적"
         case .floatStone: return "가벼운돌"
+        case .lightClay: return "빛의점토"
+        case .icyRock: return "차가운바위"
+        case .smoothRock: return "보송보송바위"
+        case .heatRock: return "뜨거운바위"
+        case .dampRock: return "축축한바위"
+        case .terrainExtender: return "그라운드코트"
         case .shinyCharm: return "이로치 부적"
         case .linkingCord: return "연결의끈"
         case .fireStone: return "불꽃의돌"
@@ -1819,6 +1825,18 @@ struct L {
                 return "원래 통하지 않는 타입의 기술도 맞게 돼요. 특성으로 막는 기술은 그대로예요."
             case .floatStone:
                 return "몸무게가 절반이 돼요. 몸무게로 위력이 정해지는 기술에 덜 아파요."
+            case .lightClay:
+                return "리플렉터와 빛의장막이 5턴 대신 8턴 동안 이어져요."
+            case .icyRock:
+                return "내가 부른 싸라기눈이 5턴 대신 8턴 동안 이어져요."
+            case .smoothRock:
+                return "내가 부른 모래바람이 5턴 대신 8턴 동안 이어져요."
+            case .heatRock:
+                return "내가 부른 쨍쨍한 햇살이 5턴 대신 8턴 동안 이어져요."
+            case .dampRock:
+                return "내가 부른 비가 5턴 대신 8턴 동안 이어져요."
+            case .terrainExtender:
+                return "내가 깐 필드가 5턴 대신 8턴 동안 이어져요."
             case nil:
                 // 지닌물건 갈래인데 효과가 없는 조합 — `bagUse` 가 둘을 함께 정하므로 도달 불가다.
                 return ""
@@ -1893,6 +1911,12 @@ struct L {
         case .utilityUmbrella: return "햇살·비 위력 보정 무시"
         case .ringTarget: return "타입 면역 해제"
         case .floatStone: return "몸무게 1/2"
+        case .lightClay: return "장막 8턴"
+        case .icyRock: return "싸라기눈 8턴"
+        case .smoothRock: return "모래바람 8턴"
+        case .heatRock: return "쨍쨍한 햇살 8턴"
+        case .dampRock: return "비 8턴"
+        case .terrainExtender: return "필드 8턴"
         case nil:        return ""   // `bagUse` 가 둘을 함께 정하므로 도달 불가다
         }
     }
