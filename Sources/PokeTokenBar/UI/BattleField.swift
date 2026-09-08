@@ -312,6 +312,19 @@ struct CombatantBar: View {
         override ?? side.stats.hp
     }
 
+    /// 이 칸에 그릴 지닌물건 이름. **내 쪽만** 답한다 — 상대의 물건은 본가와 같이 감추고,
+    /// 발동하면 로그 줄(`heldItemTriggered`)로 드러난다. 판정을 실수치 HP 노출과 같은 축
+    /// (`revealsExactHP`)에 묶어 두는 이유는 둘이 같은 "상대 정보" 규칙이라 갈라지면 한쪽만
+    /// 새기 때문이다.
+    ///
+    /// 스냅샷이 아니라 **지금 쥔 것**을 묻는다(`activeHeldItem`) — 끈적끈적바늘처럼 배틀 중
+    /// 옮겨 붙는 물건이 있다.
+    /// `nonisolated` 는 `maxHP(of:override:)` 와 같은 이유다(동기 테스트에서 부른다).
+    nonisolated static func heldItemBadge(side: BattleSide, revealsExactHP: Bool, l: L) -> String? {
+        guard revealsExactHP, let item = side.activeHeldItem else { return nil }
+        return l.itemName(item)
+    }
+
     private var maxHP: Int { Self.maxHP(of: side, override: maxHPOverride) }
     private var tier: HPTier { HPTier.of(hp: side.hp, max: maxHP) }
 
@@ -349,6 +362,15 @@ struct CombatantBar: View {
             .frame(height: 6)
             HStack(spacing: 4) {
                 Text(title).font(.system(size: 10)).foregroundStyle(.tertiary).lineLimit(1)
+                if let held = Self.heldItemBadge(side: side, revealsExactHP: revealsExactHP, l: l) {
+                    Text(held)
+                        .font(PokedoroTheme.badgeFont(size: 7, weight: .bold))
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 3).padding(.vertical, 1)
+                        .background(Color.primary.opacity(0.09), in: Capsule())
+                        .lineLimit(1)
+                        .accessibilityLabel("\(l.heldItemSectionTitle) \(held)")
+                }
                 Spacer(minLength: 2)
                 StageArrows(side: side)
                 Text(revealsExactHP

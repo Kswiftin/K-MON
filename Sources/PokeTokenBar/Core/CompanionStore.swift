@@ -3392,6 +3392,28 @@ final class CompanionStore {
         return true
     }
 
+    /// 이 개체가 **지금** 쥔 물건. 활성 개체는 세이브의 활성 값을 답한다 — 화면이 들고 있는
+    /// `MonState` 는 값 복사라, 팝오버가 열린 채 벗기면 그 복사본은 계속 물건을 들고 있어
+    /// "벗기기를 눌렀는데 그대로" 로 보인다. 박스 개체는 자기 값이 답이다.
+    func heldItem(of mon: MonState) -> ItemKind? {
+        mon.id == state.active?.id ? state.active?.heldItem : mon.heldItem
+    }
+
+    /// 벗길 수 있나 — 활성 개체가 무언가를 지니고 있을 때만.
+    var canTakeHeldItem: Bool { state.active?.heldItem != nil }
+
+    /// 지닌물건을 떼어 가방으로 **돌려준다**. 덮어쓰기(`giveHeldItem`)만으로는 "아무것도 안 지닌"
+    /// 상태로 돌아갈 수 없어, 대가가 붙은 물건(생명의구슬·구애 계열 등)을 한 번 지니면 그 개체가
+    /// 계속 그 대가를 안고 싸우게 된다.
+    @discardableResult
+    func takeHeldItem() -> Bool {
+        guard let held = state.active?.heldItem else { return false }
+        state.inventory[held.rawValue] = itemCount(held) + 1
+        state.active!.heldItem = nil
+        save()
+        return true
+    }
+
     // MARK: 하트비늘 (기술 다시 배우기 — #97)
 
     /// 사용 가능 — 활성 개체 + 재고>0 + 조회 중 아님. `currentLine` 은 보지 않는다(민트와 같은 이유:

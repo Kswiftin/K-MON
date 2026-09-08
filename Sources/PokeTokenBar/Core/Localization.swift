@@ -2032,6 +2032,11 @@ struct L {
         case nil:        return ""   // `bagUse` 가 둘을 함께 정하므로 도달 불가다
         }
     }
+    /// 지닌물건 표시 자리의 이름표 — 소유 포켓몬 상세 카드와 배틀 칸 배지가 함께 쓴다.
+    var heldItemSectionTitle: String { "지닌 물건" }
+    /// 벗기기 — 물건을 개체에서 떼어 가방으로 돌려보낸다.
+    var heldItemTakeOff: String { "벗기기" }
+
     /// 이미 지니고 있는 물건을 또 지니게 할 수는 없다 — 가방이 비활성 사유로 쓴다. "포켓몬이
     /// 필요해요" 로 뭉개면 재고도 동행도 있는데 거절당한 사용자가 이유를 알 수 없다.
     var heldItemAlreadyHeld: String { "이미 지니고 있어요" }
