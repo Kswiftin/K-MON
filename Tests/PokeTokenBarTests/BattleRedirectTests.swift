@@ -35,6 +35,33 @@ final class BattleRedirectTests: XCTestCase {
         return snapshot(id, hp: hp, speed: speed, types: types, moves: [move])
     }
 
+    /// 도우미 하나만 든 개체. 우선도 5 라 아군의 공격보다 반드시 먼저 나간다(본가와 같다).
+    private func helpingHandMove() -> MoveSpec {
+        var move = MoveSpec(id: 270, names: ["en": "Helping Hand"], type: .normal, power: 0,
+                            damageClass: .status, accuracy: nil, pp: 20, target: "ally")
+        move.ailment = "none"; move.ailmentChance = 0
+        move.statChanges = []; move.statChance = 0
+        move.targetsUser = false
+        move.priority = 5
+        return move
+    }
+
+    private func helperSnapshot(speed: Int) -> BattleSnapshot {
+        snapshot(3, speed: speed, moves: [helpingHandMove()])
+    }
+
+    /// 비교 기준 — 도우미 자리에 **아무 일도 하지 않는** 기술을 둔다. 위력 0 짜리 자기 대상
+    /// 변화기라 rng 소비와 턴 순서는 도우미와 같은 자리에 남는다.
+    private func idleSnapshot(speed: Int) -> BattleSnapshot {
+        var move = MoveSpec(id: 999, names: ["en": "Idle"], type: .normal, power: 0,
+                            damageClass: .status, accuracy: nil, pp: 20, target: "user")
+        move.ailment = "none"; move.ailmentChance = 0
+        move.statChanges = []; move.statChance = 0
+        move.targetsUser = true
+        move.priority = 5
+        return snapshot(3, speed: speed, moves: [move])
+    }
+
     private func battle(mine: [BattleSnapshot], opponents: [BattleSnapshot],
                         seed: UInt64 = 7) -> WaveBattle {
         WaveBattle(mine: mine.map(BattleSide.init), opponents: opponents.map(BattleSide.init),
@@ -207,6 +234,86 @@ final class BattleRedirectTests: XCTestCase {
         // 한 턴짜리 유도와 달리 라운드가 끝난 뒤에도 값을 읽을 수 있다).
         XCTAssertGreaterThan(battle.fighters[0].side.substituteHP, 0,
                              "자기에게 건 기술의 결과가 라운드 안에서 사라졌다")
+    }
+
+    // MARK: 도우미 (아군의 기술 위력을 올린다)
+
+    /// 도우미는 **아군을 지목하는** 기술이다 — 데이터의 `target` 슬러그가 그 사실을 나른다.
+    func testTheDataNamesHelpingHandAsAnAllyAimedMove() {
+        XCTAssertEqual(BattleVolatile.called(byMoveID: 270), .helpingHand)
+        XCTAssertTrue(helpingHandMove().targetsAlly, "도우미가 아군 대상 기술로 읽히지 않는다")
+        XCTAssertFalse(helpingHandMove().targetsUser == true, "도우미는 자기에게 거는 기술이 아니다")
+        var hit = MoveSpec(id: 1, names: ["en": "Hit"], type: .normal, power: 40,
+                           damageClass: .physical, accuracy: nil, pp: 20)
+        hit.targetsUser = false
+        XCTAssertFalse(hit.targetsAlly, "평범한 공격기가 아군 대상으로 읽힌다")
+    }
+
+    /// 도우미를 받은 아군의 기술이 **1.5 배**로 들어간다. 안 받은 판과 같은 seed 로 비교한다.
+    func testHelpingHandBoostsThePartnersMoveInTheWaveRun() {
+        var boosted = battle(mine: [helperSnapshot(speed: 400), snapshot(2, speed: 300)],
+                             opponents: [snapshot(90, power: 0, speed: 1),
+                                         snapshot(91, power: 0, speed: 1)])
+        XCTAssertTrue(boosted.choose(.move(index: 0, target: 0), forSlot: 0))
+        XCTAssertTrue(boosted.choose(.move(index: 0, target: 0), forSlot: 1))
+        let boostedDamage = boosted.opponents[0].stats.hp - boosted.opponents[0].hp
+
+        // 같은 판에서 도우미만 뺀다 — 도우미를 쓴 칸이 대신 아무 일도 안 하는 기술을 쓴다.
+        var plain = battle(mine: [idleSnapshot(speed: 400), snapshot(2, speed: 300)],
+                           opponents: [snapshot(90, power: 0, speed: 1),
+                                       snapshot(91, power: 0, speed: 1)])
+        XCTAssertTrue(plain.choose(.move(index: 0, target: 0), forSlot: 0))
+        XCTAssertTrue(plain.choose(.move(index: 0, target: 0), forSlot: 1))
+        let plainDamage = plain.opponents[0].stats.hp - plain.opponents[0].hp
+
+        XCTAssertGreaterThan(plainDamage, 0, "비교 기준 판이 아무 데미지도 안 넣었다")
+        XCTAssertEqual(boostedDamage, plainDamage * 3 / 2, accuracy: 2,
+                       "도우미가 아군의 위력을 1.5 배로 올리지 않았다")
+    }
+
+    /// 도우미는 **받은 아군**에게 붙는다 — 쓴 쪽에 붙으면 혼자서 1.5 배로 때리는 기술이 된다.
+    func testHelpingHandLandsOnThePartnerAndNotOnTheUser() {
+        var subject = battle(mine: [helperSnapshot(speed: 400), snapshot(2, speed: 300)],
+                             opponents: [snapshot(90, power: 0, speed: 1),
+                                         snapshot(91, power: 0, speed: 1)])
+        XCTAssertTrue(subject.choose(.move(index: 0, target: 0), forSlot: 0))
+        XCTAssertTrue(subject.choose(.move(index: 0, target: 0), forSlot: 1))
+        let caster = BattleActor.fighter(subject.myField[0].id)
+        let partner = BattleActor.fighter(subject.myField[1].id)
+        XCTAssertTrue(subject.events.contains(.volatileStarted(partner, .helpingHand)),
+                      "받은 아군에게 붙지 않았다")
+        XCTAssertFalse(subject.events.contains(.volatileStarted(caster, .helpingHand)),
+                       "도우미가 쓴 쪽에 붙었다 — 혼자서 1.5 배가 된다")
+    }
+
+    /// 도우미도 **한 턴짜리**다 — 남으면 그 아군이 배틀 내내 1.5 배로 때린다.
+    func testHelpingHandLastsASingleTurn() {
+        XCTAssertEqual(BattleVolatile.helpingHand.selfDuration, 1)
+    }
+
+    /// 방에서도 같은 규칙이다 — 팀 동료에게 걸고, 그 동료의 기술이 세진다.
+    func testHelpingHandReachesATeammateInTheRoom() throws {
+        let ids = (0..<4).map { _ in UUID() }
+        func run(withHelper: Bool) throws -> Int {
+            let helper = withHelper ? helperSnapshot(speed: 400) : idleSnapshot(speed: 400)
+            let fighters = [
+                fighter(ids[0], snapshot: helper, team: .red),
+                fighter(ids[1], snapshot: snapshot(2, speed: 300), team: .red),
+                fighter(ids[2], snapshot: snapshot(90, power: 0, speed: 1), team: .blue),
+                fighter(ids[3], snapshot: snapshot(91, power: 0, speed: 1), team: .blue),
+            ]
+            var battle = try MultiplayerBattle(fighters: fighters, mode: .teams, seed: 9)
+            _ = try battle.resolveRound([
+                MultiplayerAction(attackerID: ids[0], targetID: ids[1], moveIndex: 0),
+                MultiplayerAction(attackerID: ids[1], targetID: ids[2], moveIndex: 0),
+                MultiplayerAction(attackerID: ids[2], targetID: ids[0], moveIndex: 0),
+                MultiplayerAction(attackerID: ids[3], targetID: ids[0], moveIndex: 0),
+            ])
+            return battle.fighters[2].side.stats.hp - battle.fighters[2].side.hp
+        }
+        let boosted = try run(withHelper: true), plain = try run(withHelper: false)
+        XCTAssertGreaterThan(plain, 0, "비교 기준 판이 아무 데미지도 안 넣었다")
+        XCTAssertEqual(boosted, plain * 3 / 2, accuracy: 2, "방에서 도우미가 듣지 않았다")
     }
 
     // MARK: 로그

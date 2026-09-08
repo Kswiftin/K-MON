@@ -20,9 +20,6 @@ final class ShowdownEffectTableTests: XCTestCase {
         "disable", "encore", "taunt", "torment", "imprison", "healblock",
         // 맞은 데미지를 모아 두 배로 되돌려주는 부류 — 기술이 나가기 전에 턴을 잡아먹는 자리가 없다.
         "bide",
-        // 다인전 타겟 유도 중 도우미 하나 — 아군을 **고르는** 자리가 두 모드에 아직 없다
-        // (유도 셋은 구현했다: 자기·상대에게 거는 기술이라 지금 있는 타겟 경로로 닿는다).
-        "helpinghand",
         // 랭크·급소·명중 배율을 한 줄씩 얹는 부류. 얹는 자리는 있고 아직 안 얹었다.
         "stockpile", "dragoncheer", "noretreat", "powertrick", "powershift",
         // 상성·접지·명중 규칙을 바꾸는 부류 — 상성표를 지나는 자리가 하나가 아니다.
