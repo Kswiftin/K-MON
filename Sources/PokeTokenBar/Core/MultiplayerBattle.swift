@@ -419,7 +419,9 @@ enum MultiplayerWireMessage: Codable, Sendable, Equatable {
     //     끊긴다 — 규칙만 바뀐 게 아니라 **와이어 모양**이 바뀌었다.
     // 22: 열매 29종(약점 반감 18·위급 6·성격 회복 5) — 구버전 게스트는 그 이름을 모르는
     //     아이템으로 접어 같은 판의 데미지·랭크·HP 가 갈린다.
-    static let protocolVersion = 22
+    // 23: 주얼 18종과 대가만 있는 셋(검은철구·느림보꼬리·만복향로) — 후공 물건은 행동 순서와
+    //     무작위 tie-break 소비까지 바꾼다.
+    static let protocolVersion = 23
     case join(version: Int, participant: LobbyParticipant, snapshot: BattleSnapshot)
     case lobby(MultiplayerLobby)
     case ready(participantID: UUID, ready: Bool)
@@ -655,6 +657,11 @@ struct MultiplayerBattle: Sendable {
             let leftPriority = leftFighter.side.move(at: lhs.0.moveIndex).turnPriority
             let rightPriority = rightFighter.side.move(at: rhs.0.moveIndex).turnPriority
             if leftPriority != rightPriority { return leftPriority > rightPriority }
+            // 후공 물건(느림보꼬리·만복향로)은 우선도 **뒤**, 스피드 **앞**이다 — 아무리 빨라도
+            // 뒤로 가지만 우선도는 이기지 못한다(1v1 `firstMoverIsA` 와 같은 순서).
+            let leftLags = BattleEngine.movesLast(leftFighter.side)
+            let rightLags = BattleEngine.movesLast(rightFighter.side)
+            if leftLags != rightLags { return rightLags }
             // `stats` 는 배틀 시작에 한 번 계산된 값이다. 여기서 `effectiveStats()` 를 부르던
             // 때는 비교 횟수만큼 스탯을 다시 만들었다. 마비·순풍 보정은 `orderingSpeed` 가 들고
             // 있다 — 1v1 과 같은 값을 봐야 두 모드의 순서 규칙이 갈라지지 않는다.

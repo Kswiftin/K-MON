@@ -306,6 +306,18 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
     /// 난수원이 없다 — 구슬 2종이 화상·맹독으로 제한된 것과 같은 제약이다. 그래서 다섯은 같은
     /// 효과를 주는 다섯 물건이다(향로와 신비의물방울이 같은 효과인 것과 같다).
     case figyBerry, wikiBerry, magoBerry, aguavBerry, iapapaBerry
+    /// 주얼 18종 — 그 타입 기술 **하나**를 1.3 배로 만들고 사라진다. 타입 강화 도구(×1.2 상시)와
+    /// 갈리는 점은 그것이다: 폭이 같고 배율이 크되 한 번뿐이다.
+    case normalGem, fireGem, waterGem, electricGem, grassGem, iceGem
+    case fightingGem, poisonGem, groundGem, flyingGem, psychicGem, bugGem
+    case rockGem, ghostGem, dragonGem, darkGem, steelGem, fairyGem
+    /// 대가만 있는 물건 셋. 검은철구는 스피드를 절반으로 만들고 지닌 개체를 **땅에 닿게** 한다
+    /// (자이로볼처럼 느릴수록 강한 기술과 짝지어 쓴다). 느림보꼬리·만복향로는 같은 우선도에서
+    /// 뒤로 밀린다 — 되돌려주는 기술(카운터 부류)과 짝이다.
+    ///
+    /// 끈적끈적바늘은 여기 없다: 접촉 기술 판정이 이 저장소의 기술 데이터에 없어서, 넣으면 주인만
+    /// 깎이고 상대에게는 아무 일도 안 하는 물건이 된다.
+    case ironBall, laggingTail, fullIncense
     /// R7 decor is inventory, not a second currency or store.
     // Mini Home furniture. The original three are the free campus starter set.
     case roomBed, roomTable, roomLamp
@@ -331,6 +343,10 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
              .kasibBerry, .habanBerry, .colburBerry, .babiriBerry, .chilanBerry, .roseliBerry,
              .liechiBerry, .ganlonBerry, .salacBerry, .petayaBerry, .apicotBerry, .lansatBerry,
              .figyBerry, .wikiBerry, .magoBerry, .aguavBerry, .iapapaBerry,
+             .normalGem, .fireGem, .waterGem, .electricGem, .grassGem, .iceGem,
+             .fightingGem, .poisonGem, .groundGem, .flyingGem, .psychicGem, .bugGem,
+             .rockGem, .ghostGem, .dragonGem, .darkGem, .steelGem, .fairyGem,
+             .ironBall, .laggingTail, .fullIncense,
              .roomBed, .roomTable, .roomLamp, .lovelyVanity, .lovelySofa, .lovelyHeartLamp,
              .retroArcade, .retroRadio, .retroTV, .naturePlant, .natureBench, .natureLantern: return nil
         case .linkingCord: return .plainTrade
@@ -404,7 +420,11 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
              .kebiaBerry, .shucaBerry, .cobaBerry, .payapaBerry, .tangaBerry, .chartiBerry,
              .kasibBerry, .habanBerry, .colburBerry, .babiriBerry, .chilanBerry, .roseliBerry,
              .liechiBerry, .ganlonBerry, .salacBerry, .petayaBerry, .apicotBerry, .lansatBerry,
-             .figyBerry, .wikiBerry, .magoBerry, .aguavBerry, .iapapaBerry:
+             .figyBerry, .wikiBerry, .magoBerry, .aguavBerry, .iapapaBerry,
+             .normalGem, .fireGem, .waterGem, .electricGem, .grassGem, .iceGem,
+             .fightingGem, .poisonGem, .groundGem, .flyingGem, .psychicGem, .bugGem,
+             .rockGem, .ghostGem, .dragonGem, .darkGem, .steelGem, .fairyGem,
+             .ironBall, .laggingTail, .fullIncense:
             return .heldItem
         case .shinyCharm: return .passive
         case .roomBed, .roomTable, .roomLamp, .lovelyVanity, .lovelySofa, .lovelyHeartLamp,
@@ -440,10 +460,14 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
         case .flameOrb:    return .flameOrb
         case .toxicOrb:    return .toxicOrb
         case .assaultVest: return .assaultVest
+        case .ironBall:    return .ironBall
+        case .laggingTail, .fullIncense: return .movesLast
         default:
             // 타입 강화 도구와 열매는 표에서 답한다 — 50여 종을 여기 다시 나열하면 하나 빠뜨렸을 때
             // "가방에서는 지니게 되는데 배틀에서는 아무 일도 안 하는" 물건이 생긴다.
-            return typeEnhancedType.map { HeldItemEffect.typeBoost($0) } ?? berryEffect
+            return typeEnhancedType.map { HeldItemEffect.typeBoost($0) }
+                ?? berryEffect
+                ?? gemType.map { HeldItemEffect.gem($0) }
         }
     }
 
@@ -478,6 +502,32 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
         case .apicotBerry: return .pinchStatBoost(.spd)
         case .lansatBerry: return .pinchCrit
         case .figyBerry, .wikiBerry, .magoBerry, .aguavBerry, .iapapaBerry: return .pinchHeal
+        default: return nil
+        }
+    }
+
+    /// 이 주얼이 올려 주는 기술 타입 — 주얼이 아니면 nil. 표를 아이템 쪽에 두는 이유는 타입 강화
+    /// 도구(`typeEnhancedType`)와 같다.
+    var gemType: PokemonType? {
+        switch self {
+        case .normalGem:   return .normal
+        case .fireGem:     return .fire
+        case .waterGem:    return .water
+        case .electricGem: return .electric
+        case .grassGem:    return .grass
+        case .iceGem:      return .ice
+        case .fightingGem: return .fighting
+        case .poisonGem:   return .poison
+        case .groundGem:   return .ground
+        case .flyingGem:   return .flying
+        case .psychicGem:  return .psychic
+        case .bugGem:      return .bug
+        case .rockGem:     return .rock
+        case .ghostGem:    return .ghost
+        case .dragonGem:   return .dragon
+        case .darkGem:     return .dark
+        case .steelGem:    return .steel
+        case .fairyGem:    return .fairy
         default: return nil
         }
     }
@@ -569,7 +619,10 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
         case .waveIncense: return "wave-incense"
         case .roseIncense: return "rose-incense"
         // 열매는 케이스명이 곧 API 아이템명이다(위 `kebabRawValue`).
-        case _ where berryEffect != nil: return kebabRawValue
+        case _ where berryEffect != nil || gemType != nil: return kebabRawValue
+        case .ironBall: return "iron-ball"
+        case .laggingTail: return "lagging-tail"
+        case .fullIncense: return "full-incense"
         default: return evolutionRule?.apiItemName
         }
     }
@@ -637,6 +690,13 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
             return "🍒"
         case .figyBerry, .wikiBerry, .magoBerry, .aguavBerry, .iapapaBerry:
             return "🍑"
+        case .normalGem, .fireGem, .waterGem, .electricGem, .grassGem, .iceGem,
+             .fightingGem, .poisonGem, .groundGem, .flyingGem, .psychicGem, .bugGem,
+             .rockGem, .ghostGem, .dragonGem, .darkGem, .steelGem, .fairyGem:
+            return "💎"
+        case .ironBall: return "⚫"
+        case .laggingTail: return "🐌"
+        case .fullIncense: return "🕯️"
         case .roomBed: return "🛏️"; case .roomTable: return "🪑"; case .roomLamp: return "💡"
         case .lovelyVanity: return "🪞"; case .lovelySofa: return "🩷"; case .lovelyHeartLamp: return "💕"
         case .retroArcade: return "🕹️"; case .retroRadio: return "📻"; case .retroTV: return "📺"
@@ -659,6 +719,8 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
         case .assaultVest: return HeldItemBalance.assaultVestPrice
         case _ where typeEnhancedType != nil: return HeldItemBalance.typeEnhancerPrice
         case _ where berryEffect != nil: return HeldItemBalance.berryPrice
+        case _ where gemType != nil: return HeldItemBalance.gemPrice
+        case .ironBall, .laggingTail, .fullIncense: return HeldItemBalance.drawbackPrice
         case .roomBed: return 1_500
         case .roomTable: return 1_000
         case .roomLamp: return 800
@@ -779,6 +841,8 @@ enum HeldItemEffect: Sendable, Equatable, CaseIterable {
             + PokemonType.allCases.map(HeldItemEffect.typeBoost)
             + PokemonType.allCases.map(HeldItemEffect.resistBerry)
             + HeldItemEffect.pinchRaisedStats.map(HeldItemEffect.pinchStatBoost)
+            + PokemonType.allCases.map(HeldItemEffect.gem)
+            + [.ironBall, .movesLast]
     }
 
     /// 데미지가 1.3배가 되고 그 대가로 매 턴 최대 HP 의 1/10 을 잃는다.
@@ -809,6 +873,13 @@ enum HeldItemEffect: Sendable, Equatable, CaseIterable {
     case pinchCrit
     /// 같은 위급 조건에서 최대 HP 의 1/3 을 회복한다 — 성격 회복 열매 5종.
     case pinchHeal
+    /// 한 타입의 기술 **하나**를 1.3 배로 만들고 사라진다 — 주얼 18종. 타입 강화 도구
+    /// (`typeBoost`)와 payload 는 같지만 축이 다르다: 저기는 상시, 여기는 1회용이다.
+    case gem(PokemonType)
+    /// 스피드가 절반이 되고 지닌 개체가 **땅에 닿는다** — 검은철구.
+    case ironBall
+    /// 같은 우선도 안에서 뒤로 밀린다 — 느림보꼬리·만복향로.
+    case movesLast
 
     /// 위급 열매가 올릴 수 있는 스탯 — 본가에 열매가 있는 다섯뿐이다.
     static let pinchRaisedStats: [BattleStat] = [.atk, .def, .spa, .spd, .spe]
@@ -823,7 +894,8 @@ enum HeldItemEffect: Sendable, Equatable, CaseIterable {
         case .choiceSpecs: return .special
         case .lifeOrb, .focusSash, .leftovers, .choiceScarf,
              .flameOrb, .toxicOrb, .assaultVest, .typeBoost,
-             .resistBerry, .pinchStatBoost, .pinchCrit, .pinchHeal: return nil
+             .resistBerry, .pinchStatBoost, .pinchCrit, .pinchHeal,
+             .gem, .ironBall, .movesLast: return nil
         }
     }
 
@@ -834,7 +906,8 @@ enum HeldItemEffect: Sendable, Equatable, CaseIterable {
         case .assaultVest: return .special
         case .lifeOrb, .focusSash, .leftovers, .choiceBand, .choiceSpecs, .choiceScarf,
              .flameOrb, .toxicOrb, .typeBoost,
-             .resistBerry, .pinchStatBoost, .pinchCrit, .pinchHeal: return nil
+             .resistBerry, .pinchStatBoost, .pinchCrit, .pinchHeal,
+             .gem, .ironBall, .movesLast: return nil
         }
     }
 
@@ -849,7 +922,8 @@ enum HeldItemEffect: Sendable, Equatable, CaseIterable {
         case .toxicOrb: return .toxic
         case .lifeOrb, .focusSash, .leftovers, .choiceBand, .choiceSpecs, .choiceScarf,
              .assaultVest, .typeBoost,
-             .resistBerry, .pinchStatBoost, .pinchCrit, .pinchHeal: return nil
+             .resistBerry, .pinchStatBoost, .pinchCrit, .pinchHeal,
+             .gem, .ironBall, .movesLast: return nil
         }
     }
 
@@ -876,7 +950,8 @@ enum HeldItemEffect: Sendable, Equatable, CaseIterable {
         switch self {
         case .choiceBand, .choiceSpecs, .choiceScarf: return true
         case .lifeOrb, .focusSash, .leftovers, .flameOrb, .toxicOrb, .assaultVest,
-             .typeBoost, .resistBerry, .pinchStatBoost, .pinchCrit, .pinchHeal: return false
+             .typeBoost, .resistBerry, .pinchStatBoost, .pinchCrit, .pinchHeal,
+             .gem, .ironBall, .movesLast: return false
         }
     }
 
@@ -900,9 +975,29 @@ enum HeldItemEffect: Sendable, Equatable, CaseIterable {
         case .pinchCrit:                return .sharpenCrit
         case .pinchHeal:                return .heal
         case .lifeOrb, .focusSash, .leftovers, .choiceBand, .choiceSpecs, .choiceScarf,
-             .flameOrb, .toxicOrb, .assaultVest, .typeBoost, .resistBerry: return nil
+             .flameOrb, .toxicOrb, .assaultVest, .typeBoost, .resistBerry,
+             .gem, .ironBall, .movesLast: return nil
         }
     }
+
+    /// 이 물건이 **한 번만** 올려 주는 기술 타입 — 주얼이다. 상시 강화(`boostedMoveType`)와
+    /// 나눈 이유는 소모다: 한 축으로 접으면 상시 도구가 첫 기술에 사라지거나 주얼이 영원히 남는다.
+    var oneShotBoostedMoveType: PokemonType? {
+        if case .gem(let type) = self { return type }
+        return nil
+    }
+
+    /// 스피드를 절반으로 만드는가 — 검은철구뿐이다. 올리는 축(`boostsSpeed`)과 나눈 이유는
+    /// 방향이 반대라서다(한 축에 부호를 실으면 배율을 곱하는 자리가 둘 중 하나를 잊는다).
+    var halvesSpeed: Bool { self == .ironBall }
+
+    /// 지닌 개체를 **땅에 닿게** 하는가 — 검은철구뿐이다. 비행·부유의 땅 기술 면역과 필드 효과가
+    /// 같은 이 값을 봐야 "지진은 맞는데 그래스필드는 안 받는" 반쪽 접지가 안 생긴다.
+    var groundsHolder: Bool { self == .ironBall }
+
+    /// 같은 우선도 안에서 뒤로 밀리는가 — 느림보꼬리·만복향로다. 스피드 배율이 아니라 별도 축인
+    /// 이유는 규칙이 다르기 때문이다: 아무리 빨라도 뒤로 가고, 우선도는 이기지 못한다.
+    var movesLast: Bool { self == .movesLast }
 
     /// 위급 열매가 하는 일 — HP 가 아니라 **행동**이 갈리므로 값 하나로 접지 않는다.
     enum PinchAction: Equatable, Sendable {
@@ -958,6 +1053,15 @@ enum HeldItemBalance {
     static let pinchHealDivisor = 3
     /// 위급 열매가 올리는 랭크 — 하나다(본가와 같다).
     static let pinchStatStages = 1
+
+    /// 주얼의 배율 — 본가 6세대 이후와 같은 ×1.3(5세대의 ×1.5 는 1회용치고 과하다).
+    static let gemNumerator = 13
+    static let gemDenominator = 10
+    /// 주얼의 상점가 — 배율은 생명의구슬과 같지만 한 번뿐이라 훨씬 싸다.
+    static let gemPrice = 2_000
+    /// 대가만 있는 물건 셋(검은철구·느림보꼬리·만복향로)의 상점가 — 성능을 **깎는** 물건이라
+    /// 값을 낮게 둔다. 0 원으로 두지 않는 이유는 자이로볼·카운터 조합에서 실제로 이득이라서다.
+    static let drawbackPrice = 900
 
     /// 구슬 2종의 상점가 — 둘이 같은 값이다(거는 상태만 갈릴 뿐 같은 물건이다). 지닌물건 중
     /// **가장 싸다**: 주는 것이 강화가 아니라 상태이상이라, 근성 같은 특성과 짝지어야 이득이 되고

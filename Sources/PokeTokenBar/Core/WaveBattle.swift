@@ -265,6 +265,11 @@ struct WaveBattle: Sendable {
             let leftPriority = left.move(at: lhs.0.moveIndex).turnPriority
             let rightPriority = right.move(at: rhs.0.moveIndex).turnPriority
             if leftPriority != rightPriority { return leftPriority > rightPriority }
+            // 후공 물건(느림보꼬리·만복향로)은 우선도 **뒤**, 스피드 **앞**이다 — 아무리 빨라도
+            // 뒤로 가지만 우선도는 이기지 못한다(1v1 `firstMoverIsA` 와 같은 순서).
+            let leftLags = BattleEngine.movesLast(left)
+            let rightLags = BattleEngine.movesLast(right)
+            if leftLags != rightLags { return rightLags }
             // 순풍은 편에 깔리므로 스피드를 편과 함께 물어야 한다 — 내 칸은 늘 좌변(.a)이다.
             let leftSpeed = BattleEngine.orderingSpeed(left, team: teamSlot(isMine: lhs.0.isMine),
                                                        field: field)

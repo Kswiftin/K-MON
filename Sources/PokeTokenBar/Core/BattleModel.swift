@@ -1367,7 +1367,10 @@ struct BattleField: Sendable, Equatable {
     /// 이 개체가 땅에 닿아 있는가 — 필드 효과는 닿은 쪽에만 걸린다.
     /// 비행 타입과 부유 특성이 뜬 쪽이다(공중에 뜨는 기술은 엔진에 없다).
     static func isGrounded(_ side: BattleSide) -> Bool {
-        !side.activeTypes.contains(.flying) && side.ability != .levitate
+        // 검은철구는 뜬 개체를 내려놓는다 — 땅 기술 면역(`BattleEngine.typeMultiplier`)과 **같은
+        // 축**(`groundsHolder`)을 봐야 "지진은 맞는데 그래스필드는 안 받는" 반쪽 접지가 안 생긴다.
+        if side.heldEffect?.groundsHolder == true { return true }
+        return !side.activeTypes.contains(.flying) && side.ability != .levitate
     }
 
     /// 날씨를 건다. 같은 날씨를 다시 걸면 **실패한다**(본가와 같다) — 턴이 연장되면 한쪽이
@@ -1611,6 +1614,8 @@ struct BattleSide: Sendable, Equatable {
         if heldEffect?.boostsSpeed == true {
             boosted = boosted * HeldItemBalance.choiceNumerator / HeldItemBalance.choiceDenominator
         }
+        // 검은철구도 **마비 반감 앞에서** 곱한다(구애스카프와 같은 순서·같은 이유).
+        if heldEffect?.halvesSpeed == true { boosted = max(1, boosted / 2) }
         return status == .paralysis ? max(1, boosted / 2) : boosted
     }
 
@@ -1854,7 +1859,11 @@ enum BattleEngine {
     ///      + 열매 29종(약점 반감 18·위급 6·성격 회복 5). 구버전 피어는 그 이름을 모르는 값으로
     ///      접으므로 같은 판에서 데미지(반감)·랭크·HP 가 갈린다. 난수 소비는 그대로다 — 열매는
     ///      난수를 쓰지 않는다.
-    static let rulesVersion = 27
+    ///      + 주얼 18종(그 타입 기술 하나 ×1.3 + 소모)과 대가만 있는 셋(검은철구의 스피드 절반·
+    ///      접지, 느림보꼬리·만복향로의 후공). 구버전 피어는 그 이름을 모르는 값으로 접으므로
+    ///      데미지·행동 순서·땅 기술 면역이 갈린다. 난수 소비도 갈린다: 후공 물건이 스피드 동점을
+    ///      먼저 가르면 무작위 tie-break 를 안 뽑는다.
+    static let rulesVersion = 28
 
     /// 연결이 끊긴 배틀의 승패 — 남은 HP **비율**이 앞선 쪽이 이기고, 같으면 `nil`(무효)이다.
     ///
@@ -2047,6 +2056,9 @@ enum BattleEngine {
         /// 두는 값이다. 같은 조건을 두 자리에서 각자 물으면 한쪽만 어긋난다(상성표를 안 보는
         /// 기술은 깎이지 않는데 열매만 사라지는 식으로).
         var berryHalved = false
+        /// 때리는 쪽의 주얼이 이 히트를 올렸나 — 열매와 같은 이유로 두는 값이다(올린 자리와
+        /// 없애는 자리가 갈려 있다). 주인이 반대편이라 열매 플래그와 한 값으로 접지 않는다.
+        var gemSpent = false
     }
 
     /// 공식을 타지 않는 데미지(고정·일격필살)의 결과.
@@ -2068,8 +2080,12 @@ enum BattleEngine {
     /// 공식을 타는 히트(`resolveSingleHit`)와 안 타는 히트(`fixedOutcome`)가 각자 상성을 보던 동안
     /// 부유는 지진을 막고 갈라진땅은 못 막았다 — 특성이 붙는 갈림길은 여기 하나여야 한다.
     static func typeMultiplier(of move: MoveSpec, against defender: BattleSide) -> Double {
-        if defender.ability?.immuneMoveType == move.type { return 0 }
-        let multiplier = TypeChart.effectiveness(move.type, against: defender.activeTypes)
+        // 검은철구를 쥔 개체는 땅에 닿아 있으므로 땅 기술의 **면역만** 사라진다(부유 특성과 비행
+        // 타입 둘 다). 나머지 상성은 그대로다 — 비행/강철이면 강철 몫의 2배가 남는다.
+        let grounded = move.type == .ground && defender.heldEffect?.groundsHolder == true
+        if !grounded, defender.ability?.immuneMoveType == move.type { return 0 }
+        let types = grounded ? defender.activeTypes.filter { $0 != .flying } : defender.activeTypes
+        let multiplier = TypeChart.effectiveness(move.type, against: types)
         if defender.ability == .wonderGuard, move.damageClass != .status, multiplier <= 1 { return 0 }
         return multiplier
     }
@@ -2181,7 +2197,7 @@ enum BattleEngine {
         // 안 세면 이미 쓰러진 상대를 남은 횟수만큼 계속 때린다.
         var remaining = defender.hp
         var total = 0, actualHits = 0, lastHit = 0
-        var effectiveness = 1.0, critical = false, halved = false
+        var effectiveness = 1.0, critical = false, halved = false, gemUsed = false
         for index in 0..<requestedHits where remaining > 0 {
             let one = resolveSingleHit(attacker: attacker, defender: defender, move: move,
                                        hit: index, field: field, attackerTeam: attackerTeam,
@@ -2193,6 +2209,7 @@ enum BattleEngine {
             effectiveness = one.effectiveness
             critical = critical || one.isCritical
             halved = halved || one.berryHalved
+            gemUsed = gemUsed || one.gemSpent
             if one.effectiveness == 0 { break }
         }
         // **다단기는 히트마다 열매를 쓰지 않는다** — 합계 한 번으로 깎고 한 번 소모한다(인내·
@@ -2200,7 +2217,7 @@ enum BattleEngine {
         // 없다). 본가는 첫 히트만 반감하므로 그만큼 이쪽이 맞는 쪽에 유리하다.
         return AttackOutcome(missed: false, damage: total, effectiveness: effectiveness,
                              isCritical: critical, hits: actualHits, lastHitDamage: lastHit,
-                             berryHalved: halved)
+                             berryHalved: halved, gemSpent: gemUsed)
     }
 
     /// 히트 하나. 다단기는 이 함수를 히트마다 부르므로 급소·난수 폭이 히트별로 독립이다
@@ -2361,6 +2378,13 @@ enum BattleEngine {
             damage = damage * HeldItemBalance.typeEnhancerNumerator
                 / HeldItemBalance.typeEnhancerDenominator
         }
+        // 주얼 — 타입 강화 도구와 같은 게이트(상성표를 보는 기술만)에 배율만 크고 1회용이다.
+        // 소모는 `applyHit` 이 한다(이 함수는 `attacker` 의 사본을 받아 여기서 지운 값이 안 나간다).
+        var gemSpent = false
+        if !ignoresTypeChart, attacker.heldEffect?.oneShotBoostedMoveType == move.type {
+            damage = damage * HeldItemBalance.gemNumerator / HeldItemBalance.gemDenominator
+            gemSpent = true
+        }
         // 약점 반감 열매 — 맞는 쪽의 물건이라 여기서 **깎는다**. 상성표를 보는 기술만 탄다
         // (타입 강화 도구와 같은 게이트다): 상성이 곱해지지 않은 데미지에는 "약점을 막았다" 가
         // 성립하지 않는다. 소모는 여기서 하지 않는다 — 이 함수는 `defender` 의 사본을 받으므로
@@ -2388,7 +2412,8 @@ enum BattleEngine {
         let dealt = (effectiveness == 0 || power <= 0) ? 0 : max(1, damage)
         return AttackOutcome(missed: false, damage: dealt,
                              effectiveness: effectiveness, isCritical: isCritical,
-                             berryHalved: berryHalved && dealt > 0)
+                             berryHalved: berryHalved && dealt > 0,
+                             gemSpent: gemSpent && dealt > 0)
     }
 
     /// 테라스탈 선언 — 개체를 테라스탈 상태로 만들고 줄 하나를 낸다. **난수를 쓰지 않는다.**
@@ -2435,11 +2460,20 @@ enum BattleEngine {
     /// UUID 문자열 순서로 갈랐는데, 그러면 앱을 켠 동안 사전순으로 앞선 참가자가 동점 때마다
     /// 선공을 가져간다 — 실력과 무관한 데다 화면에 드러나지도 않는다.
     static func firstMoverIsA(priorityA: Int, priorityB: Int, speedA: Int, speedB: Int,
+                              movesLastA: Bool = false, movesLastB: Bool = false,
                               rng: inout SplitMix64) -> Bool {
         if priorityA != priorityB { return priorityA > priorityB }
+        if movesLastA != movesLastB { return movesLastB }
         if speedA != speedB { return speedA > speedB }
         return rng.next() & 1 == 0
     }
+
+    /// 이 개체가 같은 우선도 안에서 **뒤로 밀리는가** — 느림보꼬리·만복향로다.
+    ///
+    /// 순서를 재는 자리가 모드마다 따로라(1v1 `resolveTurn`·방·웨이브) 이 함수 하나를 지나게
+    /// 한다. 한 모드가 물건을 안 물으면 그 모드에서만 후공이 없고 화면에는 아무 오류도 안 보인다 —
+    /// 순풍(`orderingSpeed`)과 같은 함정이라, 같은 방식으로 소스 스캔이 자리를 센다.
+    static func movesLast(_ side: BattleSide) -> Bool { side.heldEffect?.movesLast == true }
 }
 
 // MARK: - 이벤트 스트림
@@ -3302,6 +3336,11 @@ extension BattleEngine {
             defender.heldItemConsumed = true
             events.append(.heldItemTriggered(defenderActor, item))
         }
+        // 주얼은 **올린 그 기술에서** 사라진다. 층이 대신 맞아도 마찬가지다 — 위력은 이미 올랐다.
+        if outcome.gemSpent, let item = attacker.snapshot.heldItem {
+            attacker.heldItemConsumed = true
+            events.append(.heldItemTriggered(attackerActor, item))
+        }
         // 2차효과는 데미지 뒤다 — 쓰러진 상대에게는 붙지 않는다(그 경우 rng 도 쓰지 않는다).
         // 층에 막힌 기술은 2차효과·상대 volatile 도 주인에게 닿지 않는다 — 인형은 마비되지 않는다.
         if defender.isAlive, !hitsSubstitute {
@@ -3561,7 +3600,8 @@ extension BattleEngine {
         // 마비가 스탯 표시에만 남고 선공은 그대로다.
         let aIsFirst = firstMoverIsA(priorityA: moveA.turnPriority, priorityB: moveB.turnPriority,
                                      speedA: orderingSpeed(a, team: .a, field: field),
-                                     speedB: orderingSpeed(b, team: .b, field: field), rng: &rng)
+                                     speedB: orderingSpeed(b, team: .b, field: field),
+                                     movesLastA: movesLast(a), movesLastB: movesLast(b), rng: &rng)
         for attackerIsA in aIsFirst ? [true, false] : [false, true] {
             guard a.isAlive && b.isAlive else { break }   // 선공에 기절하면 후공 없음
             let move = attackerIsA ? moveA : moveB

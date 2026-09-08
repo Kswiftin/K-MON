@@ -1554,6 +1554,27 @@ struct L {
         case .magoBerry: return "마고열매"
         case .aguavBerry: return "아바열매"
         case .iapapaBerry: return "파야열매"
+        case .normalGem: return "노말주얼"
+        case .fireGem: return "불꽃주얼"
+        case .waterGem: return "물주얼"
+        case .electricGem: return "전기주얼"
+        case .grassGem: return "풀주얼"
+        case .iceGem: return "얼음주얼"
+        case .fightingGem: return "격투주얼"
+        case .poisonGem: return "독주얼"
+        case .groundGem: return "땅주얼"
+        case .flyingGem: return "비행주얼"
+        case .psychicGem: return "에스퍼주얼"
+        case .bugGem: return "벌레주얼"
+        case .rockGem: return "바위주얼"
+        case .ghostGem: return "고스트주얼"
+        case .dragonGem: return "드래곤주얼"
+        case .darkGem: return "악주얼"
+        case .steelGem: return "강철주얼"
+        case .fairyGem: return "페어리주얼"
+        case .ironBall: return "검은철구"
+        case .laggingTail: return "느림보꼬리"
+        case .fullIncense: return "만복향로"
         case .shinyCharm: return "이로치 부적"
         case .linkingCord: return "연결의끈"
         case .fireStone: return "불꽃의돌"
@@ -1692,6 +1713,12 @@ struct L {
                 return "HP가 1/4 이하가 되면 급소에 맞히기 쉬워져요. 한 번만 발동하고 열매가 사라져요."
             case .pinchHeal:
                 return "HP가 1/4 이하가 되면 최대 HP의 1/3을 회복해요. 한 번만 발동하고 열매가 사라져요."
+            case .gem(let type):
+                return "\(type.name) 타입 기술 하나의 위력이 1.3배가 돼요. 그 기술을 쓰면 주얼이 사라져요."
+            case .ironBall:
+                return "스피드가 절반이 되고 땅에 발이 닿아요. 느릴수록 강한 기술과 함께 쓰는 물건이에요."
+            case .movesLast:
+                return "우선도가 같으면 아무리 빨라도 나중에 움직여요. 반격 기술과 함께 쓰는 물건이에요."
             case nil:
                 // 지닌물건 갈래인데 효과가 없는 조합 — `bagUse` 가 둘을 함께 정하므로 도달 불가다.
                 return ""
@@ -1736,6 +1763,9 @@ struct L {
         case .pinchStatBoost(let stat): return "위급할 때 \(stat.name) +1"
         case .pinchCrit: return "위급할 때 급소율 상승"
         case .pinchHeal: return "위급할 때 HP 1/3 회복"
+        case .gem(let type): return "\(type.name) 기술 ×1.3 / 1회"
+        case .ironBall: return "스피드 1/2 / 땅에 닿음"
+        case .movesLast: return "같은 우선도면 후공"
         case nil:        return ""   // `bagUse` 가 둘을 함께 정하므로 도달 불가다
         }
     }
