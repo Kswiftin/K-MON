@@ -389,6 +389,7 @@ private struct PokemonDetailCard: View {
                 }
             }
             heldItemRow()
+            teraTypeRow()
             if let stats = profile?.stats { statGrid(stats) }
             Divider()
             Text(store.l.movesTitle).font(.caption.bold())
@@ -414,6 +415,23 @@ private struct PokemonDetailCard: View {
             line = try? await PokeAPIClient.shared.line(baseSpeciesID: mon.baseID)
             abilityText = await PokeAPIClient.shared
                 .chatSpeciesIdentity(speciesID: mon.presentationID).ability
+        }
+    }
+
+    /// 테라 타입 줄. 값이 없으면 그리지 않는다 — `nil` 은 "첫 번째 타입에서 파생" 이라
+    /// (`BattleSnapshot.teraType`) 표시할 사실이 아직 없다는 뜻이고, 테라피스를 써야 생긴다.
+    @ViewBuilder private func teraTypeRow() -> some View {
+        if let tera = mon.teraType {
+            HStack(spacing: 4) {
+                Label(store.l.teraTypeSectionTitle, systemImage: "diamond")
+                    .font(.caption.bold())
+                Text(tera.name)
+                    .font(PokedoroTheme.badgeFont(size: 7, weight: .heavy))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 3).padding(.vertical, 1)
+                    .background(tera.rosterColor, in: Capsule())
+                Spacer(minLength: 4)
+            }
         }
     }
 

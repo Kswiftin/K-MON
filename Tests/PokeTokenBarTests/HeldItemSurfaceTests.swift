@@ -91,6 +91,16 @@ final class HeldItemSurfaceTests: XCTestCase {
         XCTAssertTrue(code.contains("store.canTakeHeldItem"), "벗길 수 없을 때 막는 판정이 없다")
     }
 
+    /// **같은 부류의 두 번째 사례.** 테라피스로 바꾼 테라 타입도 읽는 UI 가 한 곳도 없어,
+    /// 사용 직후 토스트를 놓치면 그 개체의 테라 타입을 다시 확인할 방법이 없었다. 지닌물건과
+    /// 같은 줄에서 함께 그린다.
+    func testTheDetailCardDrawsTheTeraType() throws {
+        let code = try source("Sources/PokeTokenBar/UI/PokemonRosterView.swift")
+        XCTAssertTrue(code.contains("mon.teraType"), "상세 카드가 테라 타입을 읽지 않는다")
+        XCTAssertGreaterThanOrEqual(code.components(separatedBy: "teraTypeRow()").count - 1, 2,
+                                    "테라 타입 줄이 정의만 있고 어디서도 그려지지 않는다")
+    }
+
     /// 격자 칸에도 표식이 있다 — 물건은 개체마다 붙고 박스 개체도 지닌 채로 있으므로, 카드를
     /// 하나씩 열어 보지 않고 **누가 쥐고 있나**를 알 수 있어야 한다.
     func testTheGridCardMarksAHolder() throws {
