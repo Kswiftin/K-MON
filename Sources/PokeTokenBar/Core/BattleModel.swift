@@ -3236,9 +3236,27 @@ extension BattleEngine {
             attacker.lastMoveFailed = true
             return [.immune(defenderActor)]
         }
+        // 선택을 막는 셋은 **막을 것이 정해져야** 붙는다: 씨앙코르·앙코르는 상대가 직전에 낸
+        // 기술이 있어야 하고, 봉인은 서로 겹치는 기술이 있어야 한다(본가와 같다). 조건을 안 보면
+        // 아무 칸도 막지 않는 상태가 붙어 로그에만 남는다 — 화면에는 성공한 턴으로 보인다.
+        switch volatileStatus {
+        case .disable, .encore:
+            guard let repeated = defender.lastMoveID,
+                  defender.moves.contains(where: { $0.id == repeated }) else {
+                attacker.lastMoveFailed = true
+                return [.immune(defenderActor)]
+            }
+        case .imprison:
+            let shared = Set(attacker.moves.map(\.id)).intersection(defender.moves.map(\.id))
+            guard !shared.isEmpty else {
+                attacker.lastMoveFailed = true
+                return [.immune(defenderActor)]
+            }
+        default: break
+        }
         let turns = volatileStatus == .partiallyTrapped
             ? BattleVolatile.trapTurnFloor + Int(rng.next() % BattleVolatile.trapTurnSpread)
-            : 0
+            : volatileStatus.foeDuration
         guard defender.start(volatileStatus, turns: turns) else {
             attacker.lastMoveFailed = true
             return [.immune(defenderActor)]
@@ -3246,6 +3264,16 @@ extension BattleEngine {
         attacker.lastMoveFailed = false
         // 빨아낸 HP 를 받을 자리를 함께 적는다. 안 적으면 씨가 박혀도 아무도 회복하지 않는다.
         if volatileStatus == .leechSeed { defender.leechSeedSource = attackerActor }
+        // 어느 칸을 막는지는 상태와 **함께** 적는다(층 HP 와 같은 짝이다) — 위 조건 검사를 이미
+        // 지났으므로 여기서 다시 실패할 수 없다.
+        switch volatileStatus {
+        case .disable: defender.disabledMoveID = defender.lastMoveID
+        case .encore:  defender.encoredMoveID = defender.lastMoveID
+        case .imprison:
+            defender.imprisonedMoveIDs = Set(attacker.moves.map(\.id))
+                .intersection(defender.moves.map(\.id))
+        default: break
+        }
         var events: [BattleEvent] = [.volatileStarted(defenderActor, volatileStatus)]
         // 고스트의 저주는 대가가 있다 — 최대 HP 절반이고, 그것으로 쓰러질 수 있다(본가와 같다).
         // 기절 줄은 여기서 내지 않는다: `applyHit` 이 랭크·2차효과 뒤 맨 끝에서 낸다.

@@ -27,6 +27,23 @@ final class BattleSelectionLockTests: XCTestCase {
         return move
     }
 
+    /// 선택을 막는 기술 — id 가 규칙이다(엔진이 데이터에 물어 무엇을 거는지 알아본다).
+    private func lockMove(_ id: Int) -> MoveSpec {
+        var move = statusMove(id)
+        move.pp = 20
+        return move
+    }
+
+    @discardableResult
+    private func use(_ move: MoveSpec, by attacker: inout BattleSide,
+                     on defender: inout BattleSide, seed: UInt64 = 7) -> [BattleEvent] {
+        var field = BattleField()
+        var rng = SplitMix64(seed: seed)
+        return BattleEngine.applyAttack(attacker: &attacker, defender: &defender,
+                                        attackerActor: .a, defenderActor: .b, move: move,
+                                        field: &field, rng: &rng)
+    }
+
     private func side(moves: [MoveSpec]) -> BattleSide {
         var snapshot = BattleSnapshot(speciesID: 25, name: "테스트", trainer: nil, level: 50,
                                       nature: nil, isShiny: false, types: [.normal],
@@ -152,5 +169,130 @@ final class BattleSelectionLockTests: XCTestCase {
         XCTAssertNil(mon.choiceLockedMoveID)
         XCTAssertNil(mon.selectionLock(forMoveAt: 0))
         XCTAssertNil(mon.selectionLock(forMoveAt: 1))
+    }
+
+    // MARK: 엔진이 거는 자리
+
+    /// 여섯 기술의 id 는 손 목록이 아니라 데이터가 답한다 — 새 기술이 같은 키를 부르면
+    /// (사이코노이즈처럼 비밀의힘을 부르는 공격기) 저절로 따라온다.
+    func testTheDataNamesTheMovesThatLockASelection() {
+        XCTAssertEqual(BattleVolatile.called(byMoveID: 50), .disable)
+        XCTAssertEqual(BattleVolatile.called(byMoveID: 227), .encore)
+        XCTAssertEqual(BattleVolatile.called(byMoveID: 269), .taunt)
+        XCTAssertEqual(BattleVolatile.called(byMoveID: 259), .torment)
+        XCTAssertEqual(BattleVolatile.called(byMoveID: 286), .imprison)
+        XCTAssertEqual(BattleVolatile.called(byMoveID: 377), .healBlock)
+        XCTAssertEqual(BattleVolatile.called(byMoveID: 917), .healBlock, "사이코노이즈도 같은 키를 부른다")
+    }
+
+    /// 도발을 실제로 걸면 상대의 변화기 칸이 막히고, **걸린 쪽에서** 턴을 센다.
+    func testTauntLandsWithItsOwnClock() {
+        var caster = side(moves: [lockMove(269)])
+        var target = side(moves: [attackMove(33), statusMove(45)])
+        let events = use(lockMove(269), by: &caster, on: &target)
+
+        XCTAssertTrue(events.contains(.volatileStarted(.b, .taunt)), "도발이 붙은 줄이 없다")
+        XCTAssertEqual(target.volatiles[.taunt], BattleVolatile.taunt.foeDuration)
+        XCTAssertEqual(target.selectionLock(forMoveAt: 1), .taunt)
+    }
+
+    /// 씨앙코르는 **상대가 직전에 낸 기술**을 막는다 — 아직 아무것도 내지 않았으면 실패다
+    /// (막을 대상이 없는데 붙이면 아무 칸도 막지 않는 4턴이 로그에만 남는다).
+    func testDisableTakesTheMoveTheTargetJustUsed() {
+        var caster = side(moves: [lockMove(50)])
+        var target = side(moves: [attackMove(33), attackMove(34)])
+        target.lastMoveID = 34
+
+        use(lockMove(50), by: &caster, on: &target)
+
+        XCTAssertEqual(target.disabledMoveID, 34)
+        XCTAssertEqual(target.selectionLock(forMoveAt: 1), .disable)
+        XCTAssertNil(target.selectionLock(forMoveAt: 0))
+    }
+
+    func testDisableFailsAgainstAMonThatHasNotMoved() {
+        var caster = side(moves: [lockMove(50)])
+        var target = side(moves: [attackMove(33)])
+        let events = use(lockMove(50), by: &caster, on: &target)
+
+        XCTAssertFalse(target.has(.disable), "낸 기술이 없는데 씨앙코르가 붙었다")
+        XCTAssertNil(target.disabledMoveID)
+        XCTAssertTrue(caster.lastMoveFailed)
+        XCTAssertTrue(events.contains(.immune(.b)), "실패한 줄이 없으면 무반응 턴으로 읽힌다")
+    }
+
+    /// 앙코르도 직전 기술을 본다 — 다만 **그 하나만 남긴다**.
+    func testEncoreRepeatsTheMoveTheTargetJustUsed() {
+        var caster = side(moves: [lockMove(227)])
+        var target = side(moves: [attackMove(33), attackMove(34)])
+        target.lastMoveID = 33
+
+        use(lockMove(227), by: &caster, on: &target)
+
+        XCTAssertEqual(target.encoredMoveID, 33)
+        XCTAssertNil(target.selectionLock(forMoveAt: 0))
+        XCTAssertEqual(target.selectionLock(forMoveAt: 1), .encore)
+    }
+
+    func testEncoreFailsAgainstAMonThatHasNotMoved() {
+        var caster = side(moves: [lockMove(227)])
+        var target = side(moves: [attackMove(33)])
+        use(lockMove(227), by: &caster, on: &target)
+
+        XCTAssertFalse(target.has(.encore))
+        XCTAssertNil(target.encoredMoveID)
+        XCTAssertTrue(caster.lastMoveFailed)
+    }
+
+    /// 봉인은 **겹치는 기술만** 적어 둔다. 겹치는 것이 없으면 실패다(본가와 같다).
+    func testImprisonSealsTheMovesBothSidesKnow() {
+        var caster = side(moves: [lockMove(286), attackMove(34)])
+        var target = side(moves: [attackMove(33), attackMove(34)])
+        use(lockMove(286), by: &caster, on: &target)
+
+        XCTAssertEqual(target.imprisonedMoveIDs, [34])
+        XCTAssertEqual(target.selectionLock(forMoveAt: 1), .imprison)
+        XCTAssertNil(target.selectionLock(forMoveAt: 0))
+    }
+
+    func testImprisonFailsWhenTheTwoShareNothing() {
+        var caster = side(moves: [lockMove(286)])
+        var target = side(moves: [attackMove(33), attackMove(34)])
+        use(lockMove(286), by: &caster, on: &target)
+
+        XCTAssertFalse(target.has(.imprison), "겹치는 기술이 없는데 봉인이 붙었다")
+        XCTAssertTrue(target.imprisonedMoveIDs.isEmpty)
+        XCTAssertTrue(caster.lastMoveFailed)
+    }
+
+    /// 트집·봉인은 턴을 세지 않는다(0 = 교체할 때까지). 도발·비밀의힘은 센다 — 둘을 한 값으로
+    /// 접으면 트집이 세 턴 만에 풀리거나 도발이 배틀 내내 산다.
+    func testOnlyTheTimedLocksCarryAClock() {
+        var caster = side(moves: [lockMove(259), lockMove(377)])
+        var target = side(moves: [attackMove(33), statusMove(105)])
+
+        use(lockMove(259), by: &caster, on: &target)
+        XCTAssertEqual(target.volatiles[.torment], 0, "트집은 턴을 세지 않는다")
+
+        use(lockMove(377), by: &caster, on: &target)
+        XCTAssertEqual(target.volatiles[.healBlock], 5)
+        XCTAssertEqual(target.selectionLock(forMoveAt: 1), .healBlock)
+    }
+
+    /// 턴이 다 지나면 잠금이 **풀린다** — 안 풀리면 3턴짜리 도발이 배틀 내내 산다.
+    /// (턴을 세는 자리는 `endOfTurnResidual` 이라 여기서 그 함수를 직접 돌린다.)
+    func testATimedLockLiftsWhenItsClockRunsOut() {
+        var caster = side(moves: [lockMove(269)])
+        var target = side(moves: [attackMove(33), statusMove(45)])
+        use(lockMove(269), by: &caster, on: &target)
+
+        var ended: [BattleEvent] = []
+        for _ in 0..<BattleVolatile.taunt.foeDuration {
+            ended += BattleEngine.endOfTurnResidual(&target, actor: .b)
+        }
+
+        XCTAssertFalse(target.has(.taunt), "도발이 제 시간에 풀리지 않았다")
+        XCTAssertTrue(ended.contains(.volatileEnded(.b, .taunt)))
+        XCTAssertNil(target.selectionLock(forMoveAt: 1))
     }
 }
