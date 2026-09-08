@@ -228,13 +228,31 @@ fi
 echo "✓ 없음"
 
 # 아래 warning 검사·로케일 재실행·커버리지가 증거로 읽는 로그. **여기서 만든다** — 모듈을
-# 실제로 컴파일하는 것은 바로 다음 줄의 mutator 스윕이고(`swift build --enable-code-coverage`),
-# 그 출력이 컴파일러 warning 의 유일한 출처다. 뒤따르는 `swift test` 는 같은 플래그라 재컴파일이
+# 실제로 컴파일하는 것은 바로 아래 `swift build --build-tests` 한 번이고, 그 출력이 컴파일러
+# warning 의 유일한 출처다. 뒤따르는 mutator 스윕과 `swift test` 는 같은 플래그라 재컴파일이
 # 없어 warning 을 다시 찍지 않는다.
 BUILD_LOG=$(mktemp)
 TEST_LOG=$(mktemp)
 LOCALE_LOG=$(mktemp)
 trap 'rm -f "$BUILD_LOG" "$TEST_LOG" "$LOCALE_LOG"' EXIT
+
+# **앱 모듈과 테스트 타깃을 한 번의 빌드로 굽는다.** 나눠 부르면 앱 모듈의 링크까지 끝난 뒤에야
+# 테스트 타깃 컴파일이 시작하지만, 합치면 앱 모듈의 swiftmodule 이 나온 시점부터 테스트 타깃이
+# 겹쳐 돈다 — 코어가 적은 CI 러너에서 그 겹침이 곧 벽시계다(3코어 근사 실측 75.8초 → 62.2초).
+# `--enable-code-coverage` 는 뒤따르는 `swift test` 와 플래그를 맞추기 위한 것이다. 다르면
+# SwiftPM 이 모듈을 통째로 다시 컴파일한다.
+#
+# **출력을 버리면 안 된다** — `swift build` 는 진단을 stdout 에 찍으므로 stdout 을 버리는 것이 곧
+# 진단을 버리는 것이다. 성공하면 조용히 넘어가되(빌드 로그로 화면을 덮지 않는다) 실패하면 본문을
+# 낸다. 이 로그가 아래 warning 검사의 증거다(#274 가 새어나간 자리).
+echo "▶ 빌드 (앱 모듈 + 테스트 타깃)"
+BUILD_OUT=$(swift build --build-tests --enable-code-coverage 2>&1) || {
+  printf '%s\n' "$BUILD_OUT" >&2
+  echo "✗ 빌드 실패 — 위 오류를 고친 뒤 다시 실행하세요." >&2
+  exit 1
+}
+printf '%s\n' "$BUILD_OUT" >> "$BUILD_LOG"
+echo "✓ 완료"
 
 # 위 두 게이트의 셋째 형제 — "세이브에 쓰기만 하는 API" 스윕은 `mutator-sweep.sh` 가 가진다.
 # 게이트와 결함 주입 하네스(`verify-mutator-gate.sh`)가 같은 파일을 부르려고 떼어냈다;
@@ -507,7 +525,9 @@ echo "▶ swift test (--enable-code-coverage)"
 # 들고 있다가 warning 검사 뒤에 낸다. 로케일 재실행·커버리지는 테스트 산출물이 필요하므로
 # warning 검사까지만 돌리고 거기서 끝낸다.
 TEST_STATUS=0
-swift test --enable-code-coverage 2>&1 | tee "$TEST_LOG" || TEST_STATUS=$?
+# `--skip-build` — 위에서 이미 같은 플래그로 구웠다. 붙이지 않으면 SwiftPM 이 빌드 그래프를
+# 다시 세우는 만큼을 더 쓴다.
+swift test --skip-build --enable-code-coverage 2>&1 | tee "$TEST_LOG" || TEST_STATUS=$?
 
 echo
 echo "▶ 자체 코드 컴파일러 warning"
@@ -533,9 +553,10 @@ fi
 # 자체 코드의 컴파일러 warning 은 게이트 실패로 취급한다 — 쌓아 두면 새로 생긴 게 옛것에 묻힌다.
 # 경로로 걸러 의존성(.build/checkouts)의 warning 은 빼 둔다. 같은 warning 이 frontend 잡마다
 # 반복해서 찍히므로 sort -u 로 접는다.
-# **두 로그를 함께 본다.** 모듈을 컴파일하는 것은 mutator 스윕의 `swift build` 이고(`$BUILD_LOG`),
-# `swift test` 는 같은 플래그라 재컴파일 없이 통과한다(`$TEST_LOG` 에는 테스트 타깃분만 남는다).
-# 한쪽만 보면 Sources/ 의 warning 을 통째로 놓친다 — 그것이 #274 가 새어나간 경로다.
+# **두 로그를 함께 본다.** 모듈을 컴파일하는 것은 위의 `swift build --build-tests` 이고(`$BUILD_LOG`),
+# `swift test --skip-build` 는 아무것도 다시 굽지 않는다(`$TEST_LOG` 는 실행 결과만이다).
+# 그래도 두 로그를 함께 읽는 것을 유지한다 — 한쪽만 보게 만들어 두면 컴파일 자리가 다시 옮겨졌을
+# 때 조용히 눈을 감는다. 그것이 #274 가 새어나간 경로다.
 OWN_WARNINGS=$(grep -hoE '(Sources|Tests)/PokeTokenBar[^ ]*\.swift:[0-9]+:[0-9]+: warning: .*' \
                "$BUILD_LOG" "$TEST_LOG" | sort -u || true)
 if [[ -n "$OWN_WARNINGS" ]]; then
