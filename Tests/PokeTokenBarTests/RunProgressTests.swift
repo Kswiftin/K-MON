@@ -1,8 +1,7 @@
 import XCTest
 @testable import PokeTokenBar
 
-/// 판 밖으로 남는 유일한 값(`RunProgress`). 재화를 주지 않으므로 잠글 것은 **기록이 정확한가**와
-/// **세이브 경계(서명·정규화·기기 병합)를 지나는가**다.
+/// 판 밖으로 남는 실적과 하루 첫 클리어 원장이 정확하고 세이브 경계를 지나는지 잠근다.
 final class RunProgressTests: XCTestCase {
 
     func testRecordingKeepsTheBestWaveNotTheLastOne() {
@@ -84,6 +83,45 @@ final class RunProgressTests: XCTestCase {
         state.waveRun.record(reachedWave: 7, cleared: false)
         XCTAssertTrue(SaveTransfer.canonicalString(state).contains("|wrun7|0|1"),
                       "실제: \(SaveTransfer.canonicalString(state))")
+    }
+
+    func testDungeonRewardLedgerIsSignedAndDefaultsForOldSaves() throws {
+        XCTAssertFalse(SaveTransfer.canonicalString(CompanionState()).contains("|wed"))
+        var state = CompanionState()
+        state.waveRunEggRewardDate = "2026-09-08"
+        XCTAssertTrue(SaveTransfer.canonicalString(state).contains("|wed2026-09-08"))
+
+        let old = try JSONDecoder().decode(CompanionState.self,
+            from: Data(#"{"trainerName":"T"}"#.utf8))
+        XCTAssertEqual(old.waveRunEggRewardDate, "")
+    }
+
+    func testImportKeepsTheNewestDungeonRewardDate() {
+        var imported = CompanionState(); imported.waveRunEggRewardDate = "2026-09-08"
+        var current = CompanionState(); current.waveRunEggRewardDate = "2026-09-07"
+        XCTAssertEqual(SaveTransfer.rebasedForThisDevice(imported, current: current).waveRunEggRewardDate,
+                       "2026-09-08")
+    }
+
+    @MainActor
+    func testOnlyTheFirstClearOfTheDayPaysDungeonReward() {
+        let clock = TestClock(Date(timeIntervalSince1970: 1_789_000_000))
+        let url = storeStateURL("dungeon-reward")
+        let store = CompanionStore(provider: StubProvider(value: stubMaxLevelLine),
+                                   clock: clock.closure, fileURL: url,
+                                   rng: SeededRNG(seed: 1))
+
+        store.recordRunResult(reachedWave: RogueRun.finalWave, cleared: true)
+        let firstDayDust = store.state.starPieces
+        XCTAssertGreaterThanOrEqual(firstDayDust, DungeonDailyReward.starPieces)
+        XCTAssertEqual(store.state.focusEggs, DungeonDailyReward.eggs)
+        store.recordRunResult(reachedWave: RogueRun.finalWave, cleared: true)
+        XCTAssertEqual(store.state.starPieces, firstDayDust)
+        XCTAssertEqual(store.state.focusEggs, DungeonDailyReward.eggs)
+        clock.advance(24 * 60 * 60)
+        store.recordRunResult(reachedWave: RogueRun.finalWave, cleared: true)
+        XCTAssertEqual(store.state.starPieces, firstDayDust + DungeonDailyReward.starPieces)
+        XCTAssertEqual(store.state.focusEggs, DungeonDailyReward.eggs * 2)
     }
 
     /// 서명 뒤에 기록을 고치면 조작으로 잡힌다.

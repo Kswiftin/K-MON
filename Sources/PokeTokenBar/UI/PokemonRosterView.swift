@@ -17,8 +17,10 @@ struct PokemonRosterView: View {
     /// 즐겨찾기만 보기. 타입 필터와 같이 화면을 떠나면 풀린다 — 정렬과 달리 "지금 이 박스를 좁혀
     /// 보는 중"이라는 일시적 상태고, 남겨 두면 다음에 열었을 때 박스가 비어 보인다.
     @State private var favoritesOnly = false
-    /// 같은 현재 도감 번호를 가진 개체가 둘 이상인 종만 보기.
+    /// 같은 진화 계보를 가진 개체가 둘 이상인 가족만 보기.
     @State private var duplicatesOnly = false
+    /// 졸업·교환 등으로 영구 도감에 아직 기록되지 않은 현재 모습만 보기.
+    @State private var unregisteredOnly = false
     /// 종별로 한 번만 해석해 두는 표시값. 카드마다 따로 받아오면 정렬 키(이름·타입)를 화면과
     /// 맞출 수 없다 — 정렬·필터는 박스 전체를 봐야 하는데 행은 자기 것만 알기 때문이다.
     @State private var names: [Int: String] = [:]
@@ -51,12 +53,18 @@ struct PokemonRosterView: View {
 
     var body: some View {
         let owned = store.ownedMons
-        let duplicateSpecies = RosterOrdering.duplicateSpeciesIDs(in: owned)
+        let duplicateFamilies = RosterOrdering.duplicateEvolutionFamilyIDs(in: owned)
+        // `store.dexSpecies` 는 소유 중인 개체까지 합성하므로 쓰지 않는다. 영구 도감만 보아야
+        // 아직 졸업·교환으로 기록하지 않은 소유 포켓몬을 찾을 수 있다.
+        let registeredSpecies = Set(store.state.dex.flatMap(\.chainOrder))
+        let unregisteredIDs = Set(RosterOrdering.unregistered(
+            owned, registeredSpeciesIDs: registeredSpecies).map(\.id))
         let searched = owned.filter {
             PokemonNameSearch.matches(searchText, names: PokemonNameSearch.names(
                 for: $0, resolvedSpeciesName: names[$0.presentationID]))
             && (!favoritesOnly || store.isFavorite($0.id))
-            && (!duplicatesOnly || duplicateSpecies.contains($0.currentID))
+            && (!duplicatesOnly || duplicateFamilies.contains($0.baseID))
+            && (!unregisteredOnly || unregisteredIDs.contains($0.id))
         }
         let arranged = RosterOrdering.arrange(searched, sort: settings.rosterSort,
                                               ascending: settings.rosterSortAscending,
@@ -148,7 +156,8 @@ struct PokemonRosterView: View {
             Spacer(minLength: 2)
             sortMenu
             favoriteFilterButton
-            duplicateFilterButton(duplicateCount: duplicateSpeciesCount(in: owned))
+            duplicateFilterButton(duplicateCount: duplicateFamilyCount(in: owned))
+            unregisteredFilterButton
             typeMenu(owned: owned)
             // 필터가 걸렸을 땐 "보이는 수 / 전체 수" — 숫자 하나만 두면 필터가 켜진 걸 놓친다.
             Text(shownCount == ownedCount ? "\(ownedCount)" : "\(shownCount)/\(ownedCount)")
@@ -201,11 +210,11 @@ struct PokemonRosterView: View {
         .accessibilityAddTraits(favoritesOnly ? .isSelected : [])
     }
 
-    private func duplicateSpeciesCount(in owned: [MonState]) -> Int {
-        RosterOrdering.duplicateSpeciesIDs(in: owned).count
+    private func duplicateFamilyCount(in owned: [MonState]) -> Int {
+        RosterOrdering.duplicateEvolutionFamilyIDs(in: owned).count
     }
 
-    /// 켜면 중복 종의 개체를 **전부** 남긴다. 한 종당 하나로 접는 기능이 아니다 — 사용자는
+    /// 켜면 중복 계보의 개체를 **전부** 남긴다. 한 계보당 하나로 접는 기능이 아니다 — 사용자는
     /// 교환·방생할 중복 개체끼리 비교하려고 이 필터를 쓴다.
     private func duplicateFilterButton(duplicateCount: Int) -> some View {
         Button {
@@ -218,9 +227,23 @@ struct PokemonRosterView: View {
         .buttonStyle(.borderless)
         // 필터를 켠 채 마지막 중복을 방생해도 다시 전체 보기로 돌아갈 수 있어야 한다.
         .disabled(duplicateCount == 0 && !duplicatesOnly)
-        .accessibilityLabel("중복 종만 보기")
+        .accessibilityLabel("중복 진화 계보만 보기")
         .accessibilityAddTraits(duplicatesOnly ? .isSelected : [])
-        .help("같은 도감 번호가 2마리 이상인 포켓몬만 표시합니다.")
+        .help("진화 전후를 포함해 같은 계보가 2마리 이상인 포켓몬만 표시합니다.")
+    }
+
+    private var unregisteredFilterButton: some View {
+        Button {
+            unregisteredOnly.toggle(); page = 0
+        } label: {
+            Image(systemName: unregisteredOnly ? "book.closed.fill" : "book.closed")
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(unregisteredOnly ? Color.accentColor : .secondary)
+        }
+        .buttonStyle(.borderless)
+        .accessibilityLabel("도감 미등록만 보기")
+        .accessibilityAddTraits(unregisteredOnly ? .isSelected : [])
+        .help("영구 도감에 아직 기록되지 않은 현재 모습만 표시합니다.")
     }
 
     private func typeMenu(owned: [MonState]) -> some View {

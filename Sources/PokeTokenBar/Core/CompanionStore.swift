@@ -2598,8 +2598,11 @@ final class CompanionStore {
         focusSessions = restored
     }
 
-    /// 웨이브 런 실적. 판 밖으로 남는 것은 이 값 하나다 — 재화도 도감도 주지 않는다.
+    /// 웨이브 런 실적과 오늘 첫 클리어 보상 상태. 도전 횟수는 제한하지 않는다.
     var runProgress: RunProgress { state.waveRun }
+    var dungeonDailyRewardClaimed: Bool {
+        state.waveRunEggRewardDate == Self.dayKey(clock())
+    }
 
     /// 끝난 판 하나를 실적에 적는다. **끝난 판만 센다** — 화면만 열고 닫은 판을 실패로 세면
     /// 클리어율이 실제보다 낮게 보인다. 도달 웨이브는 코어가 든 값이라 화면이 보낸 값을 클램프한다.
@@ -2619,15 +2622,19 @@ final class CompanionStore {
         if cleared {
             // 두 트랙이 같은 판에서 함께 넘어간다 — 배너는 **한 통**이다. 지급마다 띄우면
             // 같은 클리어를 두 번 말한다(`mergedCompletion` 이 미션에서 막은 그 문제).
-            let paid = recordAchievement(.dungeon, 1)
+            var paid = recordAchievement(.dungeon, 1)
                 + (tookOnlyRiskyRoutes ? recordAchievement(.dungeonSweep, 1) : 0)
-            announcePayout(paid, .dungeon)
-
             let today = Self.dayKey(clock())
-            if state.waveRunEggRewardDate != today, addStoredEggs(1) > 0 {
+            if state.waveRunEggRewardDate != today,
+               addStoredEggs(DungeonDailyReward.eggs) == DungeonDailyReward.eggs {
                 state.waveRunEggRewardDate = today
                 grantedDailyEgg = true
+                state.starPieces += DungeonDailyReward.starPieces
+                paid += DungeonDailyReward.starPieces
+                notifyCompanionEvent("오늘의 던전 보상",
+                                     "알 \(DungeonDailyReward.eggs)개와 별의조각 \(DungeonDailyReward.starPieces)개가 들어왔습니다.")
             }
+            announcePayout(paid, .dungeon)
         }
         save()
         return grantedDailyEgg

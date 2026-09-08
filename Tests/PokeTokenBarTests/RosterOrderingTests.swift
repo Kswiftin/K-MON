@@ -131,12 +131,22 @@ final class RosterOrderingTests: XCTestCase {
                       "해석 전엔 필터에 올릴 게 없다")
     }
 
-    func testDuplicateSpeciesFilterReturnsEveryMemberOfRepeatedSpecies() {
-        let box = [mon(25, level: 3), mon(4), mon(25, level: 9), mon(7), mon(7)]
-        let duplicateIDs = RosterOrdering.duplicateSpeciesIDs(in: box)
-        XCTAssertEqual(duplicateIDs, Set([7, 25]))
-        XCTAssertEqual(box.filter { duplicateIDs.contains($0.currentID) }.map(\.currentID),
-                       [25, 25, 7, 7], "중복 종당 하나가 아니라 해당 개체를 모두 보여 준다")
+    func testDuplicateFilterGroupsDifferentStagesOfTheSameEvolutionFamily() {
+        let charmander = MonState(baseID: 4, pathIDs: [4, 5, 6], stageIndex: 0,
+                                  usedAtStage: 0, rarity: .common, totalForms: 3)
+        let charizard = MonState(baseID: 4, pathIDs: [4, 5, 6], stageIndex: 2,
+                                 usedAtStage: 0, rarity: .common, totalForms: 3)
+        let box = [charmander, charizard, mon(25)]
+        let duplicateIDs = RosterOrdering.duplicateEvolutionFamilyIDs(in: box)
+        XCTAssertEqual(duplicateIDs, Set([4]))
+        XCTAssertEqual(box.filter { duplicateIDs.contains($0.baseID) }.map(\.currentID),
+                       [4, 6], "진화 전후 모습이 달라도 같은 계보의 개체를 모두 보여 준다")
+    }
+
+    func testUnregisteredFilterUsesPermanentDexSpeciesNotTheLivingRoster() {
+        let box = [mon(4), mon(25), mon(7)]
+        XCTAssertEqual(RosterOrdering.unregistered(box, registeredSpeciesIDs: [4, 7]).map(\.currentID),
+                       [25])
     }
 
     func testSelectionListsAreAlwaysAlphabeticalAndStableForDuplicateNames() {

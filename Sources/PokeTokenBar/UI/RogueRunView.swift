@@ -40,8 +40,7 @@ struct BallThrowNotice: Equatable {
     let caught: Bool
 }
 
-/// 포켓로그식 런 화면 — **프로토타입**이다. 기록 저장(`RunProgress`)이 아직 없다.
-/// 입장권·하루 판 수 제한은 두지 않기로 했다(설계: `docs/reference/wave-run-design.md`).
+/// 포켓로그식 런 화면. 입장권·하루 판 수 제한은 없고 하루 첫 클리어에만 경제 보상을 준다.
 struct RogueRunView: View {
     @Bindable var store: CompanionStore
     @Environment(AppSettings.self) private var settings
@@ -136,6 +135,7 @@ struct RogueRunView: View {
         VStack(alignment: .leading, spacing: 8) {
             Text("첫 포켓몬을 고른다")
                 .font(.caption).foregroundStyle(.secondary)
+            dailyRewardLine
             recordLine
             HStack(spacing: 10) {
                 ForEach(candidates, id: \.speciesID) { candidate in
@@ -446,6 +446,7 @@ struct RogueRunView: View {
     private func ending(_ line: String) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(line).font(.callout)
+            dailyRewardLine
             recordLine
             if justEarnedDailyEgg {
                 Text(l.waveRunDailyEggEarned).font(.caption).foregroundStyle(.green)
@@ -454,6 +455,15 @@ struct RogueRunView: View {
             Button(l.battleClose) { store.rogueRun = nil; onClose() }
         }
         .task { recordResult() }
+    }
+
+    private var dailyRewardLine: some View {
+        Label(store.dungeonDailyRewardClaimed
+              ? "오늘 첫 클리어 보상 수령 완료"
+              : "오늘 첫 클리어: 알 \(DungeonDailyReward.eggs)개 + 별의조각 \(DungeonDailyReward.starPieces)개",
+              systemImage: store.dungeonDailyRewardClaimed ? "checkmark.seal.fill" : "gift.fill")
+            .font(.caption.bold())
+            .foregroundStyle(store.dungeonDailyRewardClaimed ? .secondary : Color.accentColor)
     }
 
     /// 판 밖으로 남는 것 — 최고 도달 웨이브와 클리어 횟수. 판마다 사라지는 게임이라 이 줄이 없으면
