@@ -1358,6 +1358,65 @@ struct L {
         toBox ? "\(name)이(가) 박스에 들어왔어요."
               : "\(name)이(가) 새 동행이 됐어요."
     }
+
+    // MARK: 사파리존 화면(#80 후속)
+
+    var safariZoneTitle: String { "사파리존" }
+    func safariZoneName(_ zone: SafariZone.ZoneID) -> String {
+        switch zone {
+        case .grassland: "초원"
+        case .wetland: "습지"
+        case .cave: "동굴"
+        }
+    }
+    func safariZoneVisitsRemaining(_ remaining: Int, cap: Int) -> String {
+        "오늘 남은 방문 \(remaining)/\(cap)"
+    }
+    var safariZoneEnter: String { "입장" }
+    var safariZoneNoVisitsLeftToday: String { "오늘의 방문 횟수를 다 썼어요. 내일 다시 와 주세요." }
+    var safariZoneNoMoreCatchesTodayBanner: String {
+        "오늘의 포획 기회를 다 썼어요. 산책은 계속할 수 있어요."
+    }
+    var safariZoneWalkEndedTitle: String { "오늘의 산책이 끝났어요." }
+    func safariZoneWalkEndedSummary(caughtCount: Int) -> String {
+        caughtCount == 0 ? "이번엔 못 잡았어요."
+                          : "\(caughtCount)마리를 잡았어요."
+    }
+    var safariZoneConfirm: String { "확인" }
+
+    var safariBaitAction: String { "미끼" }
+    var safariMudAction: String { "진흙" }
+    var safariBallAction: String { "볼" }
+    var safariRunAction: String { "도망" }
+    func safariCatchStageLabel(_ stage: Int) -> String { "포획 \(signed(stage))" }
+    func safariFleeStageLabel(_ stage: Int) -> String { "도망 \(signed(stage))" }
+    private func signed(_ value: Int) -> String {
+        value == 0 ? "0" : (value > 0 ? "+\(value)" : "\(value)")
+    }
+
+    var safariOutcomeCaught: String { "잡았다!" }
+    var safariOutcomeFled: String { "상대가 도망쳤다..." }
+    var safariOutcomeRanAway: String { "놓아줬다." }
+    var safariOutcomeTimedOut: String { "상대가 지쳐서 스스로 떠났다." }
+    var safariContinue: String { "계속" }
+
+    var safariLogEncounterStarted: String { "야생 포켓몬이 나타났다!" }
+    func safariLogLine(action: SafariAction, outcome: SafariOutcome) -> String {
+        let actionText: String
+        switch action {
+        case .bait: actionText = "미끼를 던졌다"
+        case .mud: actionText = "진흙을 던졌다"
+        case .ball: actionText = "볼을 던졌다"
+        case .run: actionText = "도망쳤다"
+        }
+        switch outcome {
+        case .caught: return "\(actionText) — 잡았다!"
+        case .fled: return "\(actionText) — 상대가 도망쳤다"
+        case .ranAway: return actionText
+        case .timedOut: return "\(actionText) — 상대가 떠났다"
+        case .continuing: return actionText
+        }
+    }
     /// 결과창 — 내가 뽑혔을 때. 잡힌 개체가 어디로 갔는지 말해 준다(박스를 안 열면 안 보인다).
     func raidCaughtByMe(_ name: String, toBox: Bool) -> String {
         toBox ? "추첨에 뽑혀 \(name)을(를) 데려왔다 — 박스에 있어요."

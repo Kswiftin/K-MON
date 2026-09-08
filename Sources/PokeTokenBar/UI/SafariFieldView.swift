@@ -1,0 +1,118 @@
+import SwiftUI
+
+/// 사파리존 걷기 화면 — `Canvas` + `TimelineView` 로 벌판과 트레이너를 그린다.
+/// `room-walk-dungeon-design.md` 의 `RoomCanvas` 설계에서 문·방 로직만 뺀 것.
+struct SafariFieldView: View {
+    @Bindable var store: CompanionStore
+    @State private var heldKeys: Set<SafariDirectionKey> = []
+    /// 착용이 바뀔 때만 다시 굽는다(`TrainerAvatarView` 와 같은 이유) — 매 프레임 합성 금지.
+    @State private var trainerImages: [Facing: [CGImage]] = [:]
+    @State private var lastTickDate: Date?
+    @State private var isVisible = true
+
+    private var l: L { store.l }
+    private static let cellSize: CGFloat = 24
+    private static let bounds = SafariFieldBounds.standard
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            summary
+            field
+        }
+        .onAppear { rebuildTrainerImages() }
+        .onChange(of: store.outfit) { rebuildTrainerImages() }
+        .onDisappear { isVisible = false }
+    }
+
+    private var summary: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            HStack(spacing: 10) {
+                if let zone = store.safariVisit?.zone {
+                    Text(l.safariZoneName(zone)).font(.caption.bold())
+                }
+                Spacer()
+                Label("\(store.safariVisit?.balls ?? 0)", systemImage: "circle.fill")
+                Label("\(store.safariVisit?.stepsRemaining ?? 0)", systemImage: "figure.walk")
+                Label("\(store.safariZoneCatchesRemainingToday)", systemImage: "pawprint.fill")
+            }
+            .font(.caption2)
+            // 볼·걸음이 남았는데 아무 일도 안 일어나면 버그처럼 보인다 — 새 조우가 더 안 뜨는
+            // 이유를 화면에 알린다.
+            if store.safariZoneCatchesRemainingToday == 0 {
+                Text(l.safariZoneNoMoreCatchesTodayBanner)
+                    .font(.caption2).foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private var field: some View {
+        let width = Self.cellSize * CGFloat(Self.bounds.width)
+        let height = Self.cellSize * CGFloat(Self.bounds.height)
+        return TimelineView(.animation(minimumInterval: 1.0 / 60.0, paused: !isVisible)) { context in
+            Canvas { ctx, size in drawField(ctx: ctx, size: size) }
+                .onChange(of: context.date) { _, newDate in tick(now: newDate) }
+        }
+        .frame(width: width, height: height)
+        .clipped()
+        .background(zoneBackgroundColor)
+        .background(SafariKeyCapture(heldKeys: $heldKeys))
+    }
+
+    private var zoneBackgroundColor: Color {
+        switch store.safariVisit?.zone {
+        case .grassland: .green.opacity(0.25)
+        case .wetland: .teal.opacity(0.25)
+        case .cave: .brown.opacity(0.25)
+        case nil: .clear
+        }
+    }
+
+    private func drawField(ctx: GraphicsContext, size: CGSize) {
+        guard let walker = store.safariVisit?.walker else { return }
+        let origin = walker.moveOrigin ?? walker.cell
+        let target = walker.moveTarget ?? walker.cell
+        let progress = walker.moveProgress
+        let cellX = CGFloat(origin.x) + (CGFloat(target.x) - CGFloat(origin.x)) * progress
+        let cellY = CGFloat(origin.y) + (CGFloat(target.y) - CGFloat(origin.y)) * progress
+        guard let images = trainerImages[walker.facing], !images.isEmpty else { return }
+        let step = progress > 0 ? Int(progress * 3) % images.count : 0
+        let image = images[step]
+        // 스프라이트 원본은 16×24 — 칸(24×24)에 폭을 맞추고 세로는 1.5배로 그려 발이 칸 아래에
+        // 온다(발밑 칸이 곧 `walker.cell` 이 되도록 y 를 위로 반 칸만큼 올린다).
+        let width = Self.cellSize
+        let height = Self.cellSize * 1.5
+        let rect = CGRect(x: cellX * Self.cellSize,
+                          y: cellY * Self.cellSize - (height - Self.cellSize),
+                          width: width, height: height)
+        ctx.draw(Image(decorative: image, scale: 1).interpolation(.none), in: rect)
+    }
+
+    private func rebuildTrainerImages() {
+        let sprite = TrainerSprite(outfit: store.outfit)
+        var built: [Facing: [CGImage]] = [:]
+        for facing in Facing.allCases {
+            built[facing] = (0..<3).compactMap {
+                sprite.frame(facing, step: $0).cgImage(palette: TrainerPixelArt.palette)
+            }
+        }
+        trainerImages = built
+    }
+
+    /// 매 프레임 호출 — 실제 걸음 소모·인카운터 굴림은 `SafariVisit.advance` 가 한다. 여기서는
+    /// 경과 시간(dt)만 재고 방문을 꺼내 바꾸고 되넣는다.
+    private func tick(now: Date) {
+        defer { lastTickDate = now }
+        guard let last = lastTickDate else { return }
+        let dt = now.timeIntervalSince(last)
+        let catchesRemainingToday = store.safariZoneCatchesRemainingToday
+        mutate { $0.advance(dt: dt, heldKeys: heldKeys, catchesRemainingToday: catchesRemainingToday) }
+    }
+
+    /// store 의 방문을 꺼내 바꾸고 되넣는다 — 뷰가 값 타입 코어를 다루는 유일한 자리다
+    /// (`RogueRunView.mutate` 와 같은 자리).
+    private func mutate(_ body: (inout SafariVisit) -> Void) {
+        guard var visit = store.safariVisit else { return }
+        body(&visit)
+        store.safariVisit = visit
+    }
+}

@@ -41,10 +41,6 @@ CORE_ONLY_MUTATORS=(
   # 남아 있다. 로컬에서 고를 값이 아니므로 호출부가 없는 것이 맞다 — 은퇴시킬 때 와이어
   # 필드까지 함께 정리한다.
   "setTheme"
-  # 사파리존 방문 시작(#80 후속). 스택 PR 로 Core 연동(이 PR)과 UI 배선(다음 PR, 2D 걷기
-  # 화면)을 나눴다 — 걷기 화면이 아직 없어 지금은 호출부가 테스트뿐이다. 그 UI PR 이
-  # `SafariZoneView` 에서 이 메서드를 부르면 이 예외를 지운다.
-  "beginSafariZoneVisit"
 )
 UNCALLED_MUTATORS=""
 

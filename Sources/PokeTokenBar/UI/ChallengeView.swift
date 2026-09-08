@@ -69,6 +69,10 @@ struct ChallengeView: View {
                           subtitle: "체육관을 차례로 돌며 배지를 모으세요.") { nav.showGymLeague = true }
             challengeCard(title: l.dungeonTitle, systemImage: "map.fill", tint: .red,
                           subtitle: "무작위로 이어지는 웨이브를 오르는 로그라이크 런.") { nav.showDungeon = true }
+            challengeCard(title: l.safariZoneTitle, systemImage: "leaf.fill", tint: .green,
+                          subtitle: "미끼·진흙·볼·도망으로 야생을 잡는 그레이트 마쉬식 산책.") {
+                nav.showSafariZone = true
+            }
             challengeCard(title: "포켓몬 경매 시장",
                           systemImage: "storefront.fill", tint: .orange,
                           subtitle: "한 마리를 올리고 여러 교환 제안을 받아보세요.") { showsAuction = true }

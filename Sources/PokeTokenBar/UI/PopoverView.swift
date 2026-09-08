@@ -84,6 +84,8 @@ final class PopoverNavigation {
     var showRaid = false
     /// 꾸미기(트레이너 의상) 오버레이. 위 오버레이들과 같은 층이다.
     var showOutfit = false
+    /// 사파리존 오버레이(#80 후속). 위 오버레이들과 같은 층이다.
+    var showSafariZone = false
     /// 주간 회고 오버레이(PRD 마일스톤 4). 위 오버레이들과 같은 층이다 — 집중 카드에서 열지만
     /// 뜨는 자리는 팝오버 전체라, 접는 규칙도 형제들과 같아야 한다.
     var showFocusRecap = false
@@ -102,6 +104,7 @@ final class PopoverNavigation {
         showDungeon = false
         showRaid = false
         showOutfit = false
+        showSafariZone = false
         showFocusRecap = false
         chatCompanionID = nil
     }
@@ -161,6 +164,14 @@ final class PopoverNavigation {
     func goToRaid() {
         closeOverlays()
         showRaid = true
+        tab = .challenge
+    }
+
+    /// 사파리존을 여는 **유일한** 자리 — `goToRaid` 와 같은 이유(형제 오버레이를 접지 않으면
+    /// 아무 일도 안 일어난 것처럼 보인다).
+    func goToSafariZone() {
+        closeOverlays()
+        showSafariZone = true
         tab = .challenge
     }
 
@@ -237,6 +248,8 @@ struct PopoverView: View {
                 RaidView(store: companion, onClose: { nav.showRaid = false })
             } else if nav.showOutfit {
                 OutfitView(store: companion, onClose: { nav.showOutfit = false })
+            } else if nav.showSafariZone {
+                SafariZoneView(store: companion, onClose: { nav.showSafariZone = false })
             } else if nav.showFocusRecap {
                 FocusRecapView(store: companion, onClose: { nav.showFocusRecap = false })
             } else if let chatCompanionID = nav.chatCompanionID {
