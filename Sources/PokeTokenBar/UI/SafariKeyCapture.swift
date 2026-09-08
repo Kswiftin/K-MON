@@ -65,8 +65,10 @@ final class SafariKeyCaptureNSView: NSView {
     /// 방향키 또는 WASD(ANSI US 배열 기준 키코드) — 다른 배열에서도 물리 위치가 같아 탑다운
     /// 이동에는 자연스럽다(레이아웃마다 문자를 다시 매핑하지 않는다).
     /// 키코드 매핑 실수(예: 좌우가 뒤바뀜)는 조용히 방향이 어긋나는 결함이라 테스트가 직접
-    /// 확인할 수 있게 `internal` 로 둔다(`SafariKeyCaptureTests`).
-    static func direction(for keyCode: UInt16) -> SafariDirectionKey? {
+    /// 확인할 수 있게 `internal` 로 둔다(`SafariKeyCaptureTests`). `self` 를 전혀 안 읽는
+    /// 순수 함수라 `NSView`(`@MainActor`)의 격리를 상속받을 이유가 없다 — `nonisolated` 를
+    /// 명시해야 MainActor 밖(테스트 등)에서도 동기 호출할 수 있다(CI 가 이 어긋남을 잡았다).
+    nonisolated static func direction(for keyCode: UInt16) -> SafariDirectionKey? {
         switch keyCode {
         case 126, 13: return .up      // ↑ / W
         case 125, 1:  return .down    // ↓ / S
