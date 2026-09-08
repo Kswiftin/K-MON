@@ -301,6 +301,19 @@ struct L {
         case .helpingHand:      return t("\(name)이(가) 도움을 받았다!",
                                          "\(name) is ready to help!",
                                          "\(name)は てだすけを うけた！")
+        case .disable:          return t("\(name)의 기술이 봉인됐다!", "\(name)'s move was disabled!",
+                                         "\(name)の わざを かなしばりした！")
+        case .encore:           return t("\(name)에게 앙코르가 걸렸다!", "\(name) received an encore!",
+                                         "\(name)に アンコールが かかった！")
+        case .taunt:            return t("\(name)은(는) 도발에 넘어갔다!", "\(name) fell for the taunt!",
+                                         "\(name)は ちょうはつに のった！")
+        case .torment:          return t("\(name)은(는) 트집이 잡혔다!", "\(name) was subjected to torment!",
+                                         "\(name)は いちゃもんを つけられた！")
+        case .imprison:         return t("\(name)은(는) 같은 기술을 봉인당했다!",
+                                         "\(name)'s shared moves were sealed away!",
+                                         "\(name)は おなじ わざを ふういんされた！")
+        case .healBlock:        return t("\(name)은(는) 회복을 봉쇄당했다!", "\(name) was prevented from healing!",
+                                         "\(name)は かいふくを ふうじられた！")
         }
     }
 
@@ -335,7 +348,8 @@ struct L {
                                     "The substitute took the hit for \(name)!",
                                     "\(name)の みがわりが ダメージを うけた！")
         case .aquaRing, .ingrain, .leechSeed, .nightmare, .curse, .partiallyTrapped,
-             .focusEnergy, .laserFocus, .minimize, .defenseCurl, .charge:
+             .focusEnergy, .laserFocus, .minimize, .defenseCurl, .charge,
+             .disable, .encore, .taunt, .torment, .imprison, .healBlock:
             return battleVolatileStarted(name, volatileStatus)
         }
     }
@@ -392,6 +406,18 @@ struct L {
                                          "\(name)の スポットライトが きえた")
         case .helpingHand:      return t("\(name)의 도움이 끝났다", "\(name)'s helping hand ended",
                                          "\(name)の てだすけが おわった")
+        case .disable:          return t("\(name)의 기술 봉인이 풀렸다", "\(name)'s move is no longer disabled",
+                                         "\(name)の かなしばりが とけた")
+        case .encore:           return t("\(name)의 앙코르가 끝났다", "\(name)'s encore ended",
+                                         "\(name)の アンコールが おわった")
+        case .taunt:            return t("\(name)의 도발이 풀렸다", "\(name)'s taunt wore off",
+                                         "\(name)の ちょうはつが とけた")
+        case .torment:          return t("\(name)의 트집이 풀렸다", "\(name)'s torment ended",
+                                         "\(name)の いちゃもんが とけた")
+        case .imprison:         return t("\(name)의 기술 봉인이 걷혔다", "\(name)'s sealed moves came back",
+                                         "\(name)の ふういんが とけた")
+        case .healBlock:        return t("\(name)은(는) 다시 회복할 수 있다", "\(name) can heal again",
+                                         "\(name)は また かいふくできる")
         }
     }
 

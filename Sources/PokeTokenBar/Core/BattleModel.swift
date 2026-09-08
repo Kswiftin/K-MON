@@ -995,6 +995,15 @@ enum BattleGuard {
     static func isIgnored(byMoveID id: Int) -> Bool { ShowdownMoveData.ignoringGuard.contains(id) }
 }
 
+/// 이 칸을 못 쓰게 만든 것 — `BattleSide.selectionLock(forMoveAt:)` 이 답한다.
+///
+/// **`BattleVolatile` 을 그대로 쓰지 않는 이유는 구애 아이템이다**: 원인 하나가 volatile 이 아니라
+/// 지닌물건이라 그 열거형에 담기지 않는다. 그리고 화면이 필요한 것은 상태 이름이 아니라 "왜 못
+/// 누르나" 한 줄이라, 막는 이유만 든 작은 열거형이 그 질문에 정확히 답한다.
+enum MoveSelectionLock: String, Sendable, Equatable, CaseIterable {
+    case disable, encore, taunt, torment, imprison, healBlock, choiceItem
+}
+
 /// 개체에 붙어 **턴을 넘어 사는** 상태 — 조이기·저주·나이트메어·아쿠아링·뿌리박기.
 ///
 /// 주 상태이상(`Status`)과 세 가지가 다르다: 여러 개가 동시에 붙고(그래서 `BattleSide` 가 표로
@@ -1027,6 +1036,18 @@ enum BattleVolatile: String, Codable, Sendable, Equatable, CaseIterable {
     /// 도우미 — **아군에게** 붙어 그 아군의 이번 턴 기술 위력을 1.5 배로 만든다. 유도 셋과 같은
     /// 다인전 전용이지만 하는 일이 다르다: 대상을 옮기는 게 아니라 위력을 얹는다.
     case helpingHand
+    /// 기술 **선택**을 막는 여섯. 위 상태들과 갈리는 점은 막는 자리다 — 데미지 경로가 아니라
+    /// 선택 경로(`BattleSide.selectionLock(forMoveAt:)`)에서 답한다. 그래서 이 여섯은 아래 축
+    /// (잔뎀·회복·급소·유도)에 하나도 답하지 않고, 대신 어느 칸을 막는지를 곁의 값이 든다:
+    /// 씨앙코르는 `disabledMoveID`, 앙코르는 `encoredMoveID`, 봉인은 `imprisonedMoveIDs` 다
+    /// (도발·트집·비밀의힘은 규칙만으로 정해져 곁의 값이 없다).
+    ///
+    /// **봉인이 걸리는 쪽이 본가와 다르다.** 본가는 쓴 쪽에 붙어 상대를 막고 쓴 쪽이 물러나면
+    /// 풀리지만, 여기서는 **막히는 쪽**에 붙는다(겹치는 기술 id 를 그 자리에 적어 둔다). 선택
+    /// 판정을 개체 하나만 보고 답하게 두려는 선택이다 — 판정에 상대편을 끌어들이면 네 모드와
+    /// 터미널이 각자 상대를 찾아 넘겨야 하고, 한 자리만 빠뜨려도 그 모드에서만 봉인이 없다.
+    /// 대가는 걸어 둔 쪽이 쓰러진 뒤에도 남는다는 것이고, 막히는 쪽이 교체하면 풀린다.
+    case disable, encore, taunt, torment, imprison, healBlock
 
     /// 쇼다운이 쓰는 키 → 이 열거형. 모르는 키는 `nil` 이고, 그 키가 미구현인 사유는
     /// `ShowdownEffectTableTests` 가 동결한다.
@@ -1051,6 +1072,12 @@ enum BattleVolatile: String, Codable, Sendable, Equatable, CaseIterable {
         case "ragepowder":       self = .ragePowder
         case "spotlight":        self = .spotlight
         case "helpinghand":      self = .helpingHand
+        case "disable":          self = .disable
+        case "encore":           self = .encore
+        case "taunt":            self = .taunt
+        case "torment":          self = .torment
+        case "imprison":         self = .imprison
+        case "healblock":        self = .healBlock
         default:                 return nil
         }
     }
@@ -1071,7 +1098,9 @@ enum BattleVolatile: String, Codable, Sendable, Equatable, CaseIterable {
              .endure, .destinyBond, .grudge, .substitute, .followMe, .ragePowder:
             return true
         // 스포트라이트만 **남을 지목한다** — 지목된 자리가 이번 턴의 공격을 받는다.
-        case .leechSeed, .nightmare, .curse, .partiallyTrapped, .spotlight, .helpingHand:
+        // 선택을 막는 여섯은 전부 상대에게 건다 — 봉인도 그렇다(위 case 주석의 사유).
+        case .leechSeed, .nightmare, .curse, .partiallyTrapped, .spotlight, .helpingHand,
+             .disable, .encore, .taunt, .torment, .imprison, .healBlock:
             return false
         }
     }
@@ -1092,6 +1121,8 @@ enum BattleVolatile: String, Codable, Sendable, Equatable, CaseIterable {
         case .aquaRing, .ingrain, .focusEnergy, .minimize, .defenseCurl,
              .leechSeed, .nightmare, .curse, .partiallyTrapped,
              .destinyBond, .grudge, .substitute: return 0
+        // 선택을 막는 여섯은 자기에게 걸지 않는다 — 기간은 `foeDuration` 이 답한다.
+        case .disable, .encore, .taunt, .torment, .imprison, .healBlock: return 0
         }
     }
 
@@ -1105,7 +1136,8 @@ enum BattleVolatile: String, Codable, Sendable, Equatable, CaseIterable {
         case .minimize, .defenseCurl, .charge, .aquaRing, .ingrain,
              .leechSeed, .nightmare, .curse, .partiallyTrapped,
              .endure, .destinyBond, .grudge, .substitute,
-             .followMe, .ragePowder, .spotlight, .helpingHand: return 0
+             .followMe, .ragePowder, .spotlight, .helpingHand,
+             .disable, .encore, .taunt, .torment, .imprison, .healBlock: return 0
         }
     }
 
@@ -1120,7 +1152,8 @@ enum BattleVolatile: String, Codable, Sendable, Equatable, CaseIterable {
         case .leechSeed, .nightmare, .curse, .partiallyTrapped,
              .focusEnergy, .laserFocus, .minimize, .defenseCurl, .charge,
              .endure, .destinyBond, .grudge, .substitute,
-             .followMe, .ragePowder, .spotlight, .helpingHand: return nil
+             .followMe, .ragePowder, .spotlight, .helpingHand,
+             .disable, .encore, .taunt, .torment, .imprison, .healBlock: return nil
         }
     }
 
@@ -1135,7 +1168,8 @@ enum BattleVolatile: String, Codable, Sendable, Equatable, CaseIterable {
         case .aquaRing, .ingrain, .leechSeed,
              .focusEnergy, .laserFocus, .minimize, .defenseCurl, .charge,
              .endure, .destinyBond, .grudge, .substitute,
-             .followMe, .ragePowder, .spotlight, .helpingHand: return nil
+             .followMe, .ragePowder, .spotlight, .helpingHand,
+             .disable, .encore, .taunt, .torment, .imprison, .healBlock: return nil
         }
     }
 
@@ -1149,7 +1183,8 @@ enum BattleVolatile: String, Codable, Sendable, Equatable, CaseIterable {
         case .destinyBond, .grudge: return true
         case .endure, .aquaRing, .ingrain, .leechSeed, .nightmare, .curse, .partiallyTrapped,
              .focusEnergy, .laserFocus, .minimize, .defenseCurl, .charge, .substitute,
-             .followMe, .ragePowder, .spotlight, .helpingHand: return false
+             .followMe, .ragePowder, .spotlight, .helpingHand,
+             .disable, .encore, .taunt, .torment, .imprison, .healBlock: return false
         }
     }
 
@@ -1160,7 +1195,8 @@ enum BattleVolatile: String, Codable, Sendable, Equatable, CaseIterable {
         case .endure: return true
         case .destinyBond, .grudge, .aquaRing, .ingrain, .leechSeed, .nightmare, .curse,
              .partiallyTrapped, .focusEnergy, .laserFocus, .minimize, .defenseCurl, .charge,
-             .substitute, .followMe, .ragePowder, .spotlight, .helpingHand:
+             .substitute, .followMe, .ragePowder, .spotlight, .helpingHand,
+             .disable, .encore, .taunt, .torment, .imprison, .healBlock:
             return false
         }
     }
@@ -1174,7 +1210,8 @@ enum BattleVolatile: String, Codable, Sendable, Equatable, CaseIterable {
         case .followMe, .ragePowder, .spotlight: return true
         case .substitute, .endure, .destinyBond, .grudge, .aquaRing, .ingrain, .leechSeed,
              .nightmare, .curse, .partiallyTrapped, .focusEnergy, .laserFocus, .minimize,
-             .defenseCurl, .charge, .helpingHand:
+             .defenseCurl, .charge, .helpingHand,
+             .disable, .encore, .taunt, .torment, .imprison, .healBlock:
             return false
         }
     }
@@ -1186,7 +1223,8 @@ enum BattleVolatile: String, Codable, Sendable, Equatable, CaseIterable {
         case .ragePowder: return true
         case .followMe, .spotlight, .substitute, .endure, .destinyBond, .grudge, .aquaRing,
              .ingrain, .leechSeed, .nightmare, .curse, .partiallyTrapped, .focusEnergy,
-             .laserFocus, .minimize, .defenseCurl, .charge, .helpingHand:
+             .laserFocus, .minimize, .defenseCurl, .charge, .helpingHand,
+             .disable, .encore, .taunt, .torment, .imprison, .healBlock:
             return false
         }
     }
@@ -1200,7 +1238,29 @@ enum BattleVolatile: String, Codable, Sendable, Equatable, CaseIterable {
         case .followMe, .ragePowder: return 1
         case .substitute, .endure, .destinyBond, .grudge, .aquaRing, .ingrain, .leechSeed,
              .nightmare, .curse, .partiallyTrapped, .focusEnergy, .laserFocus, .minimize,
-             .defenseCurl, .charge, .helpingHand:
+             .defenseCurl, .charge, .helpingHand,
+             .disable, .encore, .taunt, .torment, .imprison, .healBlock:
+            return 0
+        }
+    }
+
+    /// **상대에게** 걸었을 때 사는 턴 — 0 은 무기한(그 개체가 교체할 때까지)이다.
+    /// 자기에게 거는 부류의 기간(`selfDuration`)과 자리를 나눈 이유는 값이 다른 부류라서다:
+    /// 도발 3턴·씨앙코르 4턴·앙코르 3턴·비밀의힘 5턴은 걸린 쪽에서 세고, 트집·봉인은 안 센다.
+    ///
+    /// 조이기만 여기서 답하지 않는다(`nil` 이 아니라 0) — 4~5턴을 난수로 뽑으므로 호출부
+    /// (`BattleEngine.applyVolatile`)가 그 하나만 따로 굴린다.
+    var foeDuration: Int {
+        switch self {
+        case .taunt:     return 3
+        case .disable:   return 4
+        case .encore:    return 3
+        case .healBlock: return 5
+        // 트집·봉인은 걸린 개체가 교체할 때까지 산다(본가의 트집과 같다).
+        case .torment, .imprison: return 0
+        case .leechSeed, .nightmare, .curse, .partiallyTrapped, .spotlight, .helpingHand,
+             .aquaRing, .ingrain, .focusEnergy, .laserFocus, .minimize, .defenseCurl, .charge,
+             .endure, .destinyBond, .grudge, .substitute, .followMe, .ragePowder:
             return 0
         }
     }
@@ -1410,6 +1470,18 @@ struct BattleSide: Sendable, Equatable {
     /// `BattleSide` 는 `Codable` 이 아니라 와이어에 실리지 않는다 — 두 피어가 각자 같은 규칙으로
     /// 세운다(`isTerastallized` 와 같은 이유).
     var substituteHP = 0
+    /// 씨앙코르가 막은 기술 id — `volatiles[.disable]` 은 남은 턴만 세고 **어느 칸인지는 이 값**이다.
+    /// 층 HP 와 같은 부류의 짝이라 지우는 자리도 함께여야 한다(`BattleEngine.prepareForSwitch`).
+    var disabledMoveID: Int?
+    /// 앙코르가 남긴 기술 id — 이 하나만 낼 수 있다(막는 방향이 씨앙코르와 반대다).
+    var encoredMoveID: Int?
+    /// 봉인으로 막힌 기술 id — 걸어 둔 쪽과 겹치던 기술이다(`BattleVolatile.imprison` 주석의 사유로
+    /// **막히는 쪽**이 든다).
+    var imprisonedMoveIDs: Set<Int> = []
+    /// 구애 아이템(구애머리띠·구애안경)이 묶어 둔 기술 id — 배틀에서 처음 낸 기술로 정해지고
+    /// 교체할 때까지 그 하나만 낸다. volatile 이 아닌 이유는 원인이 지닌물건이라서다:
+    /// 상대가 걸어 주는 것이 아니라 **자기 물건**이 묶으므로 붙는 순간(`beginAttack`)도 다르다.
+    var choiceLockedMoveID: Int?
 
     init(_ snapshot: BattleSnapshot) {
         self.snapshot = snapshot
@@ -1543,18 +1615,43 @@ struct BattleSide: Sendable, Equatable {
         }
     }
 
-    /// 고를 수 있는 기술이 하나도 없으면 발버둥.
-    var mustStruggle: Bool { !pp.contains { $0 > 0 } }
+    /// 고를 수 있는 기술이 하나도 없으면 발버둥 — **PP 만 보지 않는다.** 도발·앙코르·구애가
+    /// 남은 칸을 전부 막을 수 있어서다(변화기만 든 개체가 도발당한 자리). PP 만 세던 시절에는
+    /// 그 개체가 "낼 기술이 있다" 로 읽혀 아무 기술도 못 내는 턴이 나왔다.
+    var mustStruggle: Bool { !moves.indices.contains { canUse(moveAt: $0) } }
 
     /// 인덱스로 기술 — 범위 밖이거나 음수면 발버둥(PP 소진 선택은 −1 로 온다).
     func move(at index: Int) -> MoveSpec {
         moves.indices.contains(index) ? moves[index] : .struggle()
     }
 
-    /// 이번 턴에 이 인덱스의 기술을 쓸 수 있는가 — 인덱스 범위와 남은 PP 를 **같이** 본다.
+    /// 이번 턴에 이 인덱스의 기술을 쓸 수 있는가 — 인덱스 범위·남은 PP·선택 잠금을 **같이** 본다.
     /// `pp` 는 와이어로 들어오는 값이라 `moves` 와 길이가 어긋날 수 있다(경계에서 함께 막는다).
+    ///
+    /// **네 모드와 터미널이 전부 이 함수를 지난다** — 그래서 잠금을 여기 얹으면 선택을 막는 부류가
+    /// 모드마다 갈리지 않는다(모드별로 갈래를 두면 방에서만 도발이 통하지 않는 식으로 어긋난다).
     func canUse(moveAt index: Int) -> Bool {
         moves.indices.contains(index) && pp.indices.contains(index) && pp[index] > 0
+            && selectionLock(forMoveAt: index) == nil
+    }
+
+    /// 이 칸이 **왜** 막혔나 — 막히지 않았으면 `nil`. UI 는 이 값으로 버튼을 비활성으로 남긴다
+    /// (숨기지 않는다: 왜 못 쓰는지가 화면에 보여야 한다).
+    ///
+    /// 남은 PP 는 여기서 답하지 않는다 — PP 는 화면이 이미 숫자로 보여 주므로 이 값은 **상태가
+    /// 막은 것**만 말한다. 여럿이 겹치면 아래 순서로 첫 하나를 답한다(앙코르가 가장 세다:
+    /// 낼 수 있는 칸이 하나로 줄므로 다른 이유를 말해도 화면이 달라지지 않는다).
+    func selectionLock(forMoveAt index: Int) -> MoveSelectionLock? {
+        guard moves.indices.contains(index) else { return nil }
+        let move = moves[index]
+        if has(.encore), let locked = encoredMoveID, move.id != locked { return .encore }
+        if let locked = choiceLockedMoveID, move.id != locked { return .choiceItem }
+        if has(.disable), move.id == disabledMoveID { return .disable }
+        if has(.taunt), move.damageClass == .status { return .taunt }
+        if has(.torment), move.id == lastMoveID { return .torment }
+        if has(.imprison), imprisonedMoveIDs.contains(move.id) { return .imprison }
+        if has(.healBlock), ShowdownMoveData.healing.contains(move.id) { return .healBlock }
+        return nil
     }
 }
 
@@ -1808,6 +1905,12 @@ enum BattleEngine {
         // 층도 함께 내린다. `volatiles` 만 비우면 HP 가 남아 다시 나온 개체가 공격을 흘린다 —
         // 두 값이 한 상태의 두 면이라 지우는 자리도 하나여야 한다.
         side.substituteHP = 0
+        // 선택 잠금의 곁의 값도 함께 지운다. volatile 만 비우면 막힌 기술 id 가 남고, 구애는
+        // volatile 이 아니라 아예 안 지워진다 — 다시 나온 개체가 이유 없이 한 칸만 내게 된다.
+        side.disabledMoveID = nil
+        side.encoredMoveID = nil
+        side.imprisonedMoveIDs = []
+        side.choiceLockedMoveID = nil
         side.leechSeedSource = nil
         // 랭크도 물러나면 사라진다. 남겨 두면 칼춤을 세 번 쌓아 두고 교체로 피했다가 그 랭크
         // 그대로 다시 나오는 무료 세팅이 된다 — CPU/체육관과 LAN 교체가 같이 이 규칙을 쓴다.

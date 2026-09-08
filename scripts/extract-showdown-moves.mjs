@@ -198,6 +198,18 @@ function doubledByDefenseCurl(move) {
 }
 
 /**
+ * Does Heal Block stop this move? Showdown spells that as the `heal` move flag, which its own
+ * `healblock` condition reads to disable the move outright. Drain moves carry the flag too
+ * (Giga Drain, Drain Punch), so Heal Block takes those off the menu as well.
+ *
+ * The engine needs the flag rather than PokéAPI's `healing` column: that column stops at
+ * generation 7, so a gen-8+ healing move would slip past Heal Block with nothing to say why.
+ */
+function blockedByHealBlock(move) {
+  return Boolean(move.flags?.heal)
+}
+
+/**
  * Does this move reach the owner through a Substitute? Showdown spells that as the `bypasssub`
  * move flag, which every sound move carries alongside the handful of others that ignore the
  * doll (Whirlwind, Transform, Perish Song).
@@ -292,7 +304,7 @@ const swiftLiteral = (value) => (typeof value === 'string' ? `"${value}"` : Stri
  * Render the override map as a Swift source file. Generated rather than parsed at runtime so
  * the table costs nothing to load and a bad extraction breaks the build instead of a battle.
  */
-function renderSwift(overrides, effects, piercing, minimized, curled, bypassingSub, substituteCost) {
+function renderSwift(overrides, effects, piercing, minimized, curled, bypassingSub, substituteCost, healing) {
   const entries = Object.entries(overrides)
     .map(([id, override]) => [Number(id), override])
     .sort((a, b) => a[0] - b[0])
@@ -408,6 +420,12 @@ ${idSetLines(bypassingSub)}
     /// How much max HP each Substitute-raising move charges, as the divisor Showdown writes in
     /// the move's own \`onHit\` callback: Substitute a quarter, Shed Tail half. The doll itself is
     /// always a quarter of max HP — only the price differs, so only the price is read out here.
+    /// Moves Heal Block stops, as Showdown's \`heal\` move flag marks them — drain moves included
+    /// (Showdown's own \`healblock\` condition disables every move carrying the flag).
+    static let healing: Set<Int> = [
+${idSetLines(healing)}
+    ]
+
     static let substituteCostDivisor: [Int: Int] = [
 ${Object.entries(substituteCost)
   .map(([id, entry]) => [Number(id), entry])
@@ -458,6 +476,7 @@ async function main() {
   const curled = {}
   const bypassingSub = {}
   const substituteCost = {}
+  const healing = {}
   const engineWork = []
   let unmatched = 0
   let metaGapsFilled = 0
@@ -477,6 +496,7 @@ async function main() {
     if (passesThroughSubstitute(move)) bypassingSub[move.num] = move.name
     const subCost = substituteCostDivisor(move)
     if (subCost) substituteCost[move.num] = { divisor: subCost, name: move.name }
+    if (blockedByHealBlock(move)) healing[move.num] = move.name
     const reasons = engineWorkReasons(move)
     // `isNonstandard` marks moves no current game can produce (Z-moves, LGPE, CAP fakemon).
     // They reach the app only if PokéAPI hands one out, so they are not scoping work.
@@ -496,7 +516,7 @@ async function main() {
   await writeFile(workPath, `${JSON.stringify(engineWork, null, 2)}\n`)
   if (swiftPath) {
     await mkdir(dirname(swiftPath), { recursive: true })
-    await writeFile(swiftPath, renderSwift(overrides, effects, piercing, minimized, curled, bypassingSub, substituteCost))
+    await writeFile(swiftPath, renderSwift(overrides, effects, piercing, minimized, curled, bypassingSub, substituteCost, healing))
   }
 
   const byField = Object.entries(fieldCounts).sort((a, b) => b[1] - a[1])

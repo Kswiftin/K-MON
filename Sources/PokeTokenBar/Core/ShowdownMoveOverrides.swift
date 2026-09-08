@@ -396,6 +396,47 @@ enum ShowdownMoveData {
     /// How much max HP each Substitute-raising move charges, as the divisor Showdown writes in
     /// the move's own `onHit` callback: Substitute a quarter, Shed Tail half. The doll itself is
     /// always a quarter of max HP — only the price differs, so only the price is read out here.
+    /// Moves Heal Block stops, as Showdown's `heal` move flag marks them — drain moves included
+    /// (Showdown's own `healblock` condition disables every move carrying the flag).
+    static let healing: Set<Int> = [
+        71,  // Absorb
+        72,  // Mega Drain
+        105,  // Recover
+        135,  // Soft-Boiled
+        138,  // Dream Eater
+        141,  // Leech Life
+        156,  // Rest
+        202,  // Giga Drain
+        208,  // Milk Drink
+        234,  // Morning Sun
+        235,  // Synthesis
+        236,  // Moonlight
+        256,  // Swallow
+        273,  // Wish
+        303,  // Slack Off
+        355,  // Roost
+        361,  // Healing Wish
+        409,  // Drain Punch
+        456,  // Heal Order
+        461,  // Lunar Dance
+        505,  // Heal Pulse
+        532,  // Horn Leech
+        570,  // Parabolic Charge
+        577,  // Draining Kiss
+        613,  // Oblivion Wing
+        659,  // Shore Up
+        666,  // Floral Healing
+        668,  // Strength Sap
+        685,  // Purify
+        733,  // Bouncy Bubble
+        791,  // Life Dew
+        816,  // Jungle Healing
+        849,  // Lunar Blessing
+        863,  // Revival Blessing
+        891,  // Bitter Blade
+        902,  // Matcha Gotcha
+    ]
+
     static let substituteCostDivisor: [Int: Int] = [
         164: 4,  // Substitute
         880: 2,  // Shed Tail

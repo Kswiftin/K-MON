@@ -16,8 +16,6 @@ final class ShowdownEffectTableTests: XCTestCase {
     /// 아직 구현하지 않은 volatile — **왜 없는지**를 함께 잠근다. 구현하면 여기서 뺀다.
     /// 방어 부류 여덟 키(`protect`·`kingsshield` …)는 `BattleGuard` 가 이미 아니까 여기 없다.
     private static let unmodeledVolatiles: Set<String> = [
-        // 기술 **선택**을 막는 부류 — 네 모드(1v1·모의전·웨이브·방)와 터미널 UI 까지 번진다.
-        "disable", "encore", "taunt", "torment", "imprison", "healblock",
         // 맞은 데미지를 모아 두 배로 되돌려주는 부류 — 기술이 나가기 전에 턴을 잡아먹는 자리가 없다.
         "bide",
         // 랭크·급소·명중 배율을 한 줄씩 얹는 부류. 얹는 자리는 있고 아직 안 얹었다.
