@@ -102,14 +102,41 @@ final class PokemonChatTests: XCTestCase {
         XCTAssertFalse(prompt.contains("()"))
     }
 
-    func testAbilityNameSurvivesWhenItsDescriptionIsMissing() {
+    /// 특성 설명은 한국어가 없으면 **영어로 폴백한다**(2026-09-08) — 최신 세대 특성일수록
+    /// PokéAPI 한국어 flavor text 가 아직 없는 경우가 흔해, 이름만 뜨고 설명이 통째로
+    /// 비는 것보다는 영어라도 보여 주는 쪽이 낫다.
+    func testAbilityDescriptionFallsBackToEnglishWhenKoreanIsMissing() {
         let identity = PokemonSpeciesIdentity(
             genera: [:], habitatSlug: nil, flavorTexts: [:],
             abilityNames: ["ko": "정전기"], abilityTexts: ["en": "May paralyze on contact."]
         )
 
+        XCTAssertEqual(identity.ability, "정전기 — May paralyze on contact.")
+    }
+
+    /// 대조군 — 폴백은 **있는 값을 쓰는 것**이지 지어내는 게 아니다. 영어조차 없으면 이름만 남는다.
+    func testAbilityNameSurvivesWhenNoDescriptionExistsInAnyLanguage() {
+        let identity = PokemonSpeciesIdentity(
+            genera: [:], habitatSlug: nil, flavorTexts: [:],
+            abilityNames: ["ko": "정전기"], abilityTexts: [:]
+        )
+
         XCTAssertEqual(identity.ability, "정전기")
         XCTAssertFalse(identity.ability?.contains("—") ?? true)
+    }
+
+    /// 대조군 — 영어 폴백은 **특성에만** 있다. 도감 설명(flavorText)·분류(genus)는 페르소나
+    /// 대사라 여전히 한국어가 없으면 비운다(`PokemonNaming.prose` 기본값).
+    func testOnlyAbilityFallsBackToEnglishWhileFlavorTextAndGenusDoNot() {
+        let identity = PokemonSpeciesIdentity(
+            genera: ["en": "Mouse Pokémon"], habitatSlug: nil,
+            flavorTexts: ["en": "It stores electricity."],
+            abilityNames: ["ko": "정전기"], abilityTexts: ["en": "May paralyze on contact."]
+        )
+
+        XCTAssertNil(identity.flavorText, "도감 설명은 한국어 없으면 비운다")
+        XCTAssertNil(identity.genus, "분류도 한국어 없으면 비운다")
+        XCTAssertEqual(identity.ability, "정전기 — May paralyze on contact.", "특성만 영어로 폴백한다")
     }
 
     func testProseFieldsDoNotFallBackToEnglishWhileNamesDo() {

@@ -23,11 +23,17 @@ enum PokemonNaming {
         return byLang["en"]
     }
 
-    /// 설명 문장은 **폴백하지 않는다.** 이름 한 단어와 달리 영어 설명 전체를 그대로 내보내면
-    /// 포켓몬의 말투와 페르소나가 한국어 밖으로 새어 나간다.
-    static func prose(_ byLang: [String: String]) -> String? {
+    /// 설명 문장은 기본적으로 **폴백하지 않는다.** 이름 한 단어와 달리 영어 설명 전체를 그대로
+    /// 내보내면 포켓몬의 말투와 페르소나가 한국어 밖으로 새어 나간다.
+    ///
+    /// **특성만은 예외다**(2026-09-08) — 특성 설명은 페르소나 대사가 아니라 전투 규칙 참고
+    /// 정보라, 없느니 영어로라도 보여 주는 쪽이 낫다. 최신 세대 특성일수록 PokéAPI 의 한국어
+    /// `flavor_text_entries` 가 아직 안 채워진 경우가 흔하다(예: 정화의소금/purifying-salt —
+    /// en·fr·ja 만 있고 ko 없음, 이름은 있는데 효과 설명만 빠지는 원인). 호출부(`PokemonChat`
+    /// 의 특성 조립)에서만 `allowEnglishFallback: true` 로 켠다.
+    static func prose(_ byLang: [String: String], allowEnglishFallback: Bool = false) -> String? {
         for code in apiCodes { if let text = byLang[code] { return text } }
-        return nil
+        return allowEnglishFallback ? byLang["en"] : nil
     }
 }
 

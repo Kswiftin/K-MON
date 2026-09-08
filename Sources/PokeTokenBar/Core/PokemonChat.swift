@@ -50,7 +50,10 @@ struct PokemonSpeciesIdentity: Codable, Sendable, Equatable {
         genus = PokemonNaming.prose(genera)
         habitat = habitatSlug.flatMap(PokemonHabitat.init(rawValue:))?.name
         if let name = PokemonNaming.name(abilityNames) {
-            ability = PokemonNaming.prose(abilityTexts).map { "\(name) — \($0)" } ?? name
+            // 특성 설명만 영어로 폴백한다(`PokemonNaming.prose` 주석) — 최신 세대 특성은
+            // PokéAPI 한국어 flavor text 가 아직 없는 경우가 흔해, 없느니 영어라도 보여 준다.
+            ability = PokemonNaming.prose(abilityTexts, allowEnglishFallback: true)
+                .map { "\(name) — \($0)" } ?? name
         } else {
             ability = nil
         }
