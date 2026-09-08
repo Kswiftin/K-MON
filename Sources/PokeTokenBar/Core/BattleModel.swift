@@ -1851,7 +1851,10 @@ enum BattleEngine {
     ///      쪽이 먼저 움직인 턴에서 갈린다: 구버전은 이미 고른 기술을 그대로 내고 이 버전은 못 낸다.
     ///      데미지·상태가 통째로 갈리고 rng 소비도 갈린다(막힌 턴은 명중·급소를 굴리지 않는다).
     ///      `BattleEvent` 에 case 하나(`moveBlocked`)가 늘어 구버전은 그 이벤트를 디코딩하지 못한다.
-    static let rulesVersion = 26
+    ///      + 열매 29종(약점 반감 18·위급 6·성격 회복 5). 구버전 피어는 그 이름을 모르는 값으로
+    ///      접으므로 같은 판에서 데미지(반감)·랭크·HP 가 갈린다. 난수 소비는 그대로다 — 열매는
+    ///      난수를 쓰지 않는다.
+    static let rulesVersion = 27
 
     /// 연결이 끊긴 배틀의 승패 — 남은 HP **비율**이 앞선 쪽이 이기고, 같으면 `nil`(무효)이다.
     ///
@@ -2038,6 +2041,12 @@ enum BattleEngine {
         /// `resolveAttack` 은 늘 채운다(단발기는 `damage` 와 같은 값). 히트 하나를 그대로 돌려주는
         /// 내부 경로(`resolveSingleHit`·`fixedOutcome`)만 `nil` 이라 읽는 쪽이 `?? damage` 로 접는다.
         var lastHitDamage: Int? = nil
+        /// 맞는 쪽의 약점 반감 열매가 이 히트를 깎았나 — **소모를 결정하는 값**이다.
+        ///
+        /// 데미지를 깎은 자리(`resolveSingleHit`)와 열매를 없애는 자리(`applyHit`)가 갈려 있어서
+        /// 두는 값이다. 같은 조건을 두 자리에서 각자 물으면 한쪽만 어긋난다(상성표를 안 보는
+        /// 기술은 깎이지 않는데 열매만 사라지는 식으로).
+        var berryHalved = false
     }
 
     /// 공식을 타지 않는 데미지(고정·일격필살)의 결과.
@@ -2172,7 +2181,7 @@ enum BattleEngine {
         // 안 세면 이미 쓰러진 상대를 남은 횟수만큼 계속 때린다.
         var remaining = defender.hp
         var total = 0, actualHits = 0, lastHit = 0
-        var effectiveness = 1.0, critical = false
+        var effectiveness = 1.0, critical = false, halved = false
         for index in 0..<requestedHits where remaining > 0 {
             let one = resolveSingleHit(attacker: attacker, defender: defender, move: move,
                                        hit: index, field: field, attackerTeam: attackerTeam,
@@ -2183,10 +2192,15 @@ enum BattleEngine {
             lastHit = one.damage
             effectiveness = one.effectiveness
             critical = critical || one.isCritical
+            halved = halved || one.berryHalved
             if one.effectiveness == 0 { break }
         }
+        // **다단기는 히트마다 열매를 쓰지 않는다** — 합계 한 번으로 깎고 한 번 소모한다(인내·
+        // 기합의띠와 같은 이유: 이 엔진은 히트별로 HP 를 깎지 않아 히트 사이에 소모를 끼울 자리가
+        // 없다). 본가는 첫 히트만 반감하므로 그만큼 이쪽이 맞는 쪽에 유리하다.
         return AttackOutcome(missed: false, damage: total, effectiveness: effectiveness,
-                             isCritical: critical, hits: actualHits, lastHitDamage: lastHit)
+                             isCritical: critical, hits: actualHits, lastHitDamage: lastHit,
+                             berryHalved: halved)
     }
 
     /// 히트 하나. 다단기는 이 함수를 히트마다 부르므로 급소·난수 폭이 히트별로 독립이다
@@ -2347,6 +2361,18 @@ enum BattleEngine {
             damage = damage * HeldItemBalance.typeEnhancerNumerator
                 / HeldItemBalance.typeEnhancerDenominator
         }
+        // 약점 반감 열매 — 맞는 쪽의 물건이라 여기서 **깎는다**. 상성표를 보는 기술만 탄다
+        // (타입 강화 도구와 같은 게이트다): 상성이 곱해지지 않은 데미지에는 "약점을 막았다" 가
+        // 성립하지 않는다. 소모는 여기서 하지 않는다 — 이 함수는 `defender` 의 사본을 받으므로
+        // 여기서 지운 값은 밖으로 나가지 않는다. `berryHalved` 로 `applyHit` 에 넘긴다.
+        var berryHalved = false
+        if !ignoresTypeChart,
+           defender.heldEffect?.halvesIncomingHit(moveType: move.type,
+                                                  effectiveness: effectiveness) == true {
+            damage = damage * HeldItemBalance.resistBerryNumerator
+                / HeldItemBalance.resistBerryDenominator
+            berryHalved = true
+        }
         // 구애 2종도 같은 자리에서 얹는다 — 한 계통만 올리므로 물건이 아니라
         // `boostedDamageClass` 로 묻는다(물건 이름을 직접 보면 세 번째 구애가 늘 때 빠진다).
         if attacker.heldEffect?.boostedDamageClass == move.damageClass {
@@ -2361,7 +2387,8 @@ enum BattleEngine {
         // rng 소비는 그대로다(명중 → 가변위력 → 급소 → 난수) — 값이 바뀌므로 `rulesVersion` 으로 막는다.
         let dealt = (effectiveness == 0 || power <= 0) ? 0 : max(1, damage)
         return AttackOutcome(missed: false, damage: dealt,
-                             effectiveness: effectiveness, isCritical: isCritical)
+                             effectiveness: effectiveness, isCritical: isCritical,
+                             berryHalved: berryHalved && dealt > 0)
     }
 
     /// 테라스탈 선언 — 개체를 테라스탈 상태로 만들고 줄 하나를 낸다. **난수를 쓰지 않는다.**
@@ -2577,7 +2604,39 @@ extension BattleEngine {
             assert(unusedRNG.state == SplitMix64(seed: 0).state,
                    "구슬이 난수를 소비했다 — 턴 끝 자리에는 두 피어가 공유하는 난수원이 없다")
         }
+        // 위급 열매는 잔뎀·자해 **뒤**다: 앞에 두면 이번 턴 깎이기 전 HP 로 판단해 임계를 놓친다.
+        events += triggerPinchBerry(&side, actor: actor)
         if !side.isAlive { events.append(.faint(actor)) }
+        return events
+    }
+
+    /// 위급 열매 — HP 가 최대의 1/4 **이하**면 한 번 일하고 사라진다. 난수를 쓰지 않는다.
+    ///
+    /// 부르는 자리는 둘이다: 히트 뒤(`applyHit`)와 턴 끝(`endOfTurnResidual`). 그 둘 밖에서 HP 가
+    /// 줄면(혼란 자멸·반동) 열매는 다음 턴 끝에 터진다 — 한 턴 늦지만 네 모드가 같은 자리에서
+    /// 같은 값을 본다.
+    ///
+    /// **본가와 갈리는 점**: "임계를 넘어선 순간" 이 아니라 "지금 임계 이하인가" 를 묻는다. 넘어선
+    /// 순간을 세려면 개체마다 직전 HP 를 들고 다녀야 하고, 그 값은 네 모드가 각자 갱신해야 해서 한
+    /// 모드만 빠뜨리면 거기서만 열매가 안 터진다. 소모가 1회용을 보장하므로 결과는 같다.
+    static func triggerPinchBerry(_ side: inout BattleSide, actor: BattleActor) -> [BattleEvent] {
+        guard side.isAlive, let action = side.heldEffect?.pinchAction,
+              let item = side.snapshot.heldItem,
+              side.hp * HeldItemBalance.pinchThresholdDivisor <= side.stats.hp else { return [] }
+        side.heldItemConsumed = true
+        var events: [BattleEvent] = [.heldItemTriggered(actor, item)]
+        switch action {
+        case .raise(let stat):
+            // 랭크가 이미 +6 이면 적용량이 0 이고 줄도 안 나간다 — 열매는 그래도 사라진다
+            // (본가와 같다: 먹은 뒤에 "효과가 없었다" 다).
+            let applied = side.changeStage(stat, by: HeldItemBalance.pinchStatStages)
+            if applied != 0 { events.append(.boost(actor, stat, applied)) }
+        case .sharpenCrit:
+            if side.start(.focusEnergy) { events.append(.volatileStarted(actor, .focusEnergy)) }
+        case .heal:
+            events += heal(&side, actor: actor,
+                           upTo: side.stats.hp / HeldItemBalance.pinchHealDivisor)
+        }
         return events
     }
 
@@ -3233,6 +3292,16 @@ extension BattleEngine {
         if sashed, let item = defender.snapshot.heldItem {
             events.append(.heldItemTriggered(defenderActor, item))
         }
+        // 약점 반감 열매는 **깎은 그 히트에서** 사라진다. 조건을 여기서 다시 묻지 않고
+        // `outcome.berryHalved` 를 보는 이유는 깎은 자리와 같은 답을 쓰기 위해서다 — 각자 물으면
+        // 상성표를 안 보는 기술에서 "데미지는 그대로인데 열매만 사라진다" 가 된다.
+        //
+        // **층이 대신 맞아도 소모한다**(기합의띠와 반대다). 열매는 이미 그 히트의 데미지를 깎았고,
+        // 깎은 채로 남겨 두면 인형이 서 있는 동안 반감이 공짜로 무한히 계속된다.
+        if outcome.berryHalved, let item = defender.snapshot.heldItem {
+            defender.heldItemConsumed = true
+            events.append(.heldItemTriggered(defenderActor, item))
+        }
         // 2차효과는 데미지 뒤다 — 쓰러진 상대에게는 붙지 않는다(그 경우 rng 도 쓰지 않는다).
         // 층에 막힌 기술은 2차효과·상대 volatile 도 주인에게 닿지 않는다 — 인형은 마비되지 않는다.
         if defender.isAlive, !hitsSubstitute {
@@ -3252,6 +3321,10 @@ extension BattleEngine {
                                    attackerActor: attackerActor, defenderActor: defenderActor,
                                    field: field, defenderTeam: defenderTeam,
                                    targetIsShielded: hitsSubstitute, rng: &rng)
+        // 위급 열매는 **임계를 넘긴 그 히트에서** 터진다 — 턴 끝까지 미루면 그 사이의 두 번째
+        // 공격에 쓰러져, 열매가 존재하는 이유인 그 한 방을 못 버틴다. 기절 판정 앞이라 쓰러진
+        // 개체에게는 터지지 않는다(함수가 `isAlive` 를 먼저 본다).
+        events += triggerPinchBerry(&defender, actor: defenderActor)
         if !defender.isAlive {
             events.append(.faint(defenderActor))
             // **기절 순간의 훅은 이 자리 하나다.** 광역기는 대상마다 `applyHit` 을 직접 부르므로

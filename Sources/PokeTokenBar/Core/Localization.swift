@@ -1525,6 +1525,35 @@ struct L {
         case .rockIncense: return "바위향로"
         case .waveIncense: return "파도향로"
         case .roseIncense: return "장미향로"
+        case .occaBerry: return "오카열매"
+        case .passhoBerry: return "꼬시개열매"
+        case .wacanBerry: return "초나열매"
+        case .rindoBerry: return "린드열매"
+        case .yacheBerry: return "플카열매"
+        case .chopleBerry: return "로플열매"
+        case .kebiaBerry: return "으름열매"
+        case .shucaBerry: return "슈캐열매"
+        case .cobaBerry: return "바코열매"
+        case .payapaBerry: return "야파열매"
+        case .tangaBerry: return "리체열매"
+        case .chartiBerry: return "루미열매"
+        case .kasibBerry: return "수불열매"
+        case .habanBerry: return "하반열매"
+        case .colburBerry: return "마코열매"
+        case .babiriBerry: return "바리비열매"
+        case .chilanBerry: return "카리열매"
+        case .roseliBerry: return "로셀열매"
+        case .liechiBerry: return "치리열매"
+        case .ganlonBerry: return "용아열매"
+        case .salacBerry: return "캄라열매"
+        case .petayaBerry: return "야타비열매"
+        case .apicotBerry: return "규살열매"
+        case .lansatBerry: return "랑사열매"
+        case .figyBerry: return "무화열매"
+        case .wikiBerry: return "위키열매"
+        case .magoBerry: return "마고열매"
+        case .aguavBerry: return "아바열매"
+        case .iapapaBerry: return "파야열매"
         case .shinyCharm: return "이로치 부적"
         case .linkingCord: return "연결의끈"
         case .fireStone: return "불꽃의돌"
@@ -1652,6 +1681,17 @@ struct L {
                 return "특수 기술에 받는 데미지가 줄어요. 대신 대전에서 변화기를 쓸 수 없어요."
             case .typeBoost(let type):
                 return "\(type.name) 타입 기술의 위력이 1.2배가 돼요. 대가는 없어요."
+            case .resistBerry(.normal):
+                // 노말만 규칙이 다르다 — 효과가 굉장한 노말 기술이 없어서 배율을 안 본다.
+                return "노말 타입 기술에 받는 데미지가 절반이 돼요. 한 번 막으면 열매가 사라져요."
+            case .resistBerry(let type):
+                return "효과가 굉장한 \(type.name) 타입 기술에 받는 데미지가 절반이 돼요. 한 번 막으면 열매가 사라져요."
+            case .pinchStatBoost(let stat):
+                return "HP가 1/4 이하가 되면 \(stat.name)이(가) 한 단계 올라요. 한 번만 발동하고 열매가 사라져요."
+            case .pinchCrit:
+                return "HP가 1/4 이하가 되면 급소에 맞히기 쉬워져요. 한 번만 발동하고 열매가 사라져요."
+            case .pinchHeal:
+                return "HP가 1/4 이하가 되면 최대 HP의 1/3을 회복해요. 한 번만 발동하고 열매가 사라져요."
             case nil:
                 // 지닌물건 갈래인데 효과가 없는 조합 — `bagUse` 가 둘을 함께 정하므로 도달 불가다.
                 return ""
@@ -1691,6 +1731,11 @@ struct L {
         case .toxicOrb: return "턴 끝 자신이 맹독"
         case .assaultVest: return "특수 방어 ×1.5 / 변화기 금지"
         case .typeBoost(let type): return "\(type.name) 기술 ×1.2"
+        case .resistBerry(.normal): return "노말 데미지 절반 / 1회"
+        case .resistBerry(let type): return "\(type.name) 약점 절반 / 1회"
+        case .pinchStatBoost(let stat): return "위급할 때 \(stat.name) +1"
+        case .pinchCrit: return "위급할 때 급소율 상승"
+        case .pinchHeal: return "위급할 때 HP 1/3 회복"
         case nil:        return ""   // `bagUse` 가 둘을 함께 정하므로 도달 불가다
         }
     }
