@@ -222,6 +222,8 @@ final class CompanionStore {
     private let waveRunURL: URL
     /// 마친 집중 세션 기록 파일 — 같은 이유로 상태 파일 옆이다.
     private let focusSessionsURL: URL
+    /// 진행 중인 사파리존 방문 파일 — 같은 이유로 상태 파일 옆이다.
+    private let safariZoneURL: URL
     let memoryAlbum: PokemonMemoryAlbum
     let chatStore: PokemonChatStore
     private var rng: any RandomNumberGenerator
@@ -260,6 +262,7 @@ final class CompanionStore {
         // 진행 중인 런도 상태 파일 옆에 산다 — 주입된 URL(테스트·임베딩)의 디렉토리를 따라간다.
         self.waveRunURL = directory.appendingPathComponent(CompanionStorageLocations.waveRunFileName)
         self.focusSessionsURL = directory.appendingPathComponent(CompanionStorageLocations.focusSessionsFileName)
+        self.safariZoneURL = directory.appendingPathComponent(CompanionStorageLocations.safariZoneFileName)
         self.chatStore = chatStore
             ?? PokemonChatStore(fileURL: directory.appendingPathComponent(CompanionStorageLocations.chatFileName),
                                 album: self.memoryAlbum, isReadOnly: isReadOnly)
@@ -268,6 +271,7 @@ final class CompanionStore {
         load()
         loadRogueRun()
         loadFocusSessions()
+        loadSafariVisit()
         // 읽기 전용은 **디스크를 읽는 데서 끝난다.** 아래 정리·정산은 전부 "앱이 죽은 사이에
         // 밀린 일" 이라는 전제 위에 있는데, 그 전제는 이 세이브를 여는 프로세스가 하나일 때만
         // 참이다. 메뉴바 앱이 켜져 있는 동안 터미널이 같은 파일을 열면 진행 중인 랭크전이 패배로
@@ -2561,6 +2565,43 @@ final class CompanionStore {
         rogueRun = restored
     }
 
+    /// 진행 중인 사파리존 방문 — `rogueRun` 과 완전히 같은 자리·모양. 화면이 방문을 **꺼내
+    /// 바꾸고 되넣는** 값 타입으로 다루므로(`SafariFieldView` 의 mutate 헬퍼) 쓰기는 여기 한 곳뿐.
+    var safariVisit: SafariVisit? { didSet { persistSafariVisit() } }
+
+    /// 방문을 옆 파일에 적는다. 방문이 없으면 파일을 지운다 — 남겨 두면 다음 기동이 끝난 방문을
+    /// 되살려 이미 끝난 걷기 화면이 다시 뜬다.
+    private func persistSafariVisit() {
+        guard !isReadOnly else { return }
+        guard let safariVisit else {
+            do { try FileManager.default.removeItem(at: safariZoneURL) } catch CocoaError.fileNoSuchFile {
+            } catch {
+                AppLog.write("safari zone save could not be removed: \(error)")
+                saveFailed = true
+            }
+            return
+        }
+        do {
+            let data = try JSONEncoder().encode(safariVisit.saveForm)
+            try data.write(to: safariZoneURL, options: .atomic)
+        } catch {
+            AppLog.write("safari zone save failed: \(error)")
+            saveFailed = true
+        }
+    }
+
+    /// 기동 시 되살린다. 되살릴 수 없는 파일은 **지운다** — `loadRogueRun` 과 같은 계약.
+    private func loadSafariVisit() {
+        guard let data = try? Data(contentsOf: safariZoneURL) else { return }
+        guard let save = try? JSONDecoder().decode(SafariZoneSave.self, from: data),
+              let restored = save.restored else {
+            AppLog.write("safari zone save could not be restored — discarding")
+            try? FileManager.default.removeItem(at: safariZoneURL)
+            return
+        }
+        safariVisit = restored
+    }
+
     // MARK: 집중 세션 기록
 
     /// 마친 집중 세션 원장. 웨이브 런과 같은 형태다 — 값 타입을 꺼내 바꾸고 되넣으므로 쓰기를
@@ -2764,14 +2805,6 @@ final class CompanionStore {
     /// **불리언이 아니다.** 화면이 결과를 문장으로 옮겨야 하는데, 실패(`unavailable`)와 "오늘은 이미
     /// 잡았다"(`claimedToday`)는 사용자가 할 다음 일이 다르고, 성공도 상자와 빈 동행 자리가 다른
     /// 문장이다(`RaidCatchResult`).
-    ///
-    /// **잡은 자리에서 시작하는 경로로 세운다.** 세 티어 풀(`RaidBoss.speciesPool(for:)`)이 전부
-    /// 최종 진화체라 그 경로는 한 칸이고, 체인 뿌리부터 세우면 잡은 그 모습이 아니라 1단계가 들어간다.
-    /// 뿌리에서 시작하지 않는 경로를 다음 라인 로드가 되돌리지 않는 것은 `longestValidPath` 의
-    /// 계약이다 — 그게 없던 동안 잡은 가디안이 동행 자리에 앉는 순간 랄토스가 됐다.
-    ///
-    /// 개체 롤은 부화와 **같은 규칙**이다(성격 25종·종별 성비·이로치 분모). 이로치 확정권은
-    /// 알을 위해 산 물건이라 여기서 소모하지 않는다.
     @discardableResult
     func catchRaidBoss(speciesID: Int, tier: RaidTier = .one) async -> RaidCatchResult {
         // 원장을 **먼저 본다** — 여기서 걸린 판은 네트워크를 건드리지도 않았으므로 "불러오지 못했다"
@@ -2783,6 +2816,34 @@ final class CompanionStore {
         // 원장은 **개체를 만들기 직전에** 찍는다. 위 가드보다 먼저 찍으면 라인 조회 실패가 그날의
         // 기회를 태우고, 뒤에 찍으면 네트워크 창 동안 들어온 두 번째 판이 한 마리를 더 넣는다.
         guard claimRaidCatch(tier: tier) else { return .claimedToday }
+        return commitCaughtMon(speciesID: speciesID, line: line, source: .raid)
+    }
+
+    /// 사파리존에서 잡은 조우를 데려간다. `catchRaidBoss` 와 원장 모양만 다르다(티어별이 아니라
+    /// 방문당·하루 이중 상한) — 나머지 절차(개체 생성·배치·기억·알림)는 `commitCaughtMon` 을
+    /// 공유한다.
+    @discardableResult
+    func catchInSafariZone(speciesID: Int) async -> RaidCatchResult {
+        guard safariZoneCatchesRemainingToday > 0 else { return .claimedToday }
+        guard PokemonAssets.hasAnimatedSprite(speciesID: speciesID),
+              let line = try? await provider.line(baseSpeciesID: speciesID) else { return .unavailable }
+        guard claimSafariZoneCatch() else { return .claimedToday }
+        return commitCaughtMon(speciesID: speciesID, line: line, source: .safariZone)
+    }
+
+    /// `catchRaidBoss`/`catchInSafariZone` 이 공유하는 커밋 경로.
+    ///
+    /// **잡은 자리에서 시작하는 경로로 세운다.** 레이드 세 티어 풀은 전부 최종 진화체라 그 경로는
+    /// 한 칸이고, 체인 뿌리부터 세우면 잡은 그 모습이 아니라 1단계가 들어간다. 사파리존 존 풀에도
+    /// 비-최종진화체를 넣지 않는다 — 같은 계약을 지키기 위해서다(존 큐레이션 시 확인할 것).
+    /// 뿌리에서 시작하지 않는 경로를 다음 라인 로드가 되돌리지 않는 것은 `longestValidPath` 의
+    /// 계약이다 — 그게 없던 동안 잡은 가디안이 동행 자리에 앉는 순간 랄토스가 됐다.
+    ///
+    /// 개체 롤은 부화와 **같은 규칙**이다(성격 25종·종별 성비·이로치 분모). 이로치 확정권은
+    /// 알을 위해 산 물건이라 여기서 소모하지 않는다.
+    private enum CaughtMonSource { case raid, safariZone }
+
+    private func commitCaughtMon(speciesID: Int, line: EvoLine, source: CaughtMonSource) -> RaidCatchResult {
         let isShiny = Self.rollsShiny(roll: rng.next(), charmOwned: ownsShinyCharm)
         let nature = PokemonNature.allCases[Int(rng.next() % UInt64(PokemonNature.allCases.count))]
         let gender = PokemonGender.from(genderRate: line.genderRate, roll: rng.next())
@@ -2807,13 +2868,63 @@ final class CompanionStore {
             destination = .box
         }
         let name = line.localizedName(speciesID)
-        recordEventMemory("레이드에서 \(name)을(를) 잡았다.", "Caught \(name) in a raid.",
-                          "レイドで\(name)を捕まえた。",
-                          companionID: caught.id, eventID: "raid-catch:\(caught.id.uuidString)")
-        notifyCompanionEvent(l.raidCaughtTitle, l.raidCaughtBody(name, toBox: destination == .box))
-        AppLog.write("raid catch: species=\(speciesID) rarity=\(line.rarity) shiny=\(isShiny) to=\(destination)")
+        switch source {
+        case .raid:
+            recordEventMemory("레이드에서 \(name)을(를) 잡았다.", "Caught \(name) in a raid.",
+                              "レイドで\(name)を捕まえた。",
+                              companionID: caught.id, eventID: "raid-catch:\(caught.id.uuidString)")
+            notifyCompanionEvent(l.raidCaughtTitle, l.raidCaughtBody(name, toBox: destination == .box))
+            AppLog.write("raid catch: species=\(speciesID) rarity=\(line.rarity) shiny=\(isShiny) to=\(destination)")
+        case .safariZone:
+            recordEventMemory("사파리존에서 \(name)을(를) 잡았다.", "Caught \(name) in the Safari Zone.",
+                              "サファリゾーンで\(name)を捕まえた。",
+                              companionID: caught.id, eventID: "safari-catch:\(caught.id.uuidString)")
+            notifyCompanionEvent(l.safariCaughtTitle, l.safariCaughtBody(name, toBox: destination == .box))
+            AppLog.write("safari catch: species=\(speciesID) rarity=\(line.rarity) shiny=\(isShiny) to=\(destination)")
+        }
         save()
         return destination
+    }
+
+    // MARK: 사파리존 방문·원장
+
+    /// 오늘 남은 방문(참여) 횟수 — 걷기·볼을 쓸 수 있는 세션 자체의 상한.
+    var safariZoneVisitsRemainingToday: Int {
+        let today = Self.dayKey(clock())
+        let usedToday = state.safariZoneVisitDate == today ? state.safariZoneVisitsToday : 0
+        return max(0, SafariZone.dailyVisitCap - usedToday)
+    }
+
+    /// 오늘 남은 포획(보상) 여유 — `SafariVisit.advance` 가 매 tick 이 값을 받아 새 조우를
+    /// 굴릴지 정한다(소스 차단). `catchInSafariZone` 의 커밋 가드와 이중으로 상한을 지킨다.
+    var safariZoneCatchesRemainingToday: Int {
+        let today = Self.dayKey(clock())
+        let usedToday = state.safariZoneCatchDate == today ? state.safariZoneCatchesToday : 0
+        return max(0, SafariZone.dailyCatchCap - usedToday)
+    }
+
+    /// 방문을 시작한다 — 이미 진행 중인 방문이 있거나 오늘의 참여 횟수를 다 썼으면 거부한다.
+    @discardableResult
+    func beginSafariZoneVisit(zone: SafariZone.ZoneID) -> Bool {
+        guard safariVisit == nil, safariZoneVisitsRemainingToday > 0 else { return false }
+        let today = Self.dayKey(clock())
+        state.safariZoneVisitsToday = (state.safariZoneVisitDate == today ? state.safariZoneVisitsToday : 0) + 1
+        state.safariZoneVisitDate = today
+        safariVisit = SafariVisit(zone: zone, seed: rng.next())
+        save()
+        return true
+    }
+
+    /// 이 티어의 오늘 포획 기회를 쓴다. 남아 있었으면 true 를 돌려주고 원장을 찍는다 —
+    /// `claimRaidCatch(tier:)` 와 같은 모양.
+    @discardableResult
+    private func claimSafariZoneCatch() -> Bool {
+        guard safariZoneCatchesRemainingToday > 0 else { return false }
+        let today = Self.dayKey(clock())
+        state.safariZoneCatchesToday = (state.safariZoneCatchDate == today ? state.safariZoneCatchesToday : 0) + 1
+        state.safariZoneCatchDate = today
+        save()
+        return true
     }
 
     /// 베팅 정산 지급. 환불도 "판돈과 같은 금액 지급" 이라 같은 경로를 쓴다.

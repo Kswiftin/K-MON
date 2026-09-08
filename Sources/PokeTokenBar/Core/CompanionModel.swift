@@ -2604,6 +2604,17 @@ struct CompanionState: Codable, Sendable {
     var raidCatchDateTierThree = ""
     /// 5★ 전용 포획 원장 — `raidCatchDate` 와 같은 규칙, 다른 티어.
     var raidCatchDateTierFive = ""
+    /// 사파리존 하루 방문(참여) 원장 — `gymDefenseRewardDate`/`Today` 와 같은 날짜+카운트 모양.
+    /// 방문 자체(걷기·볼)를 몇 번 할 수 있는지를 잠근다. 포획(보상) 원장과 분리하는 이유는
+    /// `raidRewardDate` vs `raidCatchDate` 와 같다 — 하나로 합치면 "얼마나 노는지"와 "얼마나
+    /// 가져가는지"가 뒤섞여 한쪽이 다른 쪽의 상한을 태운다.
+    var safariZoneVisitDate = ""
+    var safariZoneVisitsToday = 0
+    /// 사파리존 하루 포획(보상) 원장 — 방문당 상한(`SafariZone.catchesPerVisitCap`)과는 별개로,
+    /// 방문 횟수와 무관하게 하루 총량을 잠근다. `raidCatchDate` 와 같은 자리: 전투 없이 걷기만
+    /// 해도 영구 도감/보관함에 등록되는 채널이라 레이드의 하루 상한(최대 6마리)을 넘기면 안 된다.
+    var safariZoneCatchDate = ""
+    var safariZoneCatchesToday = 0
     var battleRank = BattleRank()
     /// 진행 중인 랭크전의 에스크로 — 개시 때 지갑에서 빠져나간 판돈과 상대 랭크를 적어 둔다.
     /// 정산이 배틀 **끝**에만 있던 때는 지고 있을 때 앱을 종료하면 판돈을 안 냈다(상대는 승리
@@ -2694,6 +2705,10 @@ struct CompanionState: Codable, Sendable {
         raidCatchDate      = c.lenient(String.self, forKey: .raidCatchDate, default: "")
         raidCatchDateTierThree  = c.lenient(String.self, forKey: .raidCatchDateTierThree, default: "")
         raidCatchDateTierFive   = c.lenient(String.self, forKey: .raidCatchDateTierFive, default: "")
+        safariZoneVisitDate     = c.lenient(String.self, forKey: .safariZoneVisitDate, default: "")
+        safariZoneVisitsToday   = c.lenient(Int.self, forKey: .safariZoneVisitsToday, default: 0)
+        safariZoneCatchDate     = c.lenient(String.self, forKey: .safariZoneCatchDate, default: "")
+        safariZoneCatchesToday  = c.lenient(Int.self, forKey: .safariZoneCatchesToday, default: 0)
         battleRank         = c.lenient(BattleRank.self, forKey: .battleRank, default: BattleRank())
         pendingRanked      = c.lenientOptional(PendingRankedBattle.self, forKey: .pendingRanked)
         trainer            = c.lenient(TrainerLevel.self, forKey: .trainer, default: TrainerLevel())

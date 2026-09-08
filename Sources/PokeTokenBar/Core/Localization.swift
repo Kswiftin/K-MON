@@ -1352,6 +1352,12 @@ struct L {
         toBox ? "\(name)이(가) 박스에 들어왔어요."
               : "\(name)이(가) 새 동행이 됐어요."
     }
+    var safariCaughtTitle: String { "🎉 사파리존에서 잡았다" }
+    /// `raidCaughtBody` 와 같은 이유로 어디로 갔는지 말한다.
+    func safariCaughtBody(_ name: String, toBox: Bool) -> String {
+        toBox ? "\(name)이(가) 박스에 들어왔어요."
+              : "\(name)이(가) 새 동행이 됐어요."
+    }
     /// 결과창 — 내가 뽑혔을 때. 잡힌 개체가 어디로 갔는지 말해 준다(박스를 안 열면 안 보인다).
     func raidCaughtByMe(_ name: String, toBox: Bool) -> String {
         toBox ? "추첨에 뽑혀 \(name)을(를) 데려왔다 — 박스에 있어요."
