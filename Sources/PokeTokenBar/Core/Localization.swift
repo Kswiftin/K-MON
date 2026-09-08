@@ -1655,6 +1655,7 @@ struct L {
         case .throatSpray: return "목스프레이"
         case .quickClaw: return "선제공격손톱"
         case .focusBand: return "기합의머리띠"
+        case .eviolite: return "진화의휘석"
         case .shinyCharm: return "이로치 부적"
         case .linkingCord: return "연결의끈"
         case .fireStone: return "불꽃의돌"
@@ -1917,6 +1918,8 @@ struct L {
                 return "체력이 얼마 안 남으면 다음 기술 하나가 반드시 맞고 사라져요."
             case .pinchHurry:
                 return "체력이 얼마 안 남으면 그 턴에 먼저 움직이고 사라져요."
+            case .eviolite:
+                return "아직 더 진화할 수 있는 포켓몬이 지니면 방어와 특수방어가 올라가요."
             case nil:
                 // 지닌물건 갈래인데 효과가 없는 조합 — `bagUse` 가 둘을 함께 정하므로 도달 불가다.
                 return ""
@@ -2025,6 +2028,7 @@ struct L {
         case .pinchBestBoost: return "위급 시 최고 능력 +1 / 1회"
         case .pinchSureHit: return "위급 시 다음 기술 필중 / 1회"
         case .pinchHurry: return "위급 시 그 턴 선공 / 1회"
+        case .eviolite: return "미진화 개체의 방어·특방 ×1.5"
         case nil:        return ""   // `bagUse` 가 둘을 함께 정하므로 도달 불가다
         }
     }

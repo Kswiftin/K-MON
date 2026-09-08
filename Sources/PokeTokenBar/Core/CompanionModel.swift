@@ -390,6 +390,9 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
     /// 확률로 일하는 물건 둘 — 선제공격손톱은 20% 로 선공을 가져가고, 기합의머리띠는 10% 로
     /// 치명적인 히트를 HP 1 에서 버틴다. 둘 다 소모품이 아니다.
     case quickClaw, focusBand
+    /// 진화의휘석 — **아직 진화할 수 있는** 개체의 방어·특수방어를 1.5 배로 만든다. 조건이 종
+    /// 번호가 아니라 진화 라인에 있어서 스냅샷이 답을 싣고 온다(`BattleSnapshot.canStillEvolve`).
+    case eviolite
     /// R7 decor is inventory, not a second currency or store.
     // Mini Home furniture. The original three are the free campus starter set.
     case roomBed, roomTable, roomLamp
@@ -436,7 +439,7 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
              .blunderPolicy, .electricSeed, .grassySeed, .mistySeed, .psychicSeed,
              .rockyHelmet, .stickyBarb, .protectivePads, .punchingGlove,
              .loadedDice, .bindingBand, .gripClaw, .throatSpray,
-             .quickClaw, .focusBand,
+             .quickClaw, .focusBand, .eviolite,
              .roomBed, .roomTable, .roomLamp, .lovelyVanity, .lovelySofa, .lovelyHeartLamp,
              .retroArcade, .retroRadio, .retroTV, .naturePlant, .natureBench, .natureLantern: return nil
         case .linkingCord: return .plainTrade
@@ -532,7 +535,7 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
              .blunderPolicy, .electricSeed, .grassySeed, .mistySeed, .psychicSeed,
              .rockyHelmet, .stickyBarb, .protectivePads, .punchingGlove,
              .loadedDice, .bindingBand, .gripClaw, .throatSpray,
-             .quickClaw, .focusBand:
+             .quickClaw, .focusBand, .eviolite:
             return .heldItem
         case .shinyCharm: return .passive
         case .roomBed, .roomTable, .roomLamp, .lovelyVanity, .lovelySofa, .lovelyHeartLamp,
@@ -629,6 +632,7 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
         case .throatSpray: return .throatSpray
         case .quickClaw:   return .quickClaw
         case .focusBand:   return .focusBand
+        case .eviolite:    return .eviolite
         default:
             // 타입 강화 도구와 열매는 표에서 답한다 — 50여 종을 여기 다시 나열하면 하나 빠뜨렸을 때
             // "가방에서는 지니게 되는데 배틀에서는 아무 일도 안 하는" 물건이 생긴다.
@@ -841,7 +845,7 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
              .weaknessPolicy, .absorbBulb, .cellBattery, .snowball, .luminousMoss,
              .electricSeed, .grassySeed, .mistySeed, .psychicSeed,
              .rockyHelmet, .stickyBarb, .protectivePads, .bindingBand, .gripClaw,
-             .quickClaw, .focusBand:
+             .quickClaw, .focusBand, .eviolite:
             return kebabRawValue
         // 9세대 물건 셋도 PokéAPI 에 스프라이트가 없다(통굽부츠·만능우산과 같은 자리).
         case .mirrorHerb, .clearAmulet, .covertCloak, .blunderPolicy,
@@ -962,6 +966,7 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
         case .loadedDice: return "🎲"; case .bindingBand: return "🎗️"
         case .gripClaw: return "🪝"; case .throatSpray: return "💨"
         case .quickClaw: return "🐾"; case .focusBand: return "🎽"
+        case .eviolite: return "🪨"
         case .roomBed: return "🛏️"; case .roomTable: return "🪑"; case .roomLamp: return "💡"
         case .lovelyVanity: return "🪞"; case .lovelySofa: return "🩷"; case .lovelyHeartLamp: return "💕"
         case .retroArcade: return "🕹️"; case .retroRadio: return "📻"; case .retroTV: return "📺"
@@ -1004,7 +1009,7 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
              .blunderPolicy, .electricSeed, .grassySeed, .mistySeed, .psychicSeed,
              .rockyHelmet, .stickyBarb, .protectivePads, .punchingGlove,
              .loadedDice, .bindingBand, .gripClaw, .throatSpray,
-             .quickClaw, .focusBand:
+             .quickClaw, .focusBand, .eviolite:
             return HeldItemBalance.battleToolPrice
         case .roomBed: return 1_500
         case .roomTable: return 1_000
@@ -1217,6 +1222,8 @@ enum HeldItemEffect: Sendable, Equatable, CaseIterable {
     /// 위급일 때 **그 다음 행동**에 답하는 셋. 랭크·회복 갈래(`pinchAction`)와 자리를 나눈 이유는
     /// 묻는 시점이다: 스타열매만 턴 끝이고, 애슈·미클은 턴이 시작될 때(순서를 재기 전) 답한다.
     case pinchBestBoost, pinchSureHit, pinchHurry
+    /// 아직 진화할 수 있는 개체에게만 붙는 갈래 — 진화의휘석이다.
+    case eviolite
 
     /// 위급 열매가 올릴 수 있는 스탯 — 본가에 열매가 있는 다섯뿐이다.
     static let pinchRaisedStats: [BattleStat] = [.atk, .def, .spa, .spd, .spe]
@@ -1245,7 +1252,8 @@ enum HeldItemEffect: Sendable, Equatable, CaseIterable {
              .blunderPolicy, .electricSeed, .grassySeed, .mistySeed, .psychicSeed,
              .rockyHelmet, .stickyBarb, .protectivePads, .punchingGlove,
              .loadedDice, .bindingBand, .gripClaw, .throatSpray,
-             .quickClaw, .focusBand, .pinchBestBoost, .pinchSureHit, .pinchHurry: return nil
+             .quickClaw, .focusBand, .pinchBestBoost, .pinchSureHit, .pinchHurry,
+             .eviolite: return nil
         }
     }
 
@@ -1270,7 +1278,8 @@ enum HeldItemEffect: Sendable, Equatable, CaseIterable {
              .blunderPolicy, .electricSeed, .grassySeed, .mistySeed, .psychicSeed,
              .rockyHelmet, .stickyBarb, .protectivePads, .punchingGlove,
              .loadedDice, .bindingBand, .gripClaw, .throatSpray,
-             .quickClaw, .focusBand, .pinchBestBoost, .pinchSureHit, .pinchHurry: return nil
+             .quickClaw, .focusBand, .pinchBestBoost, .pinchSureHit, .pinchHurry,
+             .eviolite: return nil
         }
     }
 
@@ -1299,7 +1308,8 @@ enum HeldItemEffect: Sendable, Equatable, CaseIterable {
              .blunderPolicy, .electricSeed, .grassySeed, .mistySeed, .psychicSeed,
              .rockyHelmet, .stickyBarb, .protectivePads, .punchingGlove,
              .loadedDice, .bindingBand, .gripClaw, .throatSpray,
-             .quickClaw, .focusBand, .pinchBestBoost, .pinchSureHit, .pinchHurry: return nil
+             .quickClaw, .focusBand, .pinchBestBoost, .pinchSureHit, .pinchHurry,
+             .eviolite: return nil
         }
     }
 
@@ -1349,7 +1359,8 @@ enum HeldItemEffect: Sendable, Equatable, CaseIterable {
              .blunderPolicy, .electricSeed, .grassySeed, .mistySeed, .psychicSeed,
              .rockyHelmet, .stickyBarb, .protectivePads, .punchingGlove,
              .loadedDice, .bindingBand, .gripClaw, .throatSpray,
-             .quickClaw, .focusBand, .pinchBestBoost, .pinchSureHit, .pinchHurry: return false
+             .quickClaw, .focusBand, .pinchBestBoost, .pinchSureHit, .pinchHurry,
+             .eviolite: return false
         }
     }
 
@@ -1388,9 +1399,16 @@ enum HeldItemEffect: Sendable, Equatable, CaseIterable {
              .blunderPolicy, .electricSeed, .grassySeed, .mistySeed, .psychicSeed,
              .rockyHelmet, .stickyBarb, .protectivePads, .punchingGlove,
              .loadedDice, .bindingBand, .gripClaw, .throatSpray,
-             .quickClaw, .focusBand, .pinchSureHit, .pinchHurry: return nil
+             .quickClaw, .focusBand, .pinchSureHit, .pinchHurry, .eviolite: return nil
         }
     }
+
+    /// **아직 진화할 수 있는 개체에게만** 일하는가 — 진화의휘석이다.
+    ///
+    /// 종 조건(`restrictedSpecies`)과 자리를 나눈 이유는 답이 어디 있느냐다: 종 조건은 번호만 보면
+    /// 되지만 이 조건은 진화 라인에 있어서 스냅샷이 실어 와야 한다. 묻는 자리는 종 조건과 같은
+    /// `BattleSide.heldEffect` 하나다.
+    var requiresUnevolvedHolder: Bool { self == .eviolite }
 
     /// 이 물건이 **어떤 종에게만** 일하는가 — nil 이면 누구나 쓸 수 있다.
     ///
@@ -1422,7 +1440,8 @@ enum HeldItemEffect: Sendable, Equatable, CaseIterable {
              (.metalPowder, .def),
              (.quickPowder, .spe):
             return (2, 1)
-        case (.soulDew, .spa), (.soulDew, .spd):
+        case (.soulDew, .spa), (.soulDew, .spd),
+             (.eviolite, .def), (.eviolite, .spd):
             return (3, 2)
         default:
             return nil
@@ -2084,6 +2103,12 @@ struct EvoLine: Sendable {
         self.names = names
         self.genderRate = genderRate
         self.evolutionMoveNames = evolutionMoveNames
+    }
+
+    /// 이 종이 **더 진화하나** — 진화의휘석이 보는 조건이다(라인에 없는 종은 `false`).
+    /// 스냅샷을 만드는 자리가 손으로 종 번호를 세지 않게 라인이 답한다.
+    func canEvolveFurther(from speciesID: Int) -> Bool {
+        tree.node(withID: speciesID)?.children.isEmpty == false
     }
 
     func localizedName(_ id: Int) -> String {

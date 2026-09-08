@@ -591,6 +591,12 @@ struct BattleSnapshot: Codable, Sendable, Equatable {
     /// 이 이미 대전을 막는다). 0 으로 접으면 안 된다: 저공격이 "가장 가벼움"으로 최저 위력이 되고
     /// 헤비봄버는 0 나눗셈 자리로 간다. 값이 없으면 그 기술만 실패시킨다(`VariableDamage.noEffect`).
     var weightHectograms: Int? = nil
+    /// 이 개체가 **아직 진화할 수 있나** — 진화의휘석이 보는 값이다. 진화 라인에서만 알 수 있어
+    /// (`EvoLine.canEvolveFurther`) 스냅샷을 만드는 자리가 실어 온다.
+    ///
+    /// `nil` 은 "모른다" 이고 휘석은 아무 일도 하지 않는다. 종 번호로 만드는 야생·CPU 스냅샷이
+    /// 그 자리인데, 그 개체들은 물건을 쥐지 않으므로(`heldItem: nil`) 결과가 갈리지 않는다.
+    var canStillEvolve: Bool? = nil
 
     /// 레벨 유도 — 성장 진행도(단계 + 단계 내 진행)를 5~100 레벨로 사상.
     /// stageProgress 는 0~1 로 클램프, totalForms ≥ 1 보장.
@@ -1623,6 +1629,9 @@ struct BattleSide: Sendable, Equatable {
     var heldEffect: HeldItemEffect? {
         guard !heldItemConsumed, let effect = activeHeldItem?.heldBattleEffect else { return nil }
         if let species = effect.restrictedSpecies, !species.contains(snapshot.speciesID) { return nil }
+        // 진화의휘석은 **모르면 안 붙는다** — 값이 없는 스냅샷(야생·CPU)에 붙이면 다 자란 개체가
+        // 방어를 얻는다.
+        if effect.requiresUnevolvedHolder, snapshot.canStillEvolve != true { return nil }
         return effect
     }
 
@@ -1970,7 +1979,9 @@ enum BattleEngine {
     ///      + 운에 걸린 물건 5종(선제공격손톱의 20% 선공, 기합의머리띠의 10% 버팀, 스타열매의
     ///      능력 상승, 애슈열매의 선공, 미클열매의 필중). **rng 소비가 갈린다** — 손톱은 턴마다,
     ///      머리띠는 치명적인 히트마다 한 번씩 더 굴린다.
-    static let rulesVersion = 37
+    ///      + 진화의휘석(아직 진화할 수 있는 개체의 방어·특수방어 ×1.5). 스냅샷에 조건 필드가
+    ///      하나(`canStillEvolve`) 늘어, 구버전 피어는 그 값을 안 보내 휘석이 한쪽에서만 일한다.
+    static let rulesVersion = 38
 
     /// 연결이 끊긴 배틀의 승패 — 남은 HP **비율**이 앞선 쪽이 이기고, 같으면 `nil`(무효)이다.
     ///

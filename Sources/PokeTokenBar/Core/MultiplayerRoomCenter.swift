@@ -2252,12 +2252,17 @@ final class MultiplayerRoomCenter {
             let moves = active.learnedMoves.isEmpty
                 ? await PokeAPIClient.shared.moveSet(speciesID: speciesID, level: level, types: profile.types)
                 : await companion.detailedMoves(of: active)
+            // 휘석 조건은 진화 라인이 답한다(`CompanionStore.battleSnapshot` 과 같은 값이다) —
+            // 두 자리가 서로 다른 답을 내면 같은 개체가 모드마다 다른 방어를 얻는다.
+            let canStillEvolve = await companion.evolutionLine(speciesID: speciesID)?
+                .canEvolveFurther(from: speciesID)
             return BattleSnapshot(speciesID: speciesID, name: companion.displayName, trainer: trainerName,
                                   level: level, nature: active.nature, isShiny: active.isShiny,
                                   types: profile.types, base: profile.stats, moves: moves,
                                   ability: profile.abilitySlug, storedTeraType: active.teraType,
                                   heldItem: active.heldItem,
-                                  weightHectograms: profile.weightHectograms)
+                                  weightHectograms: profile.weightHectograms,
+                                  canStillEvolve: canStillEvolve)
         }
         return await companion.battleSnapshot(for: mon, level: level ?? mon.level)
     }

@@ -660,12 +660,17 @@ final class CompanionStore {
         let moves = mon.learnedMoves.isEmpty
             ? await PokeAPIClient.shared.moveSet(speciesID: mon.presentationID, level: level, types: profile.types)
             : await detailedMoves(of: mon)
+        // 진화의휘석이 보는 조건은 라인에서만 알 수 있다 — 물건을 쥘 수 있는 개체는 전부 이 자리를
+        // 지나므로 여기서 실어 보낸다(종 번호로 만드는 야생·CPU 스냅샷은 물건을 쥐지 않는다).
+        let canStillEvolve = await evolutionLine(speciesID: mon.presentationID)?
+            .canEvolveFurther(from: mon.presentationID)
         return BattleSnapshot(speciesID: mon.presentationID, name: mon.nickname ?? name, trainer: trainerName,
                               level: level, nature: mon.nature, isShiny: mon.isShiny,
                               types: profile.types, base: profile.stats, moves: moves,
                               ability: profile.abilitySlug, storedTeraType: mon.teraType,
                               heldItem: mon.heldItem,
-                              weightHectograms: profile.weightHectograms)
+                              weightHectograms: profile.weightHectograms,
+                              canStillEvolve: canStillEvolve)
     }
 
     /// 스타터 확정 — 고른 **타입**의 1세대 미진화체 하나를 무작위로 뽑아 즉시 부화한다(알 단계

@@ -441,7 +441,9 @@ enum MultiplayerWireMessage: Codable, Sendable, Equatable {
     //     굴리지 않아 rng 소비 횟수까지 갈리고, 접촉 반응은 때린 쪽의 HP 를 깎는다.
     // 32: 운에 걸린 물건 5종(선제공격손톱·기합의머리띠·스타열매·미클열매·애슈열매). 턴마다,
     //     그리고 치명적인 히트마다 난수를 한 번씩 더 굴려 구버전과 소비 횟수가 갈린다.
-    static let protocolVersion = 32
+    // 33: 진화의휘석 — 스냅샷에 `canStillEvolve` 가 늘었다. 구버전 피어는 안 보내므로 휘석이
+    //     한쪽에서만 일해 같은 판의 데미지가 갈린다.
+    static let protocolVersion = 33
     case join(version: Int, participant: LobbyParticipant, snapshot: BattleSnapshot)
     case lobby(MultiplayerLobby)
     case ready(participantID: UUID, ready: Bool)
