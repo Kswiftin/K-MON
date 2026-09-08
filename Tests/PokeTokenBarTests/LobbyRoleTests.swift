@@ -121,13 +121,14 @@ final class LobbyRoleTests: XCTestCase {
         //      접어 같은 판의 데미지·랭크·HP 가 갈린다).
         // 23 = 주얼 18종과 대가만 있는 셋(검은철구·느림보꼬리·만복향로 — 후공 물건은 행동 순서와
         //      무작위 tie-break 소비까지 바꾼다).
+        // 24 = 플레이트 17종(타입 강화 도구와 같은 ×1.2).
         // 방은 `rulesVersion` 을 안 보므로 규칙 차이를 막을 곳이 이 값뿐이다.
         //
         // **이 값을 리터럴로 박는 테스트는 여기 하나뿐이다.** 다섯 군데에 박혀 있던 동안은 누가
         // 정당하게 올릴 때마다 무관한 테스트 넷이 같이 빨개져 진짜 회귀와 구별이 안 됐다
         // (defect-log: 버전 리터럴을 박은 테스트는 남의 정당한 상향에 깨진다). 나머지 자리는
         // 자기 기능이 들어간 버전 **이상**인지만 본다 — 그게 각자가 주장하려던 사실이다.
-        XCTAssertEqual(MultiplayerWireMessage.protocolVersion, 23)
+        XCTAssertEqual(MultiplayerWireMessage.protocolVersion, 24)
     }
 
     /// `BattleEvent` 의 case 수를 동결한다 — **늘리면 `protocolVersion` 도 올려야 한다.**

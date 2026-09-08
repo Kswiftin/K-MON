@@ -421,7 +421,9 @@ enum MultiplayerWireMessage: Codable, Sendable, Equatable {
     //     아이템으로 접어 같은 판의 데미지·랭크·HP 가 갈린다.
     // 23: 주얼 18종과 대가만 있는 셋(검은철구·느림보꼬리·만복향로) — 후공 물건은 행동 순서와
     //     무작위 tie-break 소비까지 바꾼다.
-    static let protocolVersion = 23
+    // 24: 플레이트 17종(타입 강화 도구와 같은 ×1.2 — 구버전 게스트는 그 이름을 모르는 아이템으로
+    //     접어 데미지가 갈린다).
+    static let protocolVersion = 24
     case join(version: Int, participant: LobbyParticipant, snapshot: BattleSnapshot)
     case lobby(MultiplayerLobby)
     case ready(participantID: UUID, ready: Bool)

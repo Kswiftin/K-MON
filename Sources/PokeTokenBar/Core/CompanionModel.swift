@@ -318,6 +318,15 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
     /// 끈적끈적바늘은 여기 없다: 접촉 기술 판정이 이 저장소의 기술 데이터에 없어서, 넣으면 주인만
     /// 깎이고 상대에게는 아무 일도 안 하는 물건이 된다.
     case ironBall, laggingTail, fullIncense
+    /// 플레이트 17종 — 그 타입 기술의 위력을 1.2 배로 만든다(타입 강화 도구와 **같은 효과**다).
+    /// 아르세우스의 폼체인지가 이 엔진에 없어서 남는 일이 배율뿐이라, 효과 갈래를 새로 만들지 않고
+    /// `typeBoost` 를 그대로 쓴다. 노말 플레이트는 본가에도 없다(아르세우스의 기본형).
+    ///
+    /// 강철 자리(`ironPlate`)가 여기서 처음 채워진다 — 본가의 강철 강화 도구는 금속코트인데
+    /// 이 저장소에서 그건 진화 아이템이라 배틀 효과를 겹칠 수 없었다.
+    case flamePlate, splashPlate, zapPlate, meadowPlate, iciclePlate, fistPlate
+    case toxicPlate, earthPlate, skyPlate, mindPlate, insectPlate, stonePlate
+    case spookyPlate, dracoPlate, dreadPlate, ironPlate, pixiePlate
     /// R7 decor is inventory, not a second currency or store.
     // Mini Home furniture. The original three are the free campus starter set.
     case roomBed, roomTable, roomLamp
@@ -347,6 +356,9 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
              .fightingGem, .poisonGem, .groundGem, .flyingGem, .psychicGem, .bugGem,
              .rockGem, .ghostGem, .dragonGem, .darkGem, .steelGem, .fairyGem,
              .ironBall, .laggingTail, .fullIncense,
+             .flamePlate, .splashPlate, .zapPlate, .meadowPlate, .iciclePlate, .fistPlate,
+             .toxicPlate, .earthPlate, .skyPlate, .mindPlate, .insectPlate, .stonePlate,
+             .spookyPlate, .dracoPlate, .dreadPlate, .ironPlate, .pixiePlate,
              .roomBed, .roomTable, .roomLamp, .lovelyVanity, .lovelySofa, .lovelyHeartLamp,
              .retroArcade, .retroRadio, .retroTV, .naturePlant, .natureBench, .natureLantern: return nil
         case .linkingCord: return .plainTrade
@@ -424,7 +436,10 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
              .normalGem, .fireGem, .waterGem, .electricGem, .grassGem, .iceGem,
              .fightingGem, .poisonGem, .groundGem, .flyingGem, .psychicGem, .bugGem,
              .rockGem, .ghostGem, .dragonGem, .darkGem, .steelGem, .fairyGem,
-             .ironBall, .laggingTail, .fullIncense:
+             .ironBall, .laggingTail, .fullIncense,
+             .flamePlate, .splashPlate, .zapPlate, .meadowPlate, .iciclePlate, .fistPlate,
+             .toxicPlate, .earthPlate, .skyPlate, .mindPlate, .insectPlate, .stonePlate,
+             .spookyPlate, .dracoPlate, .dreadPlate, .ironPlate, .pixiePlate:
             return .heldItem
         case .shinyCharm: return .passive
         case .roomBed, .roomTable, .roomLamp, .lovelyVanity, .lovelySofa, .lovelyHeartLamp,
@@ -465,7 +480,7 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
         default:
             // 타입 강화 도구와 열매는 표에서 답한다 — 50여 종을 여기 다시 나열하면 하나 빠뜨렸을 때
             // "가방에서는 지니게 되는데 배틀에서는 아무 일도 안 하는" 물건이 생긴다.
-            return typeEnhancedType.map { HeldItemEffect.typeBoost($0) }
+            return (typeEnhancedType ?? plateType).map { HeldItemEffect.typeBoost($0) }
                 ?? berryEffect
                 ?? gemType.map { HeldItemEffect.gem($0) }
         }
@@ -502,6 +517,34 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
         case .apicotBerry: return .pinchStatBoost(.spd)
         case .lansatBerry: return .pinchCrit
         case .figyBerry, .wikiBerry, .magoBerry, .aguavBerry, .iapapaBerry: return .pinchHeal
+        default: return nil
+        }
+    }
+
+    /// 이 플레이트가 올려 주는 기술 타입 — 플레이트가 아니면 nil.
+    ///
+    /// 타입 강화 도구 표(`typeEnhancedType`)와 나눠 두는 이유는 값이 아니라 물음이 다르기
+    /// 때문이다: 저 표는 "이 도구가 강화 도구인가" 도 겸해 상점가·스프라이트가 그걸로 갈린다.
+    /// 플레이트를 거기 섞으면 이름 규칙이 다른 17종이 그 분기를 함께 타 파일명이 어긋난다.
+    var plateType: PokemonType? {
+        switch self {
+        case .flamePlate:  return .fire
+        case .splashPlate: return .water
+        case .zapPlate:    return .electric
+        case .meadowPlate: return .grass
+        case .iciclePlate: return .ice
+        case .fistPlate:   return .fighting
+        case .toxicPlate:  return .poison
+        case .earthPlate:  return .ground
+        case .skyPlate:    return .flying
+        case .mindPlate:   return .psychic
+        case .insectPlate: return .bug
+        case .stonePlate:  return .rock
+        case .spookyPlate: return .ghost
+        case .dracoPlate:  return .dragon
+        case .dreadPlate:  return .dark
+        case .ironPlate:   return .steel
+        case .pixiePlate:  return .fairy
         default: return nil
         }
     }
@@ -619,7 +662,7 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
         case .waveIncense: return "wave-incense"
         case .roseIncense: return "rose-incense"
         // 열매는 케이스명이 곧 API 아이템명이다(위 `kebabRawValue`).
-        case _ where berryEffect != nil || gemType != nil: return kebabRawValue
+        case _ where berryEffect != nil || gemType != nil || plateType != nil: return kebabRawValue
         case .ironBall: return "iron-ball"
         case .laggingTail: return "lagging-tail"
         case .fullIncense: return "full-incense"
@@ -694,6 +737,10 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
              .fightingGem, .poisonGem, .groundGem, .flyingGem, .psychicGem, .bugGem,
              .rockGem, .ghostGem, .dragonGem, .darkGem, .steelGem, .fairyGem:
             return "💎"
+        case .flamePlate, .splashPlate, .zapPlate, .meadowPlate, .iciclePlate, .fistPlate,
+             .toxicPlate, .earthPlate, .skyPlate, .mindPlate, .insectPlate, .stonePlate,
+             .spookyPlate, .dracoPlate, .dreadPlate, .ironPlate, .pixiePlate:
+            return "🪨"
         case .ironBall: return "⚫"
         case .laggingTail: return "🐌"
         case .fullIncense: return "🕯️"
@@ -720,6 +767,8 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
         case _ where typeEnhancedType != nil: return HeldItemBalance.typeEnhancerPrice
         case _ where berryEffect != nil: return HeldItemBalance.berryPrice
         case _ where gemType != nil: return HeldItemBalance.gemPrice
+        // 플레이트는 타입 강화 도구와 효과가 같으니 값도 같다 — 달리 두면 같은 물건이 두 값이 된다.
+        case _ where plateType != nil: return HeldItemBalance.typeEnhancerPrice
         case .ironBall, .laggingTail, .fullIncense: return HeldItemBalance.drawbackPrice
         case .roomBed: return 1_500
         case .roomTable: return 1_000
