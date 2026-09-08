@@ -514,6 +514,12 @@ final class CompanionStore {
 
     /// 홈에 편성한 모험 파티. 메인 파트너를 첫 칸에 강제하고, 사라진 개체·중복·7번째 이후는
     /// 읽는 자리에서도 제거해 구버전/교환 직후의 낡은 UUID가 보상 대상으로 살아나지 않게 한다.
+    ///
+    /// **`state.homePartyIDs` 는 예비 다섯 자리만 담는다(활성은 안 담는다, 2026-09-08).**
+    /// 예전엔 저장할 때 `[active.id] + reserves` 로 활성까지 같이 담았는데, 그 뒤 활성이
+    /// `switchCompanion` 으로 바뀌면 배열 속 **예전** 활성 id 는 그대로 남는다 — 이 함수의
+    /// `seen` 은 *지금* 활성만 걸러내므로 예전 활성이 "사용자가 고른 예비"로 잘못 끼어들어
+    /// 2~6번 전원이 한 칸씩 밀렸다(#296 회귀).
     var homeParty: [MonState] {
         guard let active = state.active else { return [] }
         let owned = Dictionary(uniqueKeysWithValues: deployableMons.map { ($0.id, $0) })
@@ -525,6 +531,8 @@ final class CompanionStore {
         return Array(([active] + reserves).prefix(6))
     }
 
+    /// `ids` 에서 활성을 뺀 나머지를 예비 다섯 자리로 저장한다 — `homePartyIDs` 에 활성을
+    /// 안 담는 이유는 `homeParty` 주석 참고.
     func setHomeParty(_ ids: [UUID]) {
         guard let active = state.active else { return }
         let owned = Set(deployableMons.map(\.id))
@@ -533,7 +541,7 @@ final class CompanionStore {
             guard id != active.id, owned.contains(id), seen.insert(id).inserted else { return nil }
             return id
         }
-        state.homePartyIDs = [active.id] + Array(reserves.prefix(5))
+        state.homePartyIDs = Array(reserves.prefix(5))
         save()
     }
 
