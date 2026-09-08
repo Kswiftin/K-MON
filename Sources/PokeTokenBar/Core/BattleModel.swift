@@ -1001,7 +1001,7 @@ enum BattleGuard {
 /// 지닌물건이라 그 열거형에 담기지 않는다. 그리고 화면이 필요한 것은 상태 이름이 아니라 "왜 못
 /// 누르나" 한 줄이라, 막는 이유만 든 작은 열거형이 그 질문에 정확히 답한다.
 enum MoveSelectionLock: String, Codable, Sendable, Equatable, CaseIterable {
-    case disable, encore, taunt, torment, imprison, healBlock, choiceItem
+    case disable, encore, taunt, torment, imprison, healBlock, choiceItem, assaultVest
 
     /// 선택이 **끝난 뒤에도** 이 잠금이 기술을 막는가 — 걸린 순간이 상대 행동 뒤라서 이번 턴의
     /// 선택을 이미 마친 개체가 생긴다(도발을 건 쪽이 먼저 움직이는 순서).
@@ -1017,7 +1017,9 @@ enum MoveSelectionLock: String, Codable, Sendable, Equatable, CaseIterable {
     var blocksExecution: Bool {
         switch self {
         case .disable, .taunt, .imprison, .healBlock: return true
-        case .encore, .torment, .choiceItem:          return false
+        // 돌격조끼가 구애와 같은 자리에 서는 이유도 같다: 막는 것이 자기 물건이라 선택과 실행
+        // 사이에서 값이 달라질 수 없다.
+        case .encore, .torment, .choiceItem, .assaultVest: return false
         }
     }
 }
@@ -1602,8 +1604,13 @@ struct BattleSide: Sendable, Equatable {
     /// `stats.spe` 를 직접 읽으면 마비·랭크가 스탯 화면에만 보이고 실제 선공은 그대로다.
     /// 편에 깔린 것(순풍)은 여기서 모른다 — 순서를 재는 자리는 `BattleEngine.orderingSpeed` 를 쓴다.
     var effectiveSpeed: Int {
-        let boosted = runBoosts.scaled(StatStages.apply(rawStat(.spe), stage: stage(.spe)),
+        var boosted = runBoosts.scaled(StatStages.apply(rawStat(.spe), stage: stage(.spe)),
                                        stacks: runBoosts.speed)
+        // 구애스카프는 **마비 반감 앞에서** 곱한다(본가와 같은 순서). 뒤에 두면 정수 나눗셈이
+        // 먼저 깎은 값을 올려 같은 개체가 마비 여부에 따라 다른 배율을 받는다.
+        if heldEffect?.boostsSpeed == true {
+            boosted = boosted * HeldItemBalance.choiceNumerator / HeldItemBalance.choiceDenominator
+        }
         return status == .paralysis ? max(1, boosted / 2) : boosted
     }
 
@@ -1675,6 +1682,9 @@ struct BattleSide: Sendable, Equatable {
         if let locked = choiceLockedMoveID, move.id != locked { return .choiceItem }
         if has(.disable), move.id == disabledMoveID { return .disable }
         if has(.taunt), move.damageClass == .status { return .taunt }
+        // 돌격조끼는 도발과 막는 것이 같아 바로 뒤에 선다. 도발이 먼저인 이유는 푸는 방법이
+        // 달라서다 — 도발은 턴이 지나면 풀리고 조끼는 물건을 바꿔야 풀린다.
+        if heldEffect?.blocksStatusMoves == true, move.damageClass == .status { return .assaultVest }
         if has(.torment), move.id == lastMoveID { return .torment }
         if has(.imprison), imprisonedMoveIDs.contains(move.id) { return .imprison }
         if has(.healBlock), ShowdownMoveData.healing.contains(move.id) { return .healBlock }
@@ -1841,7 +1851,7 @@ enum BattleEngine {
     ///      쪽이 먼저 움직인 턴에서 갈린다: 구버전은 이미 고른 기술을 그대로 내고 이 버전은 못 낸다.
     ///      데미지·상태가 통째로 갈리고 rng 소비도 갈린다(막힌 턴은 명중·급소를 굴리지 않는다).
     ///      `BattleEvent` 에 case 하나(`moveBlocked`)가 늘어 구버전은 그 이벤트를 디코딩하지 못한다.
-    static let rulesVersion = 24
+    static let rulesVersion = 25
 
     /// 연결이 끊긴 배틀의 승패 — 남은 HP **비율**이 앞선 쪽이 이기고, 같으면 `nil`(무효)이다.
     ///
@@ -2271,6 +2281,12 @@ enum BattleEngine {
             defense = ability.adjustedDefense(defense, isPhysical: isPhysical, status: defender.status)
         }
         defense = defender.runBoosts.scaled(defense, stacks: defender.runBoosts.defense)
+        // 돌격조끼는 **막아 주는 계통**으로 묻는다(물건 이름을 직접 보면 두 번째 조끼가 늘 때
+        // 이 자리만 빠진다). 데미지가 아니라 방어 스탯에 곱하는 자리는 본가와 같다.
+        if defender.heldEffect?.guardedDamageClass == move.damageClass {
+            defense = defense * HeldItemBalance.assaultVestNumerator
+                / HeldItemBalance.assaultVestDenominator
+        }
         // Gen 2 난수는 217~255 균등 **정수**를 뽑아 255 로 정수 나눗셈한다. 예전엔
         // `0.85 + (rng % 16)/100` 이라 0.01 간격 Double 이었다 — 두 피어가 각자 계산하는
         // 구조에서는 정수 연산이 유리하다(부동소수 오차가 끼어들 자리가 없다).
@@ -2541,6 +2557,18 @@ extension BattleEngine {
             let cost = min(max(1, full / HeldItemBalance.lifeOrbRecoilDivisor), side.hp)
             side.hp -= cost
             events.append(.damage(actor, amount: cost, cause: .recoil))
+        }
+        // 구슬 2종 — 턴 끝에 주인에게 상태를 건다. **잔뎀 뒤**다: 앞에 두면 구슬을 쥔 그 턴부터
+        // 깎이고, `isAlive` 로 막지 않으면 그 턴에 쓰러진 개체가 기절 줄 뒤에 화상을 얻는다.
+        //
+        // rng 를 안 쓰는 자리라 여기에 넘길 난수원이 없다. 구슬이 거는 상태(화상·맹독)는
+        // `inflict` 에서 카운터를 뽑지 않으므로 지역 난수원을 넘겨도 두 피어가 갈리지 않는다 —
+        // 그 사실을 아래 단언이 지킨다(잠듦·혼란을 구슬에 붙이는 날 여기가 터진다).
+        if side.isAlive, let orbStatus = side.heldEffect?.selfInflictedStatus {
+            var unusedRNG = SplitMix64(seed: 0)
+            events += inflict(orbStatus, on: &side, actor: actor, rng: &unusedRNG)
+            assert(unusedRNG.state == SplitMix64(seed: 0).state,
+                   "구슬이 난수를 소비했다 — 턴 끝 자리에는 두 피어가 공유하는 난수원이 없다")
         }
         if !side.isAlive { events.append(.faint(actor)) }
         return events

@@ -338,7 +338,7 @@ struct L {
         case .taunt:      return "\(name)은(는) 도발당해서 변화기를 쓸 수 없다!"
         case .imprison:   return "\(name)은(는) 봉인된 기술을 쓸 수 없다!"
         case .healBlock:  return "\(name)은(는) 회복이 봉쇄되어 그 기술을 쓸 수 없다!"
-        case .encore, .torment, .choiceItem:
+        case .encore, .torment, .choiceItem, .assaultVest:
             // 선택만 막는 잠금이라 이 줄이 나갈 일은 없다. 비워 두면 나중에 `blocksExecution` 을
             // 켤 때 로그에 빈 줄이 조용히 나간다.
             return "\(name)은(는) 그 기술을 쓸 수 없다!"
@@ -356,6 +356,7 @@ struct L {
         case .imprison:   return "상대가 봉인한 기술"
         case .healBlock:  return "회복이 봉쇄됐다"
         case .choiceItem: return "구애로 기술 고정"
+        case .assaultVest: return "돌격조끼로 변화기 금지"
         }
     }
 
@@ -1498,6 +1499,10 @@ struct L {
         case .leftovers: return "먹다남은음식"
         case .choiceBand: return "구애머리띠"
         case .choiceSpecs: return "구애안경"
+        case .choiceScarf: return "구애스카프"
+        case .flameOrb: return "화염구슬"
+        case .toxicOrb: return "독구슬"
+        case .assaultVest: return "돌격조끼"
         case .shinyCharm: return "이로치 부적"
         case .linkingCord: return "연결의끈"
         case .fireStone: return "불꽃의돌"
@@ -1615,6 +1620,14 @@ struct L {
                 return "물리 기술의 데미지가 1.5배가 돼요. 대신 대전에서 처음 낸 기술만 계속 쓰게 돼요."
             case .choiceSpecs:
                 return "특수 기술의 데미지가 1.5배가 돼요. 대신 대전에서 처음 낸 기술만 계속 쓰게 돼요."
+            case .choiceScarf:
+                return "스피드가 1.5배가 돼요. 대신 대전에서 처음 낸 기술만 계속 쓰게 돼요."
+            case .flameOrb:
+                return "대전에서 턴이 끝날 때 자신이 화상을 입어요. 화상을 이용하는 특성과 짝지어 쓰는 물건이에요."
+            case .toxicOrb:
+                return "대전에서 턴이 끝날 때 자신이 맹독에 걸려요. 독을 이용하는 특성과 짝지어 쓰는 물건이에요."
+            case .assaultVest:
+                return "특수 기술에 받는 데미지가 줄어요. 대신 대전에서 변화기를 쓸 수 없어요."
             case nil:
                 // 지닌물건 갈래인데 효과가 없는 조합 — `bagUse` 가 둘을 함께 정하므로 도달 불가다.
                 return ""
@@ -1649,6 +1662,10 @@ struct L {
         case .leftovers: return "턴 끝 HP 회복"
         case .choiceBand: return "물리 ×1.5 / 기술 고정"
         case .choiceSpecs: return "특수 ×1.5 / 기술 고정"
+        case .choiceScarf: return "스피드 ×1.5 / 기술 고정"
+        case .flameOrb: return "턴 끝 자신이 화상"
+        case .toxicOrb: return "턴 끝 자신이 맹독"
+        case .assaultVest: return "특수 방어 ×1.5 / 변화기 금지"
         case nil:        return ""   // `bagUse` 가 둘을 함께 정하므로 도달 불가다
         }
     }

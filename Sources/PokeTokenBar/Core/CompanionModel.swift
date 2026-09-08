@@ -270,6 +270,14 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
     /// 위 셋과 갈리는 점은 대가가 HP 가 아니라 선택이라는 것이다: 묶는 자리는 배틀 쪽
     /// (`BattleSide.choiceLockedMoveID`)이고, 이 축에서는 배율만 답한다.
     case choiceBand, choiceSpecs
+    /// 구애스카프 — 배율이 데미지가 아니라 **스피드**에 붙는 세 번째 구애다. 대가는 같다(기술 고정).
+    case choiceScarf
+    /// 구슬 2종 — 턴 끝에 **주인에게** 상태를 건다. 대가가 아니라 상태 자체가 목적인 물건이라
+    /// (근성이 화상의 물리 반감을 무시한다) 엔진이 얹는 것은 상태 하나뿐이다.
+    case flameOrb, toxicOrb
+    /// 돌격조끼 — 특수방어 1.5배를 주고 **변화기를 못 쓴다**. 대가가 기술 분류라 잠금 자리는
+    /// 도발과 같다(`MoveSelectionLock`).
+    case assaultVest
     /// R7 decor is inventory, not a second currency or store.
     // Mini Home furniture. The original three are the free campus starter set.
     case roomBed, roomTable, roomLamp
@@ -284,7 +292,8 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
     var evolutionRule: EvolutionItemRule? {
         switch self {
         case .rareCandy, .mint, .shinyCharm, .heartScale, .teraShard,
-             .lifeOrb, .focusSash, .leftovers, .choiceBand, .choiceSpecs,
+             .lifeOrb, .focusSash, .leftovers, .choiceBand, .choiceSpecs, .choiceScarf,
+             .flameOrb, .toxicOrb, .assaultVest,
              .roomBed, .roomTable, .roomLamp, .lovelyVanity, .lovelySofa, .lovelyHeartLamp,
              .retroArcade, .retroRadio, .retroTV, .naturePlant, .natureBench, .natureLantern: return nil
         case .linkingCord: return .plainTrade
@@ -348,7 +357,9 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
         case .mint:       return .mint
         case .heartScale: return .heartScale
         case .teraShard:  return .teraShard
-        case .lifeOrb, .focusSash, .leftovers, .choiceBand, .choiceSpecs: return .heldItem
+        case .lifeOrb, .focusSash, .leftovers, .choiceBand, .choiceSpecs, .choiceScarf,
+             .flameOrb, .toxicOrb, .assaultVest:
+            return .heldItem
         case .shinyCharm: return .passive
         case .roomBed, .roomTable, .roomLamp, .lovelyVanity, .lovelySofa, .lovelyHeartLamp,
              .retroArcade, .retroRadio, .retroTV, .naturePlant, .natureBench, .natureLantern:
@@ -379,6 +390,10 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
         case .leftovers:   return .leftovers
         case .choiceBand:  return .choiceBand
         case .choiceSpecs: return .choiceSpecs
+        case .choiceScarf: return .choiceScarf
+        case .flameOrb:    return .flameOrb
+        case .toxicOrb:    return .toxicOrb
+        case .assaultVest: return .assaultVest
         default:          return nil
         }
     }
@@ -399,6 +414,12 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
         case .lifeOrb: return "life-orb"
         case .focusSash: return "focus-sash"
         case .leftovers: return "leftovers"
+        case .choiceBand: return "choice-band"
+        case .choiceSpecs: return "choice-specs"
+        case .choiceScarf: return "choice-scarf"
+        case .flameOrb: return "flame-orb"
+        case .toxicOrb: return "toxic-orb"
+        case .assaultVest: return "assault-vest"
         default: return evolutionRule?.apiItemName
         }
     }
@@ -431,6 +452,9 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
         case .teraShard: return "💎"
         case .lifeOrb: return "🔮"; case .focusSash: return "🎗️"; case .leftovers: return "🍱"
         case .choiceBand: return "🎽"; case .choiceSpecs: return "🕶️"
+        case .choiceScarf: return "🧣"
+        case .flameOrb: return "🔥"; case .toxicOrb: return "☠️"
+        case .assaultVest: return "🦺"
         case .roomBed: return "🛏️"; case .roomTable: return "🪑"; case .roomLamp: return "💡"
         case .lovelyVanity: return "🪞"; case .lovelySofa: return "🩷"; case .lovelyHeartLamp: return "💕"
         case .retroArcade: return "🕹️"; case .retroRadio: return "📻"; case .retroTV: return "📺"
@@ -448,7 +472,9 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
         case .lifeOrb: return HeldItemBalance.lifeOrbPrice
         case .focusSash: return HeldItemBalance.focusSashPrice
         case .leftovers: return HeldItemBalance.leftoversPrice
-        case .choiceBand, .choiceSpecs: return HeldItemBalance.choicePrice
+        case .choiceBand, .choiceSpecs, .choiceScarf: return HeldItemBalance.choicePrice
+        case .flameOrb, .toxicOrb: return HeldItemBalance.orbPrice
+        case .assaultVest: return HeldItemBalance.assaultVestPrice
         case .roomBed: return 1_500
         case .roomTable: return 1_000
         case .roomLamp: return 800
@@ -569,6 +595,12 @@ enum HeldItemEffect: Sendable, Equatable, CaseIterable {
     case leftovers
     /// 한 가지 데미지 계통을 1.5 배로 만들고, 그 대가로 처음 낸 기술 하나에 묶인다.
     case choiceBand, choiceSpecs
+    /// 스피드를 1.5 배로 만들고, 같은 대가로 처음 낸 기술 하나에 묶인다.
+    case choiceScarf
+    /// 턴 끝에 주인을 화상 / 맹독으로 만든다. 걸리고 나면 더 할 일이 없다(상태가 일을 이어받는다).
+    case flameOrb, toxicOrb
+    /// 특수 기술에 대한 방어를 1.5 배로 만들고, 그 대가로 변화기를 못 쓴다.
+    case assaultVest
 
     /// 이 물건이 1.5 배로 만드는 데미지 계통 — 묶는 대가와 짝이다. `nil` 이면 배율이 없다.
     ///
@@ -578,13 +610,53 @@ enum HeldItemEffect: Sendable, Equatable, CaseIterable {
         switch self {
         case .choiceBand:  return .physical
         case .choiceSpecs: return .special
-        case .lifeOrb, .focusSash, .leftovers: return nil
+        case .lifeOrb, .focusSash, .leftovers, .choiceScarf,
+             .flameOrb, .toxicOrb, .assaultVest: return nil
         }
     }
 
-    /// 이 물건이 기술 하나로 **묶는가** — 구애 2종이다. 배율 축과 나눈 이유는 둘이 같이 갈 이유가
-    /// 없어서다(배율 없이 묶는 물건도, 묶지 않고 올리는 물건도 본가에 있다).
-    var locksIntoOneMove: Bool { boostedDamageClass != nil }
+    /// 이 물건이 **막아 주는** 데미지 계통 — 그 계통의 방어 스탯이 1.5 배가 된다. 올리는 축
+    /// (`boostedDamageClass`)과 나눈 이유는 방향이 반대라서다: 저기는 때리는 쪽, 여기는 맞는 쪽이다.
+    var guardedDamageClass: MoveDamageClass? {
+        switch self {
+        case .assaultVest: return .special
+        case .lifeOrb, .focusSash, .leftovers,
+             .choiceBand, .choiceSpecs, .choiceScarf, .flameOrb, .toxicOrb: return nil
+        }
+    }
+
+    /// 이 물건이 턴 끝에 **주인에게** 거는 상태 — 구슬 2종이다. 상대에게 거는 것이 아니므로
+    /// 기술의 2차효과 자리가 아니라 턴 끝 잔뎀 자리(`BattleEngine.endOfTurnResidual`)에서 돈다.
+    ///
+    /// **난수를 쓰는 상태(잠듦·혼란)를 여기 두면 안 된다** — 그 자리에는 rng 가 없어서 두 피어가
+    /// 갈린다. `HeldItemVarietyTests` 가 그 규칙을 잠근다.
+    var selfInflictedStatus: Status? {
+        switch self {
+        case .flameOrb: return .burn
+        case .toxicOrb: return .toxic
+        case .lifeOrb, .focusSash, .leftovers,
+             .choiceBand, .choiceSpecs, .choiceScarf, .assaultVest: return nil
+        }
+    }
+
+    /// 스피드를 1.5 배로 만드는가 — 구애스카프뿐이다. 데미지 배율 축과 나눈 이유는 곱하는 자리가
+    /// 달라서다(저기는 데미지 계산, 여기는 `BattleSide.effectiveSpeed`).
+    var boostsSpeed: Bool { self == .choiceScarf }
+
+    /// 이 물건이 변화기를 **막는가** — 돌격조끼뿐이다. 방어 배율(`guardedDamageClass`)과 나눈
+    /// 이유는 둘이 같이 갈 이유가 없어서다(막기만 하는 물건도, 올리기만 하는 물건도 있을 수 있다).
+    var blocksStatusMoves: Bool { self == .assaultVest }
+
+    /// 이 물건이 기술 하나로 **묶는가** — 구애 3종이다. 배율 축에서 파생하지 않고 직접 답한다:
+    /// 구애스카프는 데미지 배율이 없는데도 묶으므로, `boostedDamageClass != nil` 로 두면 스카프만
+    /// 대가 없이 스피드를 얻는다(실제로 그렇게 시작했다). `default:` 를 두지 않아 새 물건은
+    /// 묶는지 여부를 반드시 밝혀야 한다.
+    var locksIntoOneMove: Bool {
+        switch self {
+        case .choiceBand, .choiceSpecs, .choiceScarf: return true
+        case .lifeOrb, .focusSash, .leftovers, .flameOrb, .toxicOrb, .assaultVest: return false
+        }
+    }
 }
 
 /// 지닌물건 3종 밸런스 상수 — 수치의 정본이다. 엔진과 문구가 각자 리터럴을 들면 설명이 실제와
@@ -609,8 +681,21 @@ enum HeldItemBalance {
     /// 배율이 한 계통에만 붙고 기술 하나에 묶인다.
     static let choicePrice = 4_500
 
+    /// 구슬 2종의 상점가 — 둘이 같은 값이다(거는 상태만 갈릴 뿐 같은 물건이다). 지닌물건 중
+    /// **가장 싸다**: 주는 것이 강화가 아니라 상태이상이라, 근성 같은 특성과 짝지어야 이득이 되고
+    /// 그냥 지니면 손해다. 값을 올리면 아무도 실험해 보지 않는 물건이 된다.
+    static let orbPrice = 3_000
+    /// 돌격조끼의 상점가 — 기합의띠(4,000)와 같은 방어 쪽 물건이지만 대가(변화기 금지)가 커서
+    /// 그보다 싸게 둔다.
+    static let assaultVestPrice = 3_800
+    /// 돌격조끼의 특수방어 배율 — 구애와 같은 3/2 지만 상수를 따로 둔다. 둘을 한 상수로 묶으면
+    /// 한쪽 밸런스를 조정할 때 다른 쪽이 조용히 따라 움직인다.
+    static let assaultVestNumerator = 3
+    static let assaultVestDenominator = 2
+
     /// 구애 배율 — 정수 분수로 곱한다(생명의구슬과 같은 이유: 부동소수 오차가 끼면 두 피어의
-    /// 데미지가 갈린다).
+    /// 데미지가 갈린다). 스피드 배율(구애스카프)도 같은 값을 쓴다 — 셋이 같은 물건 계열이라
+    /// 배율이 갈리면 어느 하나가 이유 없이 세진다.
     static let choiceNumerator = 3
     static let choiceDenominator = 2
 }

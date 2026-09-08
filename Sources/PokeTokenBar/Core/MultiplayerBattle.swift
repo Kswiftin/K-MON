@@ -417,7 +417,7 @@ enum MultiplayerWireMessage: Codable, Sendable, Equatable {
     //     `volatileTriggered`·`heldItemTriggered`·`moveBlocked`). 이 enum 은 자동합성 `Codable` 이라
     //     구버전 게스트가 모르는 case 를 만나면 `roundResolved` 통째로 디코딩에 실패하고 연결이
     //     끊긴다 — 규칙만 바뀐 게 아니라 **와이어 모양**이 바뀌었다.
-    static let protocolVersion = 19
+    static let protocolVersion = 20
     case join(version: Int, participant: LobbyParticipant, snapshot: BattleSnapshot)
     case lobby(MultiplayerLobby)
     case ready(participantID: UUID, ready: Bool)
