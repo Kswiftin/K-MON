@@ -459,4 +459,79 @@ final class BattleSelectionLockTests: XCTestCase {
         let offered = mon.moves.indices.filter { mon.canUse(moveAt: $0) }
         XCTAssertEqual(offered, [0], "도발당한 개체의 변화기가 터미널 목록에 남았다")
     }
+
+    // MARK: 행동 시점 게이트
+
+    /// 그 턴의 행동을 **시작하는 자리**를 한 번 지난다.
+    private func begin(_ move: MoveSpec, by attacker: inout BattleSide)
+        -> (moved: Bool, events: [BattleEvent]) {
+        var rng = SplitMix64(seed: 3)
+        var events: [BattleEvent] = []
+        let moved = BattleEngine.beginAttack(attacker: &attacker, actor: .a, move: move,
+                                             rng: &rng, into: &events)
+        return (moved, events)
+    }
+
+    /// 선택은 이미 끝난 뒤에 도발이 걸리는 순서가 있다 — 도발을 건 쪽이 먼저 움직이면, 맞은 쪽은
+    /// 이번 턴 낼 기술을 이미 골라 둔 상태다. 본가·쇼다운은 그 기술을 **행동 직전에** 다시 막는다
+    /// (`moves.ts` 의 도발 `onBeforeMove` 가 `cant` 를 찍는다). 선택만 막으면 도발이 한 턴 늦게 듣는다.
+    func testTauntBlocksAMoveThatWasAlreadyChosenThisTurn() {
+        var mon = side(moves: [statusMove(45)])
+        XCTAssertTrue(mon.start(.taunt, turns: 3))
+
+        let (moved, events) = begin(statusMove(45), by: &mon)
+
+        XCTAssertFalse(moved, "도발당한 개체가 변화기를 그대로 냈다")
+        XCTAssertTrue(events.contains(.moveBlocked(.a, .taunt)), "막힌 사유가 로그에 없다: \(events)")
+        XCTAssertFalse(events.contains { if case .move = $0 { return true } else { return false } },
+                       "기술이 나가지 않았는데 `.move` 줄이 남았다")
+        XCTAssertTrue(mon.lastMoveFailed, "막힌 턴은 실패로 세야 한다(분함의발구르기가 이 값을 읽는다)")
+        XCTAssertNil(mon.lastMoveID, "나가지 않은 기술이 직전 기술로 남았다")
+    }
+
+    /// 도발만 고치면 같은 부류 셋이 남는다 — 씨앙코르·봉인·비밀의힘도 쇼다운이 `onBeforeMove` 로
+    /// 막는다(각각 `disable`·`imprison` 의 `onFoeBeforeMove`·`healblock`).
+    func testTheOtherThreeExecutionLocksBlockToo() {
+        var disabled = side(moves: [attackMove(34)])
+        XCTAssertTrue(disabled.start(.disable, turns: 4))
+        disabled.disabledMoveID = 34
+        XCTAssertFalse(begin(attackMove(34), by: &disabled).moved, "씨앙코르가 행동을 막지 않았다")
+
+        var imprisoned = side(moves: [attackMove(34)])
+        XCTAssertTrue(imprisoned.start(.imprison, turns: 0))
+        imprisoned.imprisonedMoveIDs = [34]
+        XCTAssertFalse(begin(attackMove(34), by: &imprisoned).moved, "봉인이 행동을 막지 않았다")
+
+        var blocked = side(moves: [statusMove(105)])
+        XCTAssertTrue(blocked.start(.healBlock, turns: 5))
+        XCTAssertFalse(begin(statusMove(105), by: &blocked).moved, "비밀의힘이 회복기를 막지 않았다")
+    }
+
+    /// 트집·앙코르는 **선택만** 막는다 — 쇼다운의 두 condition 은 `onDisableMove` 만 들고
+    /// `onBeforeMove` 가 없다(앙코르는 대신 그 턴 행동을 앙코르 기술로 바꾼다 — 여기선 안 바꾼다).
+    /// 이 셋을 실행 시점에 같이 막으면 본가보다 세진다.
+    func testTormentAndEncoreStayOutOfTheExecutionGate() {
+        var tormented = side(moves: [attackMove(33)])
+        XCTAssertTrue(tormented.start(.torment, turns: 0))
+        tormented.lastMoveID = 33
+        XCTAssertTrue(begin(attackMove(33), by: &tormented).moved,
+                      "트집이 이미 고른 기술까지 막았다(본가는 선택만 막는다)")
+
+        var encored = side(moves: [attackMove(33), attackMove(34)])
+        XCTAssertTrue(encored.start(.encore, turns: 3))
+        encored.encoredMoveID = 34
+        XCTAssertTrue(begin(attackMove(33), by: &encored).moved,
+                      "앙코르가 이미 고른 기술까지 막았다(본가는 그 턴 행동을 바꾼다)")
+    }
+
+    /// 막힌 줄의 문구는 잠금마다 갈린다 — 하나로 뭉개면 로그가 무엇 때문에 못 움직였는지 잃는다.
+    func testTheBlockedLineNamesTheLock() {
+        let l = L()
+        var seen: Set<String> = []
+        for lock in MoveSelectionLock.allCases where lock.blocksExecution {
+            let text = l.battleCantUseMove("테스트", lock: lock)
+            XCTAssertFalse(text.isEmpty, "\(lock) 의 막힌 문구가 비어 있다")
+            XCTAssertTrue(seen.insert(text).inserted, "\(lock) 이 다른 잠금과 같은 문구다: \(text)")
+        }
+    }
 }

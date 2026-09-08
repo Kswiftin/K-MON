@@ -328,6 +328,23 @@ struct L {
         }
     }
 
+    /// 잠금 때문에 그 기술을 못 냈다 — **행동 직전에** 막힌 줄이다. 버튼 툴팁
+    /// (`moveSelectionLockReason`)과 문구를 나눠 두는 이유는 읽는 시점이 달라서다: 저쪽은 "왜 못
+    /// 누르나" 고 이쪽은 "왜 안 나갔나" 다. 선택만 막는 잠금은 이 자리에 오지 않는다
+    /// (`MoveSelectionLock.blocksExecution`).
+    func battleCantUseMove(_ name: String, lock: MoveSelectionLock) -> String {
+        switch lock {
+        case .disable:    return "\(name)은(는) 씨앙코르로 봉인된 기술을 쓸 수 없다!"
+        case .taunt:      return "\(name)은(는) 도발당해서 변화기를 쓸 수 없다!"
+        case .imprison:   return "\(name)은(는) 봉인된 기술을 쓸 수 없다!"
+        case .healBlock:  return "\(name)은(는) 회복이 봉쇄되어 그 기술을 쓸 수 없다!"
+        case .encore, .torment, .choiceItem:
+            // 선택만 막는 잠금이라 이 줄이 나갈 일은 없다. 비워 두면 나중에 `blocksExecution` 을
+            // 켤 때 로그에 빈 줄이 조용히 나간다.
+            return "\(name)은(는) 그 기술을 쓸 수 없다!"
+        }
+    }
+
     /// 기술 버튼이 **왜** 비활성인가 — 잠금마다 갈린다. 하나로 뭉개면("쓸 수 없다") 무엇을 풀어야
     /// 다시 쓸 수 있는지가 화면에서 사라진다(도발은 세 턴을 기다리고, 구애는 교체해야 풀린다).
     func moveSelectionLockReason(_ lock: MoveSelectionLock) -> String {

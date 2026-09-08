@@ -84,7 +84,9 @@ enum BattleReplay {
         // 교체·자동 출전은 한 박자 — 새 개체가 나오는 걸 보고 나서 다음 일이 일어나야 한다.
         case .sendOut:                                          return 0.40
         case .crit, .superEffective, .resisted, .miss, .immune: return 0.30
-        case .status, .cureStatus, .cant:                       return 0.40
+        // 막힌 줄(`.moveBlocked`)도 못 움직인 줄이라 같은 박자다 — 뒤에 아무 일도 안 일어나므로
+        // 짧으면 왜 기술이 안 나갔는지가 안 보인다.
+        case .status, .cureStatus, .cant, .moveBlocked:         return 0.40
         // 날씨는 판 전체의 줄이라 한 박자 준다 — 데미지·문구가 뒤따라오기 때문이다.
         case .weatherStarted, .weatherEnded,
              .terrainStarted, .terrainEnded,
@@ -152,7 +154,7 @@ enum BattleReplay {
         // 움직이는데 여기 빠지면 바가 배틀 내내 어긋난 채로 남는다. 컴파일이 깨지는 편이
         // `reconcile()` 로그를 한참 뒤에 발견하는 편보다 낫다.
         case .turn, .move, .miss, .immune, .crit, .superEffective, .resisted,
-             .faint, .status, .cureStatus, .cant, .boost, .multiHit,
+             .faint, .status, .cureStatus, .cant, .moveBlocked, .boost, .multiHit,
              .weatherStarted, .weatherEnded, .terrainStarted, .terrainEnded,
              .sideConditionStarted, .sideConditionEnded, .guardUp, .guardBlocked,
              .terastallized, .volatileStarted, .volatileEnded, .volatileTriggered,
@@ -195,7 +197,7 @@ enum BattleReplay {
         // 팝이 없는 이벤트 — 전부 팝으로 만들면 화면이 문구로 덮여 정작 급소가 묻힌다.
         // 방어를 **친** 줄(`.guardUp`)은 로그로만 나간다 — 팝은 막힌 순간에만 뜬다.
         case .turn, .move, .damage, .heal, .multiHit, .faint, .sendOut, .status, .cureStatus,
-             .cant, .boost, .weatherStarted, .weatherEnded, .terrainStarted, .terrainEnded,
+             .cant, .moveBlocked, .boost, .weatherStarted, .weatherEnded, .terrainStarted, .terrainEnded,
              .sideConditionStarted, .sideConditionEnded, .guardUp, .terastallized,
              .volatileStarted, .volatileEnded, .volatileTriggered,
              // 지닌물건이 일한 줄은 문구에 **아이템 이름**이 들어가 `KeyPath` 로 담을 수 없다 —

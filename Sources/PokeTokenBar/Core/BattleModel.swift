@@ -1000,8 +1000,26 @@ enum BattleGuard {
 /// **`BattleVolatile` 을 그대로 쓰지 않는 이유는 구애 아이템이다**: 원인 하나가 volatile 이 아니라
 /// 지닌물건이라 그 열거형에 담기지 않는다. 그리고 화면이 필요한 것은 상태 이름이 아니라 "왜 못
 /// 누르나" 한 줄이라, 막는 이유만 든 작은 열거형이 그 질문에 정확히 답한다.
-enum MoveSelectionLock: String, Sendable, Equatable, CaseIterable {
+enum MoveSelectionLock: String, Codable, Sendable, Equatable, CaseIterable {
     case disable, encore, taunt, torment, imprison, healBlock, choiceItem
+
+    /// 선택이 **끝난 뒤에도** 이 잠금이 기술을 막는가 — 걸린 순간이 상대 행동 뒤라서 이번 턴의
+    /// 선택을 이미 마친 개체가 생긴다(도발을 건 쪽이 먼저 움직이는 순서).
+    ///
+    /// **부류마다 갈리는 값이라 하나로 접지 않는다.** 쇼다운 `moves.ts` 기준으로 씨앙코르·도발·
+    /// 봉인·비밀의힘은 `onBeforeMove` 에서 `cant` 를 찍어 그 턴 행동을 막고, 트집·앙코르는
+    /// `onDisableMove` 만 들어 선택만 막는다(앙코르는 대신 그 턴 행동을 앙코르 기술로 **바꾼다** —
+    /// 여기서는 바꾸지 않는다). 넷을 다 막으면 본가보다 세지고, 넷을 다 안 막으면 도발이 한 턴
+    /// 늦게 듣는다.
+    ///
+    /// 구애가 빠지는 것은 사유가 다르다: 잠금이 **자기 기술이 나가는 순간** 걸리므로
+    /// (`BattleEngine.beginAttack`), 자기 선택과 자기 실행 사이에서 값이 달라질 수 없다.
+    var blocksExecution: Bool {
+        switch self {
+        case .disable, .taunt, .imprison, .healBlock: return true
+        case .encore, .torment, .choiceItem:          return false
+        }
+    }
 }
 
 /// 개체에 붙어 **턴을 넘어 사는** 상태 — 조이기·저주·나이트메어·아쿠아링·뿌리박기.
@@ -1647,7 +1665,12 @@ struct BattleSide: Sendable, Equatable {
     /// 낼 수 있는 칸이 하나로 줄므로 다른 이유를 말해도 화면이 달라지지 않는다).
     func selectionLock(forMoveAt index: Int) -> MoveSelectionLock? {
         guard moves.indices.contains(index) else { return nil }
-        let move = moves[index]
+        return selectionLock(for: moves[index])
+    }
+
+    /// 같은 판정을 **기술 자체로** 묻는다 — 행동 시점 게이트(`BattleEngine.beginAttack`)는 칸
+    /// 번호가 아니라 나가려는 기술을 들고 온다. 규칙을 그쪽에 다시 쓰면 두 자리가 갈린다.
+    func selectionLock(for move: MoveSpec) -> MoveSelectionLock? {
         if has(.encore), let locked = encoredMoveID, move.id != locked { return .encore }
         if let locked = choiceLockedMoveID, move.id != locked { return .choiceItem }
         if has(.disable), move.id == disabledMoveID { return .disable }
@@ -1814,6 +1837,10 @@ enum BattleEngine {
     ///      rng 소비도 갈린다: CPU 가 후보를 `canUse` 로 걸러 뽑으므로 잠긴 칸이 있으면 후보 수가
     ///      달라진다. `BattleVolatile` 에 case 여섯이 늘어 구버전은 그 상태의 이벤트를 디코딩하지
     ///      못한다.
+    ///      + 그 잠금 중 넷(씨앙코르·도발·봉인·비밀의힘)은 **행동 직전에도** 막는다 — 잠금을 건
+    ///      쪽이 먼저 움직인 턴에서 갈린다: 구버전은 이미 고른 기술을 그대로 내고 이 버전은 못 낸다.
+    ///      데미지·상태가 통째로 갈리고 rng 소비도 갈린다(막힌 턴은 명중·급소를 굴리지 않는다).
+    ///      `BattleEvent` 에 case 하나(`moveBlocked`)가 늘어 구버전은 그 이벤트를 디코딩하지 못한다.
     static let rulesVersion = 24
 
     /// 연결이 끊긴 배틀의 승패 — 남은 HP **비율**이 앞선 쪽이 이기고, 같으면 `nil`(무효)이다.
@@ -2437,6 +2464,11 @@ enum BattleEvent: Codable, Sendable, Equatable {
     case status(BattleActor, Status)
     case cureStatus(BattleActor, Status)
     case cant(BattleActor, Status)
+    /// 잠금 때문에 이번 턴 그 기술을 못 냈다 — 선택은 끝났는데 행동 직전에 막힌 경우다
+    /// (`MoveSelectionLock.blocksExecution`). `.cant` 와 갈라 두는 이유는 사유의 축이 달라서다:
+    /// 저쪽은 주 상태이상(`Status`)이고 이쪽은 선택 잠금이라, 한 case 로 접으면 둘 중 하나가
+    /// 자기 사유를 말할 수 없다.
+    case moveBlocked(BattleActor, MoveSelectionLock)
     /// 랭크가 움직였다 — 값은 **실제로 적용된 양**이다(±6 에 닿아 0 이면 이 이벤트가 나가지 않는다).
     /// Showdown 의 `|-boost|`·`|-unboost|` 를 부호 하나로 합쳤다.
     case boost(BattleActor, BattleStat, Int)
@@ -2954,6 +2986,21 @@ extension BattleEngine {
         // 못 움직이면 `.move` 자체가 나가지 않는다 — Showdown 도 `|move|` 대신 `|cant|` 를 보낸다.
         guard canAct(&attacker, actor: actor, rng: &rng, into: &events) else {
             // 기술이 아예 나가지 않았다 — 연속은 끊기고, 직전 기술은 실패로 친다.
+            attacker.consecutiveMoveUses = 0
+            attacker.lastMoveID = nil
+            attacker.lastMoveFailed = true
+            return false
+        }
+        // 선택이 끝난 뒤에 걸린 잠금은 여기서 막는다 — 도발을 건 쪽이 먼저 움직이면 맞은 쪽은
+        // 이번 턴 기술을 이미 골라 둔 상태다. 선택 게이트(`BattleSide.selectionLock(for:)`)만
+        // 두면 그 턴은 그대로 나가 도발이 한 턴 늦게 듣는다. **어느 잠금이 여기까지 막는지는
+        // 잠금이 답한다**(`blocksExecution`) — 트집·앙코르는 본가도 선택만 막는다.
+        //
+        // PP 는 여기서 돌려주지 않는다: 모드 네 곳이 `beginAttack` 을 부르기 **전에** 이미 깎고,
+        // 잠듦·마비로 못 움직인 턴도 같은 자리에서 깎여 왔다. 이 게이트만 예외로 두면 같은
+        // "못 움직인 턴" 이 사유에 따라 PP 를 다르게 쓴다.
+        if let lock = attacker.selectionLock(for: move), lock.blocksExecution {
+            events.append(.moveBlocked(actor, lock))
             attacker.consecutiveMoveUses = 0
             attacker.lastMoveID = nil
             attacker.lastMoveFailed = true
