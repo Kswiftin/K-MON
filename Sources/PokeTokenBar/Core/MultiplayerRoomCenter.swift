@@ -657,6 +657,20 @@ final class MultiplayerRoomCenter {
         return true
     }
 
+    /// 호스트가 뿌린 방 명단. 입장 확인이자 이후의 명단 갱신이다.
+    ///
+    /// **판이 도는 중이면 명단만 바꾼다.** 호스트는 누가 들어오거나 나갈 때마다 로비를 전원에게
+    /// 다시 뿌리는데(`broadcastLobby` — 입장·이탈·연결 끊김 셋), 그때 화면 단계까지 `.joined` 로
+    /// 되돌리면 싸우던 게스트가 전원 배틀에서 튕긴다. 되돌아갈 길도 없다: `.battling` 을 세우는
+    /// 것은 `.start`·`.raidStart` 뿐이라 그 판에는 다시 못 들어오고, 이후 라운드는
+    /// `applyGuestResolvedRound` 의 `phase == .battling` 가드에 걸려 버려진다 — 화면은 멈추고
+    /// 정산도 못 받는다. 레이드는 판이 도는 동안에도 입장을 받으므로 실제로 밟힌다.
+    func applyGuestLobby(_ lobby: MultiplayerLobby) {
+        self.lobby = lobby
+        guard !isInPlay else { return }
+        phase = .joined
+    }
+
     /// 호스트가 확정한 기여도. **게스트의 지급은 이 메시지가 도착해야 일어난다.**
     func applyGuestRaidSettlement(_ contributions: [UUID: Int]) {
         guard combatMode == .coopBoss else { return }
@@ -1869,7 +1883,7 @@ final class MultiplayerRoomCenter {
             case .lobby(let lobby):
                 self.roomJoinTimeoutTask?.cancel(); self.roomJoinTimeoutTask = nil
                 self.roomJoinTask = nil
-                self.lobby = lobby; self.phase = .joined
+                self.applyGuestLobby(lobby)
                 // 입장하자마자 도전하기로 하고 들어왔으면 여기서 보낸다 — 입장이 비동기라
                 // 로비를 받은 이 시점이 도전을 보낼 수 있는 첫 자리다.
                 if self.pendingGymChallenge {
