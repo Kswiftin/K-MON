@@ -35,11 +35,19 @@ final class SafariZoneSaveTests: XCTestCase {
     }
 
     /// 진행 중인 조우도 그대로 복원돼야 한다 — 단계·턴까지.
+    ///
+    /// 미끼 뒤 도망 판정은 확률적이라(seed 1 에서 실제로 `.fled` 가 나 CI 에서 걸렸다), 진행 중
+    /// (`.continuing`)이 나오는 seed 를 찾아서 쓴다 — 고정 seed 하나로는 결과를 보장 못 한다.
     func testInProgressEncounterSurvivesTheRoundTrip() throws {
         var original = makeVisit()
-        var rng = SplitMix64(seed: 1)
-        var encounter = SafariEncounter(speciesID: 16, rarity: .common)
-        XCTAssertEqual(encounter.act(.bait, rng: &rng), .continuing)
+        func makeProgressingEncounter(seed: UInt64) -> SafariEncounter? {
+            var rng = SplitMix64(seed: seed)
+            var encounter = SafariEncounter(speciesID: 16, rarity: .common)
+            return encounter.act(.bait, rng: &rng) == .continuing ? encounter : nil
+        }
+        guard let encounter = (UInt64(0)..<200).lazy.compactMap(makeProgressingEncounter).first else {
+            return XCTFail("미끼 후 진행 중인 시드를 못 찾았다")
+        }
         original = SafariVisit(zone: original.zone, seed: original.seed, balls: original.balls,
                                stepsRemaining: original.stepsRemaining, walker: original.walker,
                                currentEncounter: encounter, catchesThisVisit: 0,
