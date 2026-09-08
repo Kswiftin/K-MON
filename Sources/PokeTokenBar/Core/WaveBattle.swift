@@ -350,6 +350,15 @@ struct WaveBattle: Sendable {
     private func targets(of attack: Attack, move: MoveSpec) -> [(isMine: Bool, slot: Int)] {
         let foeSlots = attack.isMine ? livingOpponentSlots : livingMySlots
         let foesAreMine = !attack.isMine
+        // **아군을 지목하는 기술(도우미)은 자기 편에서 자리를 찾는다.** 필드가 2대2 라 아군은
+        // 하나뿐이므로 고른 값을 묻지 않는다 — 화면이 상대 칸만 나열해도 이 기술이 닿는다.
+        // 혼자 남았으면 걸 아군이 없어 실패한다(빈 배열).
+        if move.targetsAlly {
+            let allySlots = (attack.isMine ? livingMySlots : livingOpponentSlots)
+                .filter { $0 != attack.slot }
+            guard let slot = allySlots.first else { return [] }
+            return [(attack.isMine, slot)]
+        }
         guard move.hitsSpread else {
             guard let slot = foeSlots.contains(attack.target) ? attack.target : foeSlots.first
             else { return [] }
@@ -414,8 +423,25 @@ struct WaveBattle: Sendable {
                 if attack.isMine { mine[attackerIndex].pp[attack.moveIndex] -= 1 }
                 else { opponents[attackerIndex].pp[attack.moveIndex] -= 1 }
             }
-            // 공격자와 방어자가 반드시 다른 배열에 있으므로(단일 타겟은 늘 상대편이다) 배열 원소를
-            // 그대로 inout 으로 넘길 수 있다.
+            // **아군에게 거는 기술(도우미)은 둘이 같은 배열에 있다** — 같은 배열의 두 원소를
+            // 동시에 inout 으로 잡으면 배타적 접근 위반이라, 광역기와 같은 모양으로 사본을
+            // 꺼내 돌린다. 쓰는 순서는 방과 같다: 방어측을 먼저, 시전자를 나중에(둘이 같은
+            // 자리인 경우까지 한 규칙으로 덮는다).
+            if target.isMine == attack.isMine {
+                var caster = attack.isMine ? mine[attackerIndex] : opponents[attackerIndex]
+                var ally = attack.isMine ? mine[defenderIndex] : opponents[defenderIndex]
+                events += BattleEngine.applyAttack(attacker: &caster, defender: &ally,
+                                                   attackerActor: attackerActor,
+                                                   defenderActor: defenderActor,
+                                                   move: move, field: &field,
+                                                   attackerTeam: teamSlot(isMine: attack.isMine),
+                                                   defenderTeam: teamSlot(isMine: target.isMine),
+                                                   rng: &rng)
+                writeBack(ally, isMine: target.isMine, index: defenderIndex)
+                writeBack(caster, isMine: attack.isMine, index: attackerIndex)
+                return
+            }
+            // 공격자와 방어자가 다른 배열에 있으면 배열 원소를 그대로 inout 으로 넘길 수 있다.
             if attack.isMine {
                 events += BattleEngine.applyAttack(attacker: &mine[attackerIndex],
                                                    defender: &opponents[defenderIndex],

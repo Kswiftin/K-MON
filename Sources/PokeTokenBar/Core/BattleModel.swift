@@ -288,6 +288,12 @@ struct MoveSpec: Codable, Sendable, Equatable, Identifiable {
     /// `statChanges` 와 같은 이유로 옵셔널이다: 이 키가 없던 시절의 세이브와 구버전 피어에는
     /// 값이 아예 없고, 없으면 **단일 타겟**으로 읽는다(모르는 기술을 광역으로 만들지 않는다).
     var target: String? = nil
+    /// **아군을 지목하는** 기술인가(PokéAPI `target` 이 `ally`). 도우미가 그 부류다.
+    ///
+    /// `targetsUser` 와 갈리는 값이다: 자기에게 거는 기술은 상대를 보지 않지만, 이 부류는 **다른
+    /// 개체**에 효과를 얹는다. 대상을 고르는 자리가 상대 편만 훑으면 이 기술은 영영 아군에게
+    /// 닿지 않는다(필드에 아군이 있는 두 모드에서만 값을 가진다).
+    var targetsAlly: Bool { target == "ally" }
     var drain: Int? = nil
     /// 자기 회복량(PokéAPI `meta.healing`) — **최대 HP 대비 %**. 회복·아침햇살 계열이 50 이다.
     /// `drain` 과 다르다: 저쪽은 넣은 데미지의 비율이라 때려야 회복하고, 이쪽은 데미지와 무관하다.
@@ -1018,6 +1024,9 @@ enum BattleVolatile: String, Codable, Sendable, Equatable, CaseIterable {
     /// 끌어온다. **한 케이스로 접지 않는 이유는 성원의 가루다**: 풀 타입은 가루를 무시하므로
     /// 어느 기술이 걸었는지가 판정을 가른다(하나로 접으면 그 예외를 물을 자리가 없다).
     case followMe, ragePowder, spotlight
+    /// 도우미 — **아군에게** 붙어 그 아군의 이번 턴 기술 위력을 1.5 배로 만든다. 유도 셋과 같은
+    /// 다인전 전용이지만 하는 일이 다르다: 대상을 옮기는 게 아니라 위력을 얹는다.
+    case helpingHand
 
     /// 쇼다운이 쓰는 키 → 이 열거형. 모르는 키는 `nil` 이고, 그 키가 미구현인 사유는
     /// `ShowdownEffectTableTests` 가 동결한다.
@@ -1041,6 +1050,7 @@ enum BattleVolatile: String, Codable, Sendable, Equatable, CaseIterable {
         case "followme":         self = .followMe
         case "ragepowder":       self = .ragePowder
         case "spotlight":        self = .spotlight
+        case "helpinghand":      self = .helpingHand
         default:                 return nil
         }
     }
@@ -1061,7 +1071,7 @@ enum BattleVolatile: String, Codable, Sendable, Equatable, CaseIterable {
              .endure, .destinyBond, .grudge, .substitute, .followMe, .ragePowder:
             return true
         // 스포트라이트만 **남을 지목한다** — 지목된 자리가 이번 턴의 공격을 받는다.
-        case .leechSeed, .nightmare, .curse, .partiallyTrapped, .spotlight:
+        case .leechSeed, .nightmare, .curse, .partiallyTrapped, .spotlight, .helpingHand:
             return false
         }
     }
@@ -1078,7 +1088,7 @@ enum BattleVolatile: String, Codable, Sendable, Equatable, CaseIterable {
         // 인내는 **쓴 턴에만** 산다 — 1 이면 그 턴 끝에 풀린다. 운명공동체·원한은 턴이 아니라
         // 주인의 다음 행동까지 살아야 하므로 0(무기한)이고, 푸는 자리는 `beginAttack` 이다.
         // 유도 셋도 그 턴만 산다 — 무기한이면 한 번 쓴 자리가 배틀 내내 모든 공격을 받는다.
-        case .endure, .followMe, .ragePowder, .spotlight: return 1
+        case .endure, .followMe, .ragePowder, .spotlight, .helpingHand: return 1
         case .aquaRing, .ingrain, .focusEnergy, .minimize, .defenseCurl,
              .leechSeed, .nightmare, .curse, .partiallyTrapped,
              .destinyBond, .grudge, .substitute: return 0
@@ -1095,7 +1105,7 @@ enum BattleVolatile: String, Codable, Sendable, Equatable, CaseIterable {
         case .minimize, .defenseCurl, .charge, .aquaRing, .ingrain,
              .leechSeed, .nightmare, .curse, .partiallyTrapped,
              .endure, .destinyBond, .grudge, .substitute,
-             .followMe, .ragePowder, .spotlight: return 0
+             .followMe, .ragePowder, .spotlight, .helpingHand: return 0
         }
     }
 
@@ -1110,7 +1120,7 @@ enum BattleVolatile: String, Codable, Sendable, Equatable, CaseIterable {
         case .leechSeed, .nightmare, .curse, .partiallyTrapped,
              .focusEnergy, .laserFocus, .minimize, .defenseCurl, .charge,
              .endure, .destinyBond, .grudge, .substitute,
-             .followMe, .ragePowder, .spotlight: return nil
+             .followMe, .ragePowder, .spotlight, .helpingHand: return nil
         }
     }
 
@@ -1125,7 +1135,7 @@ enum BattleVolatile: String, Codable, Sendable, Equatable, CaseIterable {
         case .aquaRing, .ingrain, .leechSeed,
              .focusEnergy, .laserFocus, .minimize, .defenseCurl, .charge,
              .endure, .destinyBond, .grudge, .substitute,
-             .followMe, .ragePowder, .spotlight: return nil
+             .followMe, .ragePowder, .spotlight, .helpingHand: return nil
         }
     }
 
@@ -1139,7 +1149,7 @@ enum BattleVolatile: String, Codable, Sendable, Equatable, CaseIterable {
         case .destinyBond, .grudge: return true
         case .endure, .aquaRing, .ingrain, .leechSeed, .nightmare, .curse, .partiallyTrapped,
              .focusEnergy, .laserFocus, .minimize, .defenseCurl, .charge, .substitute,
-             .followMe, .ragePowder, .spotlight: return false
+             .followMe, .ragePowder, .spotlight, .helpingHand: return false
         }
     }
 
@@ -1150,7 +1160,7 @@ enum BattleVolatile: String, Codable, Sendable, Equatable, CaseIterable {
         case .endure: return true
         case .destinyBond, .grudge, .aquaRing, .ingrain, .leechSeed, .nightmare, .curse,
              .partiallyTrapped, .focusEnergy, .laserFocus, .minimize, .defenseCurl, .charge,
-             .substitute, .followMe, .ragePowder, .spotlight:
+             .substitute, .followMe, .ragePowder, .spotlight, .helpingHand:
             return false
         }
     }
@@ -1164,7 +1174,7 @@ enum BattleVolatile: String, Codable, Sendable, Equatable, CaseIterable {
         case .followMe, .ragePowder, .spotlight: return true
         case .substitute, .endure, .destinyBond, .grudge, .aquaRing, .ingrain, .leechSeed,
              .nightmare, .curse, .partiallyTrapped, .focusEnergy, .laserFocus, .minimize,
-             .defenseCurl, .charge:
+             .defenseCurl, .charge, .helpingHand:
             return false
         }
     }
@@ -1176,7 +1186,7 @@ enum BattleVolatile: String, Codable, Sendable, Equatable, CaseIterable {
         case .ragePowder: return true
         case .followMe, .spotlight, .substitute, .endure, .destinyBond, .grudge, .aquaRing,
              .ingrain, .leechSeed, .nightmare, .curse, .partiallyTrapped, .focusEnergy,
-             .laserFocus, .minimize, .defenseCurl, .charge:
+             .laserFocus, .minimize, .defenseCurl, .charge, .helpingHand:
             return false
         }
     }
@@ -1190,7 +1200,7 @@ enum BattleVolatile: String, Codable, Sendable, Equatable, CaseIterable {
         case .followMe, .ragePowder: return 1
         case .substitute, .endure, .destinyBond, .grudge, .aquaRing, .ingrain, .leechSeed,
              .nightmare, .curse, .partiallyTrapped, .focusEnergy, .laserFocus, .minimize,
-             .defenseCurl, .charge:
+             .defenseCurl, .charge, .helpingHand:
             return 0
         }
     }
@@ -1690,6 +1700,12 @@ enum BattleEngine {
     ///      피어는 그 기술이 턴만 태우므로 같은 판의 HP·상태·랭크가 통째로 갈린다. rng 소비도
     ///      갈린다: 층에 막힌 기술은 2차효과 확률·랭크 확률을 굴리지 않는다. `BattleVolatile` 에
     ///      case 하나(`substitute`)가 늘어 구버전은 그 상태의 이벤트를 디코딩하지 못한다.
+    ///      + 다인전 타겟 유도 넷(따라와·성원·스포트라이트·도우미) — 앞 셋은 상대의 단일 타겟
+    ///      공격을 한 자리로 끌어오고, 도우미는 아군의 이번 턴 위력을 1.5 배로 만든다. 구버전
+    ///      피어는 네 기술이 턴만 태우므로 **누가 맞는지와 데미지가 통째로 갈린다**. 방의 액션
+    ///      검증도 함께 넓어졌다: 자기 지목(자기에게 거는 기술)과 같은 편 지목(도우미)을 받는다 —
+    ///      구버전은 그 액션을 `invalidTarget` 으로 거절한다. `BattleVolatile` 에 case 넷이 늘어
+    ///      구버전은 그 상태의 이벤트를 디코딩하지 못한다.
     static let rulesVersion = 24
 
     /// 연결이 끊긴 배틀의 승패 — 남은 HP **비율**이 앞선 쪽이 이기고, 같으면 `nil`(무효)이다.
@@ -2056,6 +2072,8 @@ enum BattleEngine {
         // 충전은 전기 기술만, 방어태세는 구르기·아이스볼만 두 배로 만든다. **어느 기술인지는
         // 데이터가 답한다**(`ShowdownMoveData`) — 손 목록이면 세대마다 붙는 기술이 조용히 빠진다.
         // 가변위력을 뽑은 **뒤**라서 구르기의 연속 배율까지 함께 두 배가 된다(본가와 같다).
+        // 도우미는 받은 쪽 개체에 붙는다 — 그 개체가 이번 턴에 내는 기술이 1.5 배가 된다.
+        if attacker.has(.helpingHand) { power = power * 3 / 2 }
         if attacker.has(.charge), move.type == .electric { power *= 2 }
         if attacker.has(.defenseCurl), ShowdownMoveData.doubledByDefenseCurl.contains(move.id) {
             power *= 2

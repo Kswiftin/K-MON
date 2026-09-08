@@ -614,7 +614,17 @@ struct MultiplayerBattle: Sendable {
             // **자기에게 거는 기술은 자기를 지목한다**(따라와·대타출동·방어·회복). 그 경우 아래
             // "자기 자신·같은 편은 못 때린다" 규칙이 그대로 걸리면 방에서는 그 기술을 아예 낼 수
             // 없다 — 액션을 보낼 방법이 없어 화면에서 조용히 실패한다.
-            let selfAimed = attacker.side.move(at: action.moveIndex).targetsUser == true
+            let move = attacker.side.move(at: action.moveIndex)
+            let selfAimed = move.targetsUser == true
+            // **아군을 지목하는 기술(도우미)은 같은 편을 고른다** — 반대로 상대를 고르면 실패다.
+            // 개인전은 참가자 하나가 한 편이라 걸 아군이 없고, 그래서 이 부류는 거절된다.
+            if move.targetsAlly {
+                guard mode != .freeForAll, attacker.id != target.id,
+                      attacker.team == target.team, target.isAlive else {
+                    throw MultiplayerBattleError.invalidTarget
+                }
+                continue
+            }
             guard selfAimed || (attacker.id != target.id
                                 && (mode == .freeForAll || attacker.team != target.team)),
                   target.isAlive else {

@@ -298,6 +298,9 @@ struct L {
         case .spotlight:        return t("\(name)에게 스포트라이트가 비쳤다!",
                                          "\(name) was put in the spotlight!",
                                          "\(name)に スポットライトが あたった！")
+        case .helpingHand:      return t("\(name)이(가) 도움을 받았다!",
+                                         "\(name) is ready to help!",
+                                         "\(name)は てだすけを うけた！")
         }
     }
 
@@ -325,6 +328,9 @@ struct L {
         case .spotlight:   return t("스포트라이트가 \(name)에게 공격을 모았다!",
                                     "The spotlight drew the attack onto \(name)!",
                                     "スポットライトが \(name)に こうげきを あつめた！")
+        case .helpingHand: return t("\(name)의 기술에 도움이 실렸다!",
+                                    "\(name)'s move got a helping hand!",
+                                    "\(name)の わざに てだすけが のった！")
         case .substitute:  return t("\(name) 대신 대타가 맞았다!",
                                     "The substitute took the hit for \(name)!",
                                     "\(name)の みがわりが ダメージを うけた！")
@@ -384,6 +390,8 @@ struct L {
         case .spotlight:        return t("\(name)의 스포트라이트가 꺼졌다",
                                          "\(name)'s spotlight faded",
                                          "\(name)の スポットライトが きえた")
+        case .helpingHand:      return t("\(name)의 도움이 끝났다", "\(name)'s helping hand ended",
+                                         "\(name)の てだすけが おわった")
         }
     }
 
