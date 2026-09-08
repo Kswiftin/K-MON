@@ -100,12 +100,6 @@ struct RaidView: View {
             HStack(spacing: 10) {
                 ForEach(RaidTier.allCases, id: \.rawValue) { tier in bossPreview(tier: tier) }
             }
-            // 다음 5★ 시각은 **아침에 공개된다** — 무작위인데 안 알려 주면 마침 접속해 있던
-            // 사람만 참여하게 되고, 그러면 무작위로 둔 이유가 사라진다.
-            if let next = RaidSchedule.nextHatch(after: Date()) {
-                Text("\(l.raidNextHatch) · \(next.formatted(date: .omitted, time: .shortened))")
-                    .font(.caption2).foregroundStyle(.secondary)
-            }
         }
         .padding(9)
         .pokedoroCard()
@@ -182,15 +176,13 @@ struct RaidView: View {
     }
 
     /// 티어는 고를 수 있고 **보스는 못 고른다** — 고르게 두면 모두가 가장 이득인 하나만 판다.
-    /// 5★ 는 부화 창 안에서만 열린다: 예약이 존재하는 이유가 혼자서는 못 여는 티어를 위해
-    /// 사람을 모으는 것이라, 아무 때나 열 수 있으면 예약이 뜻을 잃는다.
+    /// 세 티어 모두 상시 열려 있다(2026-09-08) — 5★ 만 따로 예약 창을 두던 것을 없애고
+    /// 오전/오후 보스 교체를 다른 티어와 함께 타게 했다.
     private var tierPicker: some View {
-        let hatchIsLive = RaidSchedule.activeHatch(at: Date()) != nil
-        let tiers = RaidBoss.adHocTiers + (hatchIsLive ? [RaidBoss.hatchTier] : [])
-        return VStack(alignment: .leading, spacing: 5) {
+        VStack(alignment: .leading, spacing: 5) {
             Text(l.raidTitle).font(.caption).bold()
             HStack(spacing: 6) {
-                ForEach(tiers, id: \.rawValue) { tier in
+                ForEach(RaidTier.allCases, id: \.rawValue) { tier in
                     Button {
                         center.createRaidRoom(tier: tier)
                     } label: {

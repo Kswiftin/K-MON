@@ -177,7 +177,7 @@ final class MultiplayerRoomCenter {
     private var contributionsSettled = false
     /// 이미 알림을 낸 레이드 방 이름 — 브라우저가 같은 목록을 반복해서 주므로 필요하다.
     private(set) var announcedRaidRooms: [String] = []
-    /// 부화 알림을 이미 건 조합(날짜 키 + 토글 상태). 60초 틱이 부르는 자리라 재작업을 막는다.
+    /// 보스 교체 알림을 이미 건 조합(날짜 키 + 토글 상태). 60초 틱이 부르는 자리라 재작업을 막는다.
     private var scheduledHatchKey = ""
 
     private let companion: CompanionStore
@@ -408,12 +408,9 @@ final class MultiplayerRoomCenter {
     // MARK: 레이드 — 방 열기부터 정산까지
 
     /// 오늘의 보스를 상대로 방을 연다. 티어는 사용자가 고른다(보스 자체는 못 고른다).
-    func createRaidRoom(tier: RaidTier, now: Date = Date()) {
-        // **창 검사를 누르는 순간에 한다.** 티어 피커의 렌더 시점 계산만으로는 화면을 열어 둔 채
-        // 45분 창이 지나면 5★ 버튼이 그대로 남아 창 밖에서 5★ 방이 열린다.
-        guard tier != RaidBoss.hatchTier || RaidSchedule.activeHatch(at: now) != nil else {
-            lastError = companion.l.raidHatchClosed; return
-        }
+    /// 세 티어 모두 상시 열려 있다 — 5★ 도 1★·3★ 와 같은 오전/오후 보스 교체를 탄다(2026-09-08,
+    /// 예약 부화 창을 없앤 결정).
+    func createRaidRoom(tier: RaidTier) {
         raidTier = tier
         createRoom(mode: .coopBoss, activity: .raid)
     }
@@ -692,10 +689,11 @@ final class MultiplayerRoomCenter {
         for name in fresh.prefix(1) { postRaidRoomNotification(RaidRoomName.parse(name)) }
     }
 
-    /// 오늘 남은 5★ 부화의 **15분 전 알림**을 건다.
+    /// 다음 두 번의 보스 교체(정오·자정)에 알림을 건다.
     ///
-    /// 이 알림은 선택이 아니다 — 시각이 무작위라 습관이 대신해 주지 못하고, 알림이 없으면
-    /// 마침 화면을 보고 있던 사람만 참여한다. 하루 셋을 두는 이유도 같다(하나를 놓쳐도 둘 남는다).
+    /// 세 티어 모두 상시 열려 있으므로(2026-09-08, 예약 부화 창 폐지) "곧 부화한다"가 아니라
+    /// "보스가 바뀌었다"를 알린다 — 무작위 시각이 사라졌으니 리드타임도 의미가 없다, 교체
+    /// 시각 자체(정오·자정)에 건다.
     ///
     /// 60초 방치 틱이 부른다. 날짜 키와 토글 상태가 그대로면 즉시 빠지므로 실제 작업은 하루 한 번이다
     /// (토글을 키에 넣는 이유: 안 넣으면 오늘 켠 알림이 내일에야 걸린다).
@@ -708,21 +706,39 @@ final class MultiplayerRoomCenter {
         scheduledHatchKey = key
 
         let center = UNUserNotificationCenter.current()
-        let identifiers = (0..<RaidBoss.hatchBlocksPerDay).map { "raid-hatch-\($0)" }
+        let identifiers = (0..<2).map { "raid-hatch-\($0)" }
         // 먼저 지운다 — 안 지우면 토글을 껐다 켤 때마다 같은 시각에 알림이 겹쳐 쌓인다.
         center.removePendingNotificationRequests(withIdentifiers: identifiers)
         guard enabled else { return }
 
-        for (index, reminder) in RaidSchedule.upcomingReminders(after: now).enumerated() {
+        for (index, rotation) in Self.upcomingBossRotations(after: now).enumerated() {
             let content = UNMutableNotificationContent()
-            content.title = companion.l.raidHatchSoonTitle(minutes: RaidSchedule.reminderLeadMinutes)
-            content.body = companion.l.raidHatchSoonBody
+            content.title = companion.l.raidBossRotatedTitle
+            content.body = companion.l.raidBossRotatedBody
             content.sound = .default
             let trigger = UNTimeIntervalNotificationTrigger(
-                timeInterval: max(1, reminder.timeIntervalSince(now)), repeats: false)
+                timeInterval: max(1, rotation.timeIntervalSince(now)), repeats: false)
             center.add(UNNotificationRequest(identifier: "raid-hatch-\(index)",
                                              content: content, trigger: trigger))
         }
+    }
+
+    /// `now` 이후 가장 가까운 보스 교체 시각 둘(정오·자정 중 미래인 것). 항상 정확히 둘을 낸다 —
+    /// 자정 직전이어도 다음 자정과 그다음 정오가 잡혀 알림 개수가 흔들리지 않는다.
+    ///
+    /// `Calendar(identifier:)` 를 매번 새로 만든다 — `TimeZone.current` 가 프로세스 첫 값에
+    /// 캐시되므로(defect-log), 캐시된 시간대를 물려받지 않는 것이 옛 `RaidSchedule.calendar` 와
+    /// 같은 이유다.
+    nonisolated static func upcomingBossRotations(
+        after now: Date, calendar: Calendar = Calendar(identifier: .gregorian)
+    ) -> [Date] {
+        let midnight = calendar.startOfDay(for: now)
+        let candidates: [Date] = (0...2).flatMap { dayOffset -> [Date] in
+            let day = calendar.date(byAdding: .day, value: dayOffset, to: midnight) ?? midnight
+            let noon = calendar.date(byAdding: .hour, value: 12, to: day) ?? day
+            return [day, noon]
+        }
+        return Array(candidates.filter { $0 > now }.sorted().prefix(2))
     }
 
     private func postRaidRoomNotification(_ room: RaidRoomName?) {

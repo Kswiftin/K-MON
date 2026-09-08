@@ -1335,10 +1335,6 @@ struct L {
     var raidPartyWiped: String {
         "파티가 전멸했습니다 — 티어를 낮추거나 사람을 모아 보세요."
     }
-    /// 5★ 는 부화 창 안에서만 열린다.
-    var raidHatchClosed: String {
-        "지금은 5★ 부화 시간이 아닙니다. 다음 부화 시각을 기다려 주세요."
-    }
     var raidHostLeft: String {
         "방장이 나가 레이드가 끝났습니다. 다시 열어 주세요."
     }
@@ -1371,18 +1367,16 @@ struct L {
     var raidCatchFailed: String {
         "보스 정보를 불러오지 못해 데려오지 못했어요 — 오늘 다시 도전할 수 있어요."
     }
-    var raidNextHatch: String { "다음 5★ 부화" }
-    func raidHatchSoonTitle(minutes: Int) -> String {
-        "⏰ \(minutes)분 뒤 5★ 레이드"
-    }
-    var raidHatchSoonBody: String {
+    /// 정오·자정 보스 교체 알림 — 세 티어 모두 상시 열려 있다(2026-09-08, 예약 부화 창 폐지).
+    var raidBossRotatedTitle: String { "⏰ 새 레이드 보스 등장" }
+    var raidBossRotatedBody: String {
         "같은 네트워크의 트레이너와 모일 시간이에요."
     }
     var raidNotificationsLabel: String {
         "레이드 알림"
     }
     var raidNotificationsHint: String {
-        "5★ 부화 15분 전과 근처에서 레이드 방이 열릴 때 알려요."
+        "레이드 보스가 바뀔 때(정오·자정)와 근처에서 레이드 방이 열릴 때 알려요."
     }
 
     var playerGymUpdateRequired: String {
