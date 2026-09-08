@@ -289,10 +289,13 @@ final class RaidRoomTests: XCTestCase {
         XCTAssertEqual(store.creditRaidReward(500), 500)
     }
 
-    /// **회귀 의심**: 위 테스트들은 전부 같은 `CompanionStore` 인스턴스 안에서 시계만 돌린다 —
-    /// 앱을 껐다 켜는(파일에서 다시 읽는) 경로를 아무도 밟지 않는다. 사용자 보고: "레이드 보상을
-    /// 받고 앱을 재시작하면 다시 미완료로 보여 재지급받을 수 있다"(정오/자정은 안 지남).
-    /// 같은 파일 URL·같은 고정 시각으로 두 번째 `CompanionStore` 를 만들어 "재시작"을 흉내 낸다.
+    /// **회귀(2026-09-08)**: `SaveTransfer.maxKeyLength` 가 10 이던 동안, 재시작마다
+    /// `sanitized()` 의 `clampedKey` 가 `RaidBoss.periodKey` 형식("yyyy-MM-dd-am/pm", 13자)의
+    /// "-am"/"-pm" 접미사를 10자로 잘랐다. JSON 파일에는 원본이 그대로 있지만 로드된 값만
+    /// 매번 잘려 `raidRewardClaimedToday` 가 항상 false 로 보였다 — 앱을 껐다 켤 때마다 하루
+    /// 한 번 지급이 무한 재지급됐다. 위 테스트들은 전부 같은 인스턴스 안에서 시계만 돌려 이
+    /// 재로드 경로(`load()` → `sanitized()`)를 아무도 밟지 않았다. 같은 파일 URL·같은 고정
+    /// 시각으로 두 번째 `CompanionStore` 를 만들어 "재시작"을 흉내 낸다.
     @MainActor
     func testRaidRewardSurvivesRestart() {
         let url = storeStateURL("raid-restart")
@@ -301,21 +304,12 @@ final class RaidRoomTests: XCTestCase {
                                    clock: { fixedNow }, fileURL: url, rng: SeededRNG(seed: 7))
         XCTAssertEqual(first.creditRaidReward(500), 500)
         XCTAssertTrue(first.raidRewardClaimedToday, "지급 직후에는 당연히 참이다")
-        let canonicalBeforeSave = SaveTransfer.canonicalString(first.state)
-        let rawSavedFile = (try? String(contentsOf: url, encoding: .utf8)) ?? "<읽기 실패>"
-        print("DIAGNOSTIC canonical(before)=\(canonicalBeforeSave)")
-        print("DIAGNOSTIC raw file=\(rawSavedFile)")
 
         // "재시작" — 같은 파일을 새 인스턴스가 다시 읽는다. 시각은 고정해 오전/오후 경계를
         // 지나지 않았다는 것을 보장한다(경계를 지나면 재지급이 의도된 동작이다).
         let second = CompanionStore(provider: StubProvider(value: stubMaxLevelLine),
                                     clock: { fixedNow }, fileURL: url, rng: SeededRNG(seed: 7))
-        // 진단: 무결성 리셋(resetForTamper)이 원인이면 starPieces 도 0 이 된다 — 원장 필드만
-        // 초기화되는 것과 "전체 리셋"을 구분한다.
-        print("DIAGNOSTIC starPieces=\(second.state.starPieces) raidRewardDate=\(second.state.raidRewardDate)")
-        print("DIAGNOSTIC canonical(after)=\(SaveTransfer.canonicalString(second.state))")
-        XCTAssertEqual(second.state.starPieces, 500,
-                       "starPieces 도 사라졌다면 전체 리셋(무결성 조작 판정)이 원인이다")
+        XCTAssertEqual(second.state.starPieces, 500, "지급된 재화 자체는 재시작으로 사라지지 않는다")
         XCTAssertTrue(second.raidRewardClaimedToday,
                       "재시작 후에도 오늘 이미 받았다는 사실이 유지돼야 한다 — 안 그러면 앱을 껐다 켤 때마다 재지급된다")
         XCTAssertEqual(second.creditRaidReward(500), 0, "재시작 후 재도전해도 이미 받은 날은 0이어야 한다")
