@@ -289,6 +289,43 @@ final class RaidRoomTests: XCTestCase {
         XCTAssertEqual(store.creditRaidReward(500), 500)
     }
 
+    /// **회귀 의심**: 위 테스트들은 전부 같은 `CompanionStore` 인스턴스 안에서 시계만 돌린다 —
+    /// 앱을 껐다 켜는(파일에서 다시 읽는) 경로를 아무도 밟지 않는다. 사용자 보고: "레이드 보상을
+    /// 받고 앱을 재시작하면 다시 미완료로 보여 재지급받을 수 있다"(정오/자정은 안 지남).
+    /// 같은 파일 URL·같은 고정 시각으로 두 번째 `CompanionStore` 를 만들어 "재시작"을 흉내 낸다.
+    @MainActor
+    func testRaidRewardSurvivesRestart() {
+        let url = storeStateURL("raid-restart")
+        let fixedNow = Date(timeIntervalSince1970: 1_755_000_000)
+        let first = CompanionStore(provider: StubProvider(value: stubMaxLevelLine),
+                                   clock: { fixedNow }, fileURL: url, rng: SeededRNG(seed: 7))
+        XCTAssertEqual(first.creditRaidReward(500), 500)
+        XCTAssertTrue(first.raidRewardClaimedToday, "지급 직후에는 당연히 참이다")
+
+        // "재시작" — 같은 파일을 새 인스턴스가 다시 읽는다. 시각은 고정해 오전/오후 경계를
+        // 지나지 않았다는 것을 보장한다(경계를 지나면 재지급이 의도된 동작이다).
+        let second = CompanionStore(provider: StubProvider(value: stubMaxLevelLine),
+                                    clock: { fixedNow }, fileURL: url, rng: SeededRNG(seed: 7))
+        XCTAssertTrue(second.raidRewardClaimedToday,
+                      "재시작 후에도 오늘 이미 받았다는 사실이 유지돼야 한다 — 안 그러면 앱을 껐다 켤 때마다 재지급된다")
+        XCTAssertEqual(second.creditRaidReward(500), 0, "재시작 후 재도전해도 이미 받은 날은 0이어야 한다")
+    }
+
+    /// 포획도 같은 부류다 — 지급과 별도 원장이지만 재시작 지속성 요건은 같다.
+    @MainActor
+    func testRaidCatchSurvivesRestart() {
+        let url = storeStateURL("raid-catch-restart")
+        let fixedNow = Date(timeIntervalSince1970: 1_755_000_000)
+        let first = CompanionStore(provider: StubProvider(value: stubMaxLevelLine),
+                                   clock: { fixedNow }, fileURL: url, rng: SeededRNG(seed: 7))
+        XCTAssertTrue(first.claimRaidCatch())
+
+        let second = CompanionStore(provider: StubProvider(value: stubMaxLevelLine),
+                                    clock: { fixedNow }, fileURL: url, rng: SeededRNG(seed: 7))
+        XCTAssertTrue(second.raidCatchClaimedToday, "재시작 후에도 오늘 이미 잡았다는 사실이 유지돼야 한다")
+        XCTAssertFalse(second.claimRaidCatch(), "재시작 후 재도전해도 이미 잡은 날은 다시 못 잡아야 한다")
+    }
+
     /// 0 이하는 원장을 소모하지 않는다 — 안 그러면 진 판이 그날의 지급 기회를 태운다.
     @MainActor
     func testALostRaidDoesNotBurnTheDailyPayout() {
