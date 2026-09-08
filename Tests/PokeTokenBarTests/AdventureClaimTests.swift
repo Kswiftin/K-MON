@@ -93,6 +93,30 @@ final class AdventureClaimTests: XCTestCase {
         XCTAssertEqual(store.ownedMons.first(where: { $0.id == second.id })?.levelExperience, shared)
     }
 
+    /// **사용자 보고**: "모험파티 1번은 지금 선택한 포켓몬 고정인데 다른걸로 선택 바꾸면 하나씩
+    /// 밀리는 구조" — 활성 파트너를 박스 개체로 교체(`switchCompanion`)하면 2~6번 예비가 그대로
+    /// 유지되고 1번만 새 활성으로 바뀌어야 한다. `homePartyIDs` 는 `setHomeParty` 에서만 쓰이므로
+    /// `switchCompanion` 이 이걸 안 건드리면 이론적으로는 안전한데, 실제로 그런지 재로 확인한다.
+    func testSwitchingActiveCompanionKeepsTheRestOfTheHomeParty() async {
+        let clock = TestClock()
+        let store = await hatchedStore(clock)
+        let leadID = try! XCTUnwrap(store.activeMonID)
+        let reserveX = MonState(baseID: 21, pathIDs: [21], stageIndex: 0, usedAtStage: 0,
+                                rarity: .common, totalForms: 1)
+        let reserveY = MonState(baseID: 22, pathIDs: [22], stageIndex: 0, usedAtStage: 0,
+                                rarity: .common, totalForms: 1)
+        let newActive = MonState(baseID: 23, pathIDs: [23], stageIndex: 0, usedAtStage: 0,
+                                 rarity: .common, totalForms: 1)
+        store.debugSetBoxedMons([reserveX, reserveY, newActive])
+        store.setHomeParty([reserveX.id, reserveY.id])
+        XCTAssertEqual(store.homeParty.map(\.id), [leadID, reserveX.id, reserveY.id])
+
+        store.switchCompanion(to: newActive.id)
+
+        XCTAssertEqual(store.homeParty.map(\.id), [newActive.id, reserveX.id, reserveY.id],
+                       "활성을 바꿔도 2~6번 예비는 그대로 유지돼야 한다")
+    }
+
     func testHomePartyAlwaysKeepsActiveFirstAndRejectsMissingOrDuplicateIDs() async {
         let clock = TestClock()
         let store = await hatchedStore(clock)

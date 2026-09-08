@@ -1245,7 +1245,9 @@ struct CompanionState: Codable, Sendable {
     // 현재 포켓몬(없으면 알)
     var active: MonState?
     var boxedMons: [MonState] = []
-    /// 홈 모험 파티. 첫 슬롯은 항상 활성 파트너이며 나머지 다섯 슬롯만 사용자가 고른다.
+    /// 홈 모험 파티의 **예비** 자리(2~6번, 최대 다섯)만 담는다 — 활성(1번)은 여기 안 담는다
+    /// (`CompanionStore.homeParty`/`setHomeParty` 주석). 활성을 같이 담으면 활성이 바뀐 뒤
+    /// 예전 활성 id 가 예비로 오인돼 나머지가 밀린다.
     var homePartyIDs: [UUID] = []
     /// 즐겨찾기한 개체 ID — 놓아주기·경매 출품을 막는 자물쇠.
     ///
