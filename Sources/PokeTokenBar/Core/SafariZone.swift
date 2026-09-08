@@ -76,16 +76,41 @@ enum SafariZone {
         let rare: [Int]
     }
 
-    /// placeholder 큐레이션 — 실제 라인업은 별도로 확정한다. 존 테마에 맞는 종으로 자리만
-    /// 채운다(초원: 벌레·노멀, 습지: 물, 동굴: 바위·땅).
+    /// 존 테마에 맞춘 라인업(초원: 벌레·노멀·풀, 습지: 물, 동굴: 바위·땅·독) — 존당 30종
+    /// (일반·고급·희귀 정확히 10종씩), 1~9세대를 고루 담되 6~9세대(오픈한 지 얼마 안 된 세대)
+    /// 비중을 의식적으로 늘렸다. 미진화체를 넣어도 안전하다 — `CompanionStore.commitCaughtMon`
+    /// 은 `pathIDs: [speciesID], totalForms: 1` 로 잡은 개체를 만들지만, 그 개체가 동행으로
+    /// 오르면 `loadCurrentLine()` → `normalizedEvolutionState()` 가 실제 진화 트리를 기준으로
+    /// `pathIDs`/`totalForms`/`plannedPathIDs` 를 다시 계산한다(레이드가 체인 중간에서 잡은
+    /// 개체·위장 메타몽 리빌을 다루려고 이미 갖고 있던 범용 복구 로직이라, 여기도 같은 경로를
+    /// 그대로 탄다). 레이드 풀(`RaidBoss.swift`)과 겹치지 않게 골랐다.
+    ///
+    /// **등급은 진화 단계·capture_rate 가 아니라 종족값 총합(BST) 기준으로 매겼다.**
+    /// `capture_rate`(`Rarity.captureRateCeiling`, `CompanionModel.swift`)는 본가에서 "그 폼
+    /// 그대로 필드에 얼마나 흔히 나타나는가" 를 뜻하는데, 이 게임엔 사파리존 전까지 그런 "필드
+    /// 조우 밀도" 개념 자체가 없었다(알은 항상 baseID 로 부화, 레이드는 그날 정해진 특정 개체) —
+    /// 그 수치로 니드킹·퍼퓨돈 같은 흔한 최종진화체까지 희귀로 몰렸다. 대신 레이드 티어별 BST 를
+    /// 조사하니 레이드에 뽑히는 종은 전부 BST 500 이상이라는 뚜렷한 하한이 있어("이 게임에서
+    /// 특별하게 느껴지는 종" 을 BST 가 훨씬 잘 설명한다), 사파리존 90종을 PokéAPI 로 전수조사해
+    /// BST 오름차순 순위 10번째·20번째를 그대로 등급 경계로 썼다(레이드 500+ 보다 낮은 대역에서
+    /// 사파리존 자체의 상위권을 가른다). 전설(`is_legendary`/`is_mythical`)은 전수조사에서 0종.
     private static func gradePools(for zone: ZoneID) -> GradePools {
         switch zone {
         case .grassland:
-            return GradePools(common: [10, 16], uncommon: [133], rare: [128])
+            return GradePools(
+                common: [10, 13, 161, 659, 263, 396, 16, 915, 504, 731],
+                uncommon: [133, 918, 666, 162, 735, 505, 651, 723, 811, 907],
+                rare: [660, 733, 128, 115, 862, 652, 908, 826, 763, 738])
         case .wetland:
-            return GradePools(common: [129, 60], uncommon: [55], rare: [131])
+            return GradePools(
+                common: [746, 129, 270, 960, 60, 98, 170, 656, 728, 816],
+                uncommon: [72, 120, 961, 171, 99, 845, 847, 657, 729, 817],
+                rare: [537, 658, 730, 818, 914, 977, 882, 902, 883, 768])
         case .cave:
-            return GradePools(common: [41, 74], uncommon: [66], rare: [95])
+            return GradePools(
+                common: [41, 524, 744, 74, 66, 843, 304, 769, 848, 837],
+                uncommon: [408, 696, 95, 75, 185, 950, 770, 745, 409, 749],
+                rare: [844, 839, 526, 949, 697, 699, 306, 750, 703, 970])
         }
     }
 
