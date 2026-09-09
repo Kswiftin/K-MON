@@ -48,6 +48,19 @@ struct SafariFieldView: View {
                 Text(l.safariZoneNoMoreCatchesTodayBanner)
                     .font(.caption2).foregroundStyle(.secondary)
             }
+            if let caughtIDs = store.safariVisit?.caughtSpeciesIDs, !caughtIDs.isEmpty {
+                caughtRow(caughtIDs)
+            }
+        }
+    }
+
+    /// 이번 방문에서 잡은 포켓몬을 걷기 화면에도 보여준다 — 조우 화면에서만 잠깐 보고 마는 대신
+    /// 계속 확인할 수 있게.
+    private func caughtRow(_ speciesIDs: [Int]) -> some View {
+        HStack(spacing: 2) {
+            ForEach(Array(speciesIDs.enumerated()), id: \.offset) { _, speciesID in
+                SpriteView(speciesID: speciesID, size: 20, shiny: false)
+            }
         }
     }
 

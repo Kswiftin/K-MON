@@ -175,6 +175,10 @@ struct SafariEncounter: Sendable, Codable, Equatable {
     /// 조우가 끝났을 때만 값이 있다. 진행 중에는 `nil` — 끝난 조우를 별도 Bool 로 표시하지 않고
     /// "결과가 있으면 끝난 것"으로 표현해 두 값이 어긋날 여지를 없앤다.
     private(set) var outcome: SafariOutcome?
+    /// 가장 최근 미끼/진흙 사용에서 부작용(90%)이 실제로 일어났는지 — 로그 문구가 정확한 효과를
+    /// 보여주기 위해서다. 볼/도망에는 의미가 없어 그 액션들에서는 매번 `nil` 로 되돌린다("이전
+    /// 액션의 부작용 값이 이번 액션 로그에 잘못 새어 들어가는" 부류를 원천 차단).
+    private(set) var lastSideEffect: Bool?
 
     init(speciesID: Int, rarity: Rarity) {
         self.speciesID = speciesID
@@ -192,17 +196,19 @@ struct SafariEncounter: Sendable, Codable, Equatable {
         if let outcome { return outcome }
         switch action {
         case .run:
+            lastSideEffect = nil
             outcome = .ranAway
             return .ranAway
         case .ball:
+            lastSideEffect = nil
             if rollsCatch(rng: &rng) {
                 outcome = .caught
                 return .caught
             }
         case .bait:
-            applyBait(rng: &rng)
+            lastSideEffect = applyBait(rng: &rng)
         case .mud:
-            applyMud(rng: &rng)
+            lastSideEffect = applyMud(rng: &rng)
         }
         // 볼 실패·미끼·진흙은 여기까지 온다 — 그 턴이 소비됐으므로 도망 판정을 돈다.
         // 도망을 직접 고르거나(.run) 볼로 잡으면(.caught) 위에서 이미 반환해 여기 안 온다.
@@ -219,19 +225,26 @@ struct SafariEncounter: Sendable, Codable, Equatable {
     }
 
     /// 포획률 +1단계, 90% 확률로 도망률도 +1단계(부작용) — 그레이트 마쉬 원본 규칙.
-    private mutating func applyBait(rng: inout SplitMix64) {
+    /// 부작용이 실제로 일어났는지를 돌려준다 — 로그가 정확한 효과를 보여주는 데 쓴다.
+    @discardableResult
+    private mutating func applyBait(rng: inout SplitMix64) -> Bool {
         catchStage = min(SafariZone.stageRange.upperBound, catchStage + 1)
-        if Int(rng.next() % 100) < 90 {
+        let triggered = Int(rng.next() % 100) < 90
+        if triggered {
             fleeStage = min(SafariZone.stageRange.upperBound, fleeStage + 1)
         }
+        return triggered
     }
 
     /// 도망률 -1단계, 90% 확률로 포획률도 -1단계(부작용) — 그레이트 마쉬 원본 규칙.
-    private mutating func applyMud(rng: inout SplitMix64) {
+    @discardableResult
+    private mutating func applyMud(rng: inout SplitMix64) -> Bool {
         fleeStage = max(SafariZone.stageRange.lowerBound, fleeStage - 1)
-        if Int(rng.next() % 100) < 90 {
+        let triggered = Int(rng.next() % 100) < 90
+        if triggered {
             catchStage = max(SafariZone.stageRange.lowerBound, catchStage - 1)
         }
+        return triggered
     }
 
     private func rollsCatch(rng: inout SplitMix64) -> Bool {
