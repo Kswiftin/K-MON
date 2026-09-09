@@ -907,7 +907,13 @@ final class CompanionStore {
     /// 분기 후보는 부화 시 계획됐더라도 실제 진화 전까지 하나의 미지 항목으로 숨긴다.
     var lineNodes: [EvoLineItem] {
         guard let a = state.active, let line = currentLine else { return [] }
-        var out = Self.realizedLineItems(pathIDs: a.pathIDs, stageIndex: a.stageIndex)
+        // 안 거친 앞 단계도 뿌리부터 붙인다(표시 전용). 사파리존·레이드는 체인 중간·끝을 그대로
+        // 잡으므로 `pathIDs` 가 뿌리에서 시작하지 않는다 — 그 경로만 그리면 나로테를 잡은 화면이
+        // 나오하를 아예 안 보여 준다. `pathIDs` 는 건드리지 않는다: 레벨·졸업·도감이 그 값을 읽고,
+        // 뿌리로 되돌리면 잡은 그 모습이 1단계로 바뀐다(`longestValidPath` 의 계약).
+        var out = Self.ancestorIDs(of: a.pathIDs.first ?? a.currentID, in: line.tree)
+            .map { EvoLineItem(.species($0), .unreached) }
+        out += Self.realizedLineItems(pathIDs: a.pathIDs, stageIndex: a.stageIndex)
         if let current = line.tree.node(withID: a.currentID) {
             var node = current
             var guaranteedPrefix: [EvoNode] = []
@@ -924,6 +930,18 @@ final class CompanionStore {
             }
         }
         return out
+    }
+
+    /// 트리 뿌리부터 `speciesID` **바로 앞**까지의 조상 종. 그 종이 뿌리이거나 트리에 없으면 빈 배열.
+    static func ancestorIDs(of speciesID: Int, in tree: EvoNode) -> [Int] {
+        func trail(to node: EvoNode, from ancestors: [Int]) -> [Int]? {
+            if node.speciesID == speciesID { return ancestors }
+            for child in node.children {
+                if let hit = trail(to: child, from: ancestors + [node.speciesID]) { return hit }
+            }
+            return nil
+        }
+        return trail(to: tree, from: []) ?? []
     }
 
     static func realizedLineItems(pathIDs: [Int], stageIndex: Int) -> [EvoLineItem] {
