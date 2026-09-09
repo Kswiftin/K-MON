@@ -184,6 +184,88 @@ enum PokopiaTown {
             .map(\.1)
     }
 
+    // MARK: - 복합 서식지 (두 서식이 맞닿으면 2타입 종을 먼저 부른다)
+
+    /// 복합 서식지 한 조합. 원작의 "나무 그늘의 풀숲 = 큰 나무 + 초록 풀" 을 격자로 접은 것이다 — 두 지형이
+    /// 다 문턱을 넘고 **맞닿아** 있으면 성립한다. **표는 `compositeRecipes` 하나다.**
+    ///
+    /// 성립 규칙은 대칭이라 `first`·`second` 의 순서는 판정에 뜻이 없다. 화면의 견본 순서와 문장의 타입 순서만
+    /// 이 순서를 따른다.
+    struct CompositeRecipe: Equatable, Identifiable {
+        let name: String
+        let first: TownTerrain
+        let second: TownTerrain
+        /// 이름이 곧 id 다 — 겹치면 현황표 두 줄이 하나로 접힌다(`ForEach` 는 id 가 겹치면 조용히 하나만 그린다).
+        /// `testCompositeRecipesAreWellFormed` 가 유일성을 센다.
+        var id: String { name }
+    }
+
+    /// 복합 서식지 조합표. **여덟 지형이 전부 한 번 이상 든다**(테스트가 센다) — 빠진 지형은 어떤 조합에도 못 끼는
+    /// 채 남는다. 원작 250종은 옮기지 않는다: 표가 화면에 안 들어간다. 조합을 더하는 것은 이 배열 한 줄이다.
+    ///
+    /// 각 조합이 부르는 것은 `typesMaking(first) × typesMaking(second)` 의 **두 타입을 함께 가진 종**이다. 그런 기본형이
+    /// 실제 PokéAPI 에 있는지는 여기서 알 수 없다(타입표는 네트워크에서 온다) — 없는 조합은 화면에 "성립" 이 떠도
+    /// 아무도 먼저 오지 않는 빈 약속이 된다. 설계 문서의 표가 조합마다 예시 종을 적어 두었다.
+    static let compositeRecipes: [CompositeRecipe] = [
+        .init(name: "물가 나무",     first: .water,  second: .tree),
+        .init(name: "연못 풀숲",     first: .water,  second: .grass),
+        .init(name: "꽃밭 물가",     first: .flower, second: .water),
+        .init(name: "나무 그늘 풀숲", first: .tree,   second: .grass),
+        .init(name: "꽃 핀 풀밭",    first: .flower, second: .grass),
+        .init(name: "모래 언덕",     first: .sand,   second: .soil),
+        .init(name: "흙 벼랑",       first: .soil,   second: .tree),
+        .init(name: "길가 바위",     first: .path,   second: .rock),
+    ]
+
+    /// 조합 하나의 현황. `HabitatStatus` 와 같은 자리다 — 화면·이사 판정이 같은 값을 읽는다.
+    struct CompositeStatus: Equatable, Identifiable {
+        let recipe: CompositeRecipe
+        /// 두 지형이 다 문턱을 넘었는가(`HabitatStatus.isWelcoming` 과 같은 판정).
+        let bothWelcoming: Bool
+        /// 두 지형이 상하좌우로 맞닿은 칸 쌍이 하나라도 있는가.
+        let touching: Bool
+        var id: String { recipe.id }
+        var isFormed: Bool { bothWelcoming && touching }
+    }
+
+    /// 두 지형이 **상하좌우**로 맞닿은 칸 쌍이 하나라도 있는가. 대각선은 맞닿음이 아니다. 인자 순서는 답을 바꾸지 않는다.
+    ///
+    /// **가장자리를 감싸지 않는다.** 평탄 배열에서 15번과 16번은 이웃 첨자지만 화면에서는 오른쪽 끝과 다음 줄 왼쪽 끝이다 —
+    /// `here + 1` 로 이웃을 세면 반대편 끝의 물과 나무가 "맞닿은" 것으로 읽힌다. 이웃 좌표는 전부 `index(col:row:)` 를
+    /// 지나고, 그 함수가 범위 밖을 nil 로 거절하는 것이 근거다.
+    ///
+    /// 길이가 틀린 지형(잘린 세이브)은 격자가 아니라 맞닿음도 없다 — 이 가드 덕에 아래 첨자는 전부 안전하다.
+    static func touches(_ a: TownTerrain, _ b: TownTerrain, in terrain: [TownTerrain]) -> Bool {
+        guard terrain.count == tileCount else { return false }
+        for here in terrain.indices {
+            let (col, row) = (here % columns, here / columns)
+            // 오른쪽·아래만 본다 — 왼쪽·위는 그 칸이 자기 차례에 본다.
+            for next in [index(col: col + 1, row: row), index(col: col, row: row + 1)].compactMap({ $0 }) {
+                let pair = (terrain[here], terrain[next])
+                if pair == (a, b) || pair == (b, a) { return true }
+            }
+        }
+        return false
+    }
+
+    /// 조합 여덟의 현황. **성립한 것을 위로**, 그 안에서는 표 순서다 — `habitats(_:)` 와 같은 이유로 순회 순서에 맡기지 않는다.
+    static func compositeHabitats(_ terrain: [TownTerrain]) -> [CompositeStatus] {
+        let counts = tileCounts(terrain)
+        return compositeRecipes.enumerated()
+            .map { order, recipe in
+                (order, CompositeStatus(
+                    recipe: recipe,
+                    bothWelcoming: counts[recipe.first, default: 0] >= habitatThreshold
+                        && counts[recipe.second, default: 0] >= habitatThreshold,
+                    touching: touches(recipe.first, recipe.second, in: terrain)))
+            }
+            .sorted { left, right in
+                if left.1.isFormed != right.1.isFormed { return left.1.isFormed }
+                return left.0 < right.0
+            }
+            .map(\.1)
+    }
+
     // MARK: - 마을 개발도 · 환경 레벨 (지형 다양성이 정원을, 정착이 마지막 레벨을 연다)
 
     /// 지형 한 종이 문턱을 넘을 때 열리는 주민 자리. **8종 × 2 = 16 = `populationLimit`** 이
@@ -254,6 +336,11 @@ enum PokopiaTown {
     ///
     /// 후보가 없으면 nil 이고, **그때도 호출부는 굴림을 소비해야 한다** — 조건부로 굴리면
     /// 같은 시드가 마을 상태에 따라 다른 미래를 낸다.
+    ///
+    /// **복합 서식지는 순서만 바꾼다.** 성립한 조합(`compositeHabitats`)의 두 지형을 모두 만드는 종이 후보에
+    /// 남아 있으면 그중에서 뽑고, 없으면 후보 전체에서 뽑는다. 복합 후보는 늘 단일 후보의 **부분집합**이다 —
+    /// 두 지형이 다 문턱을 넘었으니 그 타입은 이미 부르는 타입이다. 그래서 "후보를 더한다" 가 아니라 "먼저 뽑는다" 이고,
+    /// 정원(`capacity`)·굴림 소비는 건드리지 않는다.
     static func immigrant(terrain: [TownTerrain], pool: [Int],
                           typeIndex: [Int: [PokemonType]],
                           residents: [TownResident], roll: UInt64) -> Int? {
@@ -264,12 +351,24 @@ enum PokopiaTown {
         let welcoming = welcomingTypes(terrain)
         guard !welcoming.isEmpty else { return nil }
         let living = Set(residents.map(\.speciesID))
-        let candidates = pool.filter { id in
-            guard !living.contains(id) else { return false }
-            return typeIndex[id]?.contains(where: { welcoming.contains($0) }) ?? false
-        }.sorted()
+        // 단일 서식 — 안 사는 종 · 타입표에 있는 종 · 타입 하나라도 부르는 지형이 있는 종. 판정은 전과 같고, 타입을
+        // **함께 들고 가는 것**만 바뀌었다: 아래 복합 판정이 같은 값을 읽는다. 여기서 버리고 다시 조회하면 `?? []` 폴백이
+        // 생기고 그 분기는 절대 돌지 않는다(`welcomingTypes` 주석의 `^0` 부류).
+        let candidates = pool.compactMap { id -> (id: Int, types: [PokemonType])? in
+            guard !living.contains(id), let types = typeIndex[id],
+                  types.contains(where: { welcoming.contains($0) }) else { return nil }
+            return (id, types)
+        }.sorted { $0.id < $1.id }
         guard !candidates.isEmpty else { return nil }
-        return candidates[Int(roll % UInt64(candidates.count))]
+        // 복합 서식 — 성립한 조합의 두 지형을 **모두** 만드는 종이 남아 있으면 그중에서 먼저 뽑는다. 단일 후보는 그대로
+        // 남는다: 복합 후보가 없을 때(미성립 · 그 종이 다 왔음) 그리로 떨어진다.
+        let formed = compositeHabitats(terrain).filter(\.isFormed).map(\.recipe)
+        let preferred = candidates.filter { candidate in
+            let homes = homeTerrains(of: candidate.types)
+            return formed.contains { homes.contains($0.first) && homes.contains($0.second) }
+        }
+        let draw = preferred.isEmpty ? candidates : preferred
+        return draw[Int(roll % UInt64(draw.count))].id
     }
 
     // MARK: - 변신 = 브러시
@@ -304,16 +403,20 @@ enum PokopiaTown {
         return (col: index % columns, row: index / columns)
     }
 
-    /// 주민의 타입들이 만드는 지형. **`types` 순서를 지키고 중복을 뺀다** — 땅·바위 종은 둘 다
-    /// 흙이라 하나다. `Set` 을 쓰면 순서가 실행마다 바뀌어 `settledTerrain` 의 답이 흔들린다.
-    static func homeTerrains(_ resident: TownResident) -> [TownTerrain] {
+    /// 타입 목록이 만드는 지형. **순서를 지키고 중복을 뺀다** — 땅·바위 종은 둘 다 흙이라 하나다.
+    /// `Set` 을 쓰면 순서가 실행마다 바뀌어 `settledTerrain` 의 답이 흔들린다.
+    /// 주민(`homeTerrains(_:)`)과 이사 후보(`immigrant` 의 복합 판정)가 **같은 사상**을 읽는다 — 두 번 적으면 어긋난다.
+    static func homeTerrains(of types: [PokemonType]) -> [TownTerrain] {
         var out: [TownTerrain] = []
-        for type in resident.types {
+        for type in types {
             let tile = terrain(for: type)
             if !out.contains(tile) { out.append(tile) }
         }
         return out
     }
+
+    /// 주민의 타입들이 만드는 지형. `homeTerrains(of:)` 를 주민의 타입으로 부른다.
+    static func homeTerrains(_ resident: TownResident) -> [TownTerrain] { homeTerrains(of: resident.types) }
 
     /// 주민을 **정착시킨 지형** — 자기 지형 중 문턱을 넘은 첫 것. `nil` 이면 자리를 잃은 주민이다.
     /// 자리(`residentSpot`)·정착(`isSettled`)·문구(`PokopiaTownLife`)·주민 줄(`residentRow`)이
