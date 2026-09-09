@@ -287,6 +287,39 @@ final class PokopiaTownTests: XCTestCase {
                        "타입 없는 주민은 만족을 판정할 수 없다")
     }
 
+    /// 2타입 종은 **두 번째 타입만으로도** 정착한다. 첫 타입 지형은 0칸이어야 한다 — 6칸이 있으면
+    /// 첫 타입이 정착시킨 것과 구별되지 않아, 이 분기는 통과만 하고 아무것도 지키지 않는다.
+    func testATwoTypeResidentSettlesOnItsSecondTypeAlone() throws {
+        let gull = resident(278, [.water, .flying])                     // 물·비행 — 물→물, 비행→나무
+        let woods = town(.tree, count: PokopiaTown.habitatThreshold)     // 물 0칸, 나무 6칸
+        XCTAssertEqual(PokopiaTown.tileCounts(woods)[.water, default: 0], 0,
+                       "첫 타입 지형이 있으면 이 테스트는 아무것도 못 가른다")
+        XCTAssertTrue(PokopiaTown.isSettled(gull, terrain: woods))
+        XCTAssertEqual(PokopiaTown.settledTerrain(gull, terrain: woods), .tree)
+        let spot = PokopiaTown.residentSpot(gull, terrain: woods, dayKey: "2026-09-09")
+        let index = try XCTUnwrap(PokopiaTown.index(col: spot.col, row: spot.row))
+        XCTAssertEqual(woods[index], .tree, "정착시킨 지형 위에 서지 않았다")
+    }
+
+    /// 둘 다 넘었으면 `types` 순서의 첫 것이다 — `Set` 으로 바꾸면 재시작마다 답이 갈린다.
+    func testSettledTerrainPrefersTheFirstTypeWhenBothQualify() {
+        var terrain = town(.water, count: PokopiaTown.habitatThreshold)
+        for index in PokopiaTown.habitatThreshold..<(PokopiaTown.habitatThreshold * 2) {
+            terrain[index] = .tree
+        }
+        XCTAssertEqual(PokopiaTown.settledTerrain(resident(278, [.water, .flying]), terrain: terrain), .water)
+        XCTAssertEqual(PokopiaTown.settledTerrain(resident(278, [.flying, .water]), terrain: terrain), .tree)
+    }
+
+    /// 같은 지형을 만드는 두 타입(땅·바위 → 흙)은 지형 하나다. 호출부 둘(`residentSpot` 의 `contains`,
+    /// `settledTerrain` 의 `first`)은 중복을 보지 않지만, 반환값은 "자기 지형 목록" 이라 흙이 두 번
+    /// 들어가면 목록 자체가 거짓이다.
+    func testHomeTerrainsDedupesTypesThatShareATerrain() {
+        XCTAssertEqual(PokopiaTown.homeTerrains(resident(74, [.rock, .ground])), [.soil])
+        XCTAssertEqual(PokopiaTown.homeTerrains(resident(278, [.water, .flying])), [.water, .tree])
+        XCTAssertEqual(PokopiaTown.homeTerrains(resident(1, [])), [])
+    }
+
     // MARK: 신뢰경계
 
     /// 세이브·전송에서 온 못 믿을 값 전부를 한 번에 본다. **인자가 없다** — 주민이 소유 개체가

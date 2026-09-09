@@ -259,10 +259,10 @@ enum PokopiaTown {
 
     // MARK: - 주민 자리 (파생)
 
-    /// 주민이 오늘 서 있는 칸. **자기 타입이 부르는 지형 위**를 고른다 — 물 타입이 모래에 서
+    /// 주민이 오늘 서 있는 칸. **자기 타입들이 부르는 지형 위**를 고른다 — 물 타입이 모래에 서
     /// 있으면 "이 마을이 마음에 들어서 왔다" 가 화면에서 거짓이 된다.
     ///
-    /// 그 지형이 마을에 없으면(사용자가 없앴다) 길 줄을 뺀 격자 전체에서 고른다 —
+    /// 그 지형들이 모두 마을에 없으면(사용자가 없앴다) 길 줄을 뺀 격자 전체에서 고른다 —
     /// 주민을 화면에서 지우지 않는다. 자동 퇴거는 사용자가 이해할 수 없는 상실이다.
     ///
     /// **저장 필드가 없다.** `hashValue` 를 쓸 수 없다: Swift 해시는 프로세스마다 시드가 달라
@@ -271,21 +271,39 @@ enum PokopiaTown {
     static func residentSpot(_ resident: TownResident, terrain: [TownTerrain],
                              dayKey: String) -> (col: Int, row: Int) {
         let seed = "\(resident.speciesID)-\(dayKey)".unicodeScalars.reduce(0) { $0 + Int($1.value) }
-        let preferred = resident.types.first.map(Self.terrain(for:))
-        let onPreferred = residentSpotIndices.filter { index in
-            guard let preferred, terrain.indices.contains(index) else { return false }
-            return terrain[index] == preferred
+        let homes = homeTerrains(resident)
+        let onHome = residentSpotIndices.filter { index in
+            terrain.indices.contains(index) && homes.contains(terrain[index])
         }
         // `residentSpotIndices` 는 176칸이라 비지 않는다 — 0으로 나누는 길이 없다.
-        let pool = onPreferred.isEmpty ? residentSpotIndices : onPreferred
+        let pool = onHome.isEmpty ? residentSpotIndices : onHome
         let index = pool[seed % pool.count]
         return (col: index % columns, row: index / columns)
     }
 
+    /// 주민의 타입들이 만드는 지형. **`types` 순서를 지키고 중복을 뺀다** — 땅·바위 종은 둘 다
+    /// 흙이라 하나다. `Set` 을 쓰면 순서가 실행마다 바뀌어 `settledTerrain` 의 답이 흔들린다.
+    static func homeTerrains(_ resident: TownResident) -> [TownTerrain] {
+        var out: [TownTerrain] = []
+        for type in resident.types {
+            let tile = terrain(for: type)
+            if !out.contains(tile) { out.append(tile) }
+        }
+        return out
+    }
+
+    /// 주민을 **정착시킨 지형** — 자기 지형 중 문턱을 넘은 첫 것. `nil` 이면 자리를 잃은 주민이다.
+    /// 자리(`residentSpot`)·정착(`isSettled`)·문구(`PokopiaTownLife`)·주민 줄(`residentRow`)이
+    /// 전부 이 값을 읽는다. 네 자리가 각자 첫 타입 하나만 읽던 동안 2타입 종은 두 번째 타입의
+    /// 지형이 넉넉해도 "살던 자리를 찾는 중" 이었고, 정착해도 첫 타입 지형의 문장을 말했다.
+    static func settledTerrain(_ resident: TownResident, terrain: [TownTerrain]) -> TownTerrain? {
+        let counts = tileCounts(terrain)
+        return homeTerrains(resident).first { counts[$0, default: 0] >= habitatThreshold }
+    }
+
     /// 주민이 원하던 환경이 아직 마을에 있는가. 화면 문구가 이 값으로 갈린다.
     static func isSettled(_ resident: TownResident, terrain: [TownTerrain]) -> Bool {
-        guard let want = resident.types.first.map(Self.terrain(for:)) else { return false }
-        return tileCounts(terrain)[want, default: 0] >= habitatThreshold
+        settledTerrain(resident, terrain: terrain) != nil
     }
 
     // MARK: - 신뢰경계
