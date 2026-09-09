@@ -23,8 +23,10 @@ struct PokopiaTownView: View {
 
     private var album: PokemonMemoryAlbum { store.memoryAlbum }
     private var town: PokopiaTownState { album.town }
-    /// 마을 개발도. 파생이라 매번 다시 센다 — 192칸 집계라 화면 한 번 그리는 비용에 묻힌다.
-    private var development: PokopiaTown.TownDevelopment { PokopiaTown.development(town.terrain) }
+    /// 마을 개발도. 파생이라 매번 다시 센다 — 192칸 집계 + 주민 16 이라 화면 한 번 그리는 비용에 묻힌다.
+    private var development: PokopiaTown.TownDevelopment {
+        PokopiaTown.development(town.terrain, residents: town.residents)
+    }
 
     var body: some View {
         // 캔버스가 504×315pt 라 창을 최소 크기로 줄이면 넘친다. 고정 높이 칸은 넘친 내용을
@@ -79,7 +81,7 @@ struct PokopiaTownView: View {
                     .font(.system(size: 10, weight: .bold, design: .monospaced))
                     .foregroundStyle(town.residents.count >= development.capacity
                                      ? PokedoroTheme.red : .secondary)
-                Text("개발도 \(development.name) · 지형 \(development.habitats)/\(TownTerrain.allCases.count)")
+                Text("환경 Lv.\(development.level) \(development.name) · 지형 \(development.habitats)/\(TownTerrain.allCases.count) · 정착 \(development.settled)/\(town.residents.count)")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
             }
@@ -150,7 +152,7 @@ struct PokopiaTownView: View {
         return VStack(alignment: .leading, spacing: 5) {
             HStack(spacing: 6) {
                 Text("서식 현황").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
-                Text("한 지형을 \(PokopiaTown.habitatThreshold)칸 이상 만들면 그 타입이 찾아오고, 마을 정원이 \(PokopiaTown.residentsPerHabitat)자리 늘어요")
+                Text("한 지형을 \(PokopiaTown.habitatThreshold)칸 이상 만들면 그 타입이 찾아오고, 마을 정원이 \(PokopiaTown.residentsPerHabitat)자리 늘고 환경 레벨이 1 올라요")
                     .font(.caption2).foregroundStyle(.secondary)
             }
             // 보상 시점. 이 탭에서 굴리는 것이 아니라 집중 세션이 굴린다는 것을 말해 준다 —
@@ -227,7 +229,13 @@ struct PokopiaTownView: View {
 
     private var residentList: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text("마을 인구").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+            HStack(spacing: 6) {
+                Text("마을 인구").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                // 축 B 의 조작법. 서식 현황 부제가 축 A 를 말하듯, 여기가 정착이 레벨을 올린다는 사실을 말한다 —
+                // 안 적으면 "정착 2/3" 이 무엇을 위한 숫자인지 화면에 없다.
+                Text("주민 절반 이상이 정착하면 환경 레벨 +1, 정원을 채우고 전원 정착하면 +1 더")
+                    .font(.caption2).foregroundStyle(.secondary)
+            }
             if town.residents.isEmpty {
                 Text("아직 아무도 살지 않아요.").font(.caption2).foregroundStyle(.secondary)
             } else {
