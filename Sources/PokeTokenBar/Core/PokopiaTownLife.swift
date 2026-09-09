@@ -38,10 +38,11 @@ enum PokopiaTownLife {
         if let unsettled = residents.first(where: { !PokopiaTown.isSettled($0, terrain: terrain) }) {
             return "\(unsettled.name) 살던 자리를 찾는 중이에요."
         }
-        // ③ 서식이 만족된 주민. 그 주민이 사는 지형이 문장을 정한다.
-        if let settled = residents.first, let type = settled.types.first {
-            return settledLine(settled.name, terrain: PokopiaTown.terrain(for: type),
-                               timeOfDay: timeOfDay)
+        // ③ 서식이 만족된 주민. **정착시킨 지형**이 문장을 정한다 — 첫 타입 지형이 아니다. 2타입
+        // 종이 두 번째 타입으로 정착했으면 첫 타입 지형은 0칸일 수 있고, 그 문장은 없는 물가를 말한다.
+        if let settled = residents.first,
+           let home = PokopiaTown.settledTerrain(settled, terrain: terrain) {
+            return settledLine(settled.name, terrain: home, timeOfDay: timeOfDay)
         }
         // ④ 주민은 없는데 부르는 환경은 됐다.
         if !PokopiaTown.welcomingTypes(terrain).isEmpty {

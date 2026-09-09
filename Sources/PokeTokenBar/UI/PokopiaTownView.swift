@@ -241,14 +241,14 @@ struct PokopiaTownView: View {
     }
 
     private func residentRow(_ resident: TownResident) -> some View {
-        let settled = PokopiaTown.isSettled(resident, terrain: town.terrain)
+        // 정착 지형은 파생이다 — 판정표는 `PokopiaTown.settledTerrain` 하나이고 화면은 계산을 더하지 않는다.
+        let home = PokopiaTown.settledTerrain(resident, terrain: town.terrain)
+        let settled = home != nil
         return HStack(spacing: 8) {
             PokopiaResidentView(speciesID: resident.speciesID, isShiny: false, side: 26)
             VStack(alignment: .leading, spacing: 1) {
                 Text(resident.name).font(.caption.weight(.medium)).lineLimit(1)
-                Text(settled
-                     ? (resident.types.first.map { "\(PokopiaTown.terrain(for: $0).name)에 살아요" } ?? "")
-                     : "살던 자리를 찾는 중이에요")
+                Text(home.map { "\($0.name)에 살아요" } ?? "살던 자리를 찾는 중이에요")
                     .font(.caption2)
                     .foregroundStyle(settled ? .secondary : PokedoroTheme.red)
             }

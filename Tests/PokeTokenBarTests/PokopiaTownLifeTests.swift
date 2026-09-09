@@ -84,6 +84,18 @@ final class PokopiaTownLifeTests: XCTestCase {
         XCTAssertFalse(text.contains("찾는"), "만족한 주민이 자리를 잃은 것으로 나온다: \(text)")
     }
 
+    /// 정착 문장은 **정착시킨 지형**의 것이다. 첫 타입 지형(물)이 0칸인 마을에서 "물가" 를 말하면
+    /// 화면이 없는 물가를 가리킨다.
+    func testASettledTwoTypeResidentSpeaksOfTheTerrainThatSettledIt() {
+        let gull = resident(278, "갈모매", [.water, .flying], arrivedAgo: 60 * 60 * 24)
+        let woods = town(.tree)
+        XCTAssertEqual(PokopiaTown.tileCounts(woods)[.water, default: 0], 0,
+                       "첫 타입 지형이 있으면 이 테스트는 아무것도 못 가른다")
+        let text = line([gull], woods)
+        XCTAssertTrue(text.contains("나무"), text)
+        XCTAssertFalse(text.contains("물가"), text)
+    }
+
     /// 여덟 지형 전부가 서로 다른 문장을 낸다 — 빠진 지형은 다른 지형의 문장을 물려받는다.
     func testEveryTerrainHasItsOwnSettledSentence() {
         var sentences: [String: TownTerrain] = [:]
