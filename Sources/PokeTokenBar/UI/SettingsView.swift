@@ -290,6 +290,18 @@ struct SettingsView: View {
                 Toggle("", isOn: $settings.beginnerModeEnabled)
                     .labelsHidden().toggleStyle(.switch).controlSize(.small)
             }
+            Divider()
+            VStack(alignment: .leading, spacing: 5) {
+                HStack {
+                    Text("창 배경 투명도")
+                    Spacer()
+                    Text("\(Int(settings.windowBackgroundOpacity * 100))%")
+                        .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+                }
+                Text("상단 창·포코피아·미니홈피 배경입니다. 값을 낮출수록 블러를 통해 데스크톱이 비칩니다.")
+                    .font(.caption2).foregroundStyle(.tertiary)
+                Slider(value: $settings.windowBackgroundOpacity, in: 0...1)
+            }
         }
     }
 

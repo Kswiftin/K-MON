@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 /// Pokédoro 전 화면이 공유하는 시각 언어. 밝은 필드, 선명한 빨강·파랑, 둥근 게임 카드로
@@ -31,8 +32,38 @@ enum PokedoroTheme {
         .system(size: size, weight: weight, design: design)
     }
 
+    /// 팝오버·포코피아·미니홈피가 공유하는 창 배경. 사용자가 설정에서 고른
+    /// `windowBackgroundOpacity` 만큼 불투명한 단색을 블러 위에 얹는다 — 1.0(기본)이면 기존과
+    /// 같은 완전 불투명 카드, 낮출수록 블러를 통해 데스크톱이 비친다. 텍스트·아이콘은 이 배경
+    /// 위에 별도로 그려지므로 값을 낮춰도 선명하게 유지된다.
     static var pageBackground: some View {
-        Color(nsColor: .windowBackgroundColor)
+        PokedoroPageBackground()
+    }
+}
+
+/// `NSVisualEffectView` 를 SwiftUI 배경으로 쓰기 위한 다리. `.behindWindow` 블렌딩이라야 데스크톱이
+/// 실제로 비친다 — 이 배경을 올리는 창은 `isOpaque = false` 여야 블렌딩이 눈에 보인다(그렇지 않은
+/// 창은 자기 배경을 먼저 불투명하게 칠해 블렌딩을 가린다).
+private struct PokedoroVisualEffectBackground: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSVisualEffectView {
+        let view = NSVisualEffectView()
+        view.material = .popover
+        view.blendingMode = .behindWindow
+        view.state = .active
+        return view
+    }
+
+    func updateNSView(_ nsView: NSVisualEffectView, context: Context) {}
+}
+
+private struct PokedoroPageBackground: View {
+    @Environment(AppSettings.self) private var settings
+
+    var body: some View {
+        ZStack {
+            PokedoroVisualEffectBackground()
+            Color(nsColor: .windowBackgroundColor).opacity(settings.windowBackgroundOpacity)
+        }
         .ignoresSafeArea()
         .allowsHitTesting(false)
     }
