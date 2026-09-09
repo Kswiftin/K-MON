@@ -1,7 +1,5 @@
 import Foundation
 
-enum BattleWeather: String, Sendable { case clear, rain, sun, sand, hail }
-
 /// 특성 — **엔진이 실제로 적용하는 것만** case 로 둔다. 타입·상태 면역과 결정론적인
 /// 위력/스탯/데미지 보정까지 지원한다. 아직 날씨·필드·접촉 판정이나 추가 rng가 필요한 특성은 넣지 않는다.
 ///
@@ -97,13 +95,13 @@ struct BattleAbility: RawRepresentable, Sendable, Equatable, Hashable {
         switch rawValue {
         case "drizzle": .rain
         case "drought": .sun
-        case "sand-stream": .sand
-        case "snow-warning": .hail
+        case "sand-stream": .sandstorm
+        case "snow-warning": .snow
         default: nil
         }
     }
 
-    func adjustedAccuracy(_ accuracy: Int, move: MoveSpec, weather: BattleWeather,
+    func adjustedAccuracy(_ accuracy: Int, move: MoveSpec, weather: BattleWeather?,
                           confused: Bool, defending: Bool) -> Int {
         var value = accuracy
         if !defending {
@@ -111,8 +109,8 @@ struct BattleAbility: RawRepresentable, Sendable, Equatable, Hashable {
             if rawValue == "hustle", move.damageClass == .physical { value = value * 4 / 5 }
             if rawValue == "victory-star" { value = value * 11 / 10 }
         } else {
-            if rawValue == "sand-veil", weather == .sand { value = value * 4 / 5 }
-            if rawValue == "snow-cloak", weather == .hail { value = value * 4 / 5 }
+            if rawValue == "sand-veil", weather == .sandstorm { value = value * 4 / 5 }
+            if rawValue == "snow-cloak", weather == .snow { value = value * 4 / 5 }
             if rawValue == "tangled-feet", confused { value /= 2 }
             if rawValue == "wonder-skin", move.damageClass == .status { value = min(value, 50) }
         }

@@ -1545,14 +1545,11 @@ struct BattleSide: Sendable, Equatable {
     var confusionTurns = 0
     var infatuated = false
     var flinched = false
-    var weather: BattleWeather = .clear
+    var weather: BattleWeather?
     var turnsActive = 0
     var flashFireBoosted = false
     var abilityOverride: BattleAbility?
     var typeOverride: [PokemonType]?
-    var movedThisTurn = false
-    var disabledMoveID: Int?
-    var disabledTurns = 0
     /// 랭크(−6…+6). 0 인 스탯은 **키를 두지 않는다** — 그래야 "랭크가 하나도 없다" 가
     /// `stages.isEmpty` 한 번으로 읽히고, 와이어 JSON 도 붙은 랭크만 나른다.
     var stages: [BattleStat: Int] = [:]
@@ -1699,7 +1696,7 @@ struct BattleSide: Sendable, Equatable {
     ///
     /// 상성·STAB·부유 판정·모래 면역이 전부 이 값을 봐야 한다. `snapshot.types` 를 직접 읽는
     /// 자리가 남으면 그 규칙에서만 테라스탈이 없고, 화면에는 숫자만 다르게 보인다.
-    var activeTypes: [PokemonType] { isTerastallized ? [snapshot.teraType] : snapshot.types }
+    var activeTypes: [PokemonType] { isTerastallized ? [snapshot.teraType] : battleTypes }
 
     /// 랭크 **전**의 스탯. 명중·회피는 스탯이 아니라 랭크만 있는 축이라 기준값 100 이다.
     func rawStat(_ stat: BattleStat) -> Int {
@@ -1730,7 +1727,17 @@ struct BattleSide: Sendable, Equatable {
         }
         // 검은철구도 **마비 반감 앞에서** 곱한다(구애스카프와 같은 순서·같은 이유).
         if heldEffect?.halvesSpeed == true { boosted = max(1, boosted / 2) }
-        return status == .paralysis ? max(1, boosted / 2) : boosted
+        switch ability?.rawValue {
+        case "swift-swim" where weather == .rain,
+             "chlorophyll" where weather == .sun,
+             "sand-rush" where weather == .sandstorm:
+            boosted *= 2
+        case "quick-feet" where status != nil: boosted = boosted * 3 / 2
+        case "slow-start" where turnsActive < 5: boosted /= 2
+        default: break
+        }
+        if status == .paralysis, ability?.rawValue != "quick-feet" { boosted /= 2 }
+        return max(1, boosted)
     }
 
     /// 이 상태가 붙을 수 있는가. 불꽃·얼음·독·강철·전기 타입의 본가 면역을 같이 본다.
@@ -2012,7 +2019,9 @@ enum BattleEngine {
     ///      머리띠는 치명적인 히트마다 한 번씩 더 굴린다.
     ///      + 진화의휘석(아직 진화할 수 있는 개체의 방어·특수방어 ×1.5). 스냅샷에 조건 필드가
     ///      하나(`canStillEvolve`) 늘어, 구버전 피어는 그 값을 안 보내 휘석이 한쪽에서만 일한다.
-    static let rulesVersion = 38
+    ///      + 1~5세대 특성의 날씨·명중·접촉·교체·턴 종료 판정. 특성에 따라 데미지와 rng 소비가
+    ///      갈리므로 이전 규칙과 같은 대전방에 들어가면 안 된다.
+    static let rulesVersion = 39
 
     /// 연결이 끊긴 배틀의 승패 — 남은 HP **비율**이 앞선 쪽이 이기고, 같으면 `nil`(무효)이다.
     ///
@@ -2127,6 +2136,19 @@ enum BattleEngine {
         // 랭크도 물러나면 사라진다. 남겨 두면 칼춤을 세 번 쌓아 두고 교체로 피했다가 그 랭크
         // 그대로 다시 나오는 무료 세팅이 된다 — CPU/체육관과 LAN 교체가 같이 이 규칙을 쓴다.
         side.resetStages()
+    }
+
+    /// 상대의 포획 특성 때문에 자발적으로 교체할 수 있는지 판정한다. 고스트 타입은 세대 통합
+    /// 규칙상 포획 특성을 무시하며, 그림자밟기 보유자끼리는 서로를 가두지 않는다.
+    static func canSwitch(_ side: BattleSide, awayFrom opponent: BattleSide) -> Bool {
+        guard side.isAlive else { return true }
+        if side.battleTypes.contains(.ghost) { return true }
+        switch opponent.ability?.rawValue {
+        case "shadow-tag": return side.ability?.rawValue == "shadow-tag"
+        case "arena-trap": return !BattleField.isGrounded(side)
+        case "magnet-pull": return !side.battleTypes.contains(.steel)
+        default: return true
+        }
     }
 
     /// 필드에 **새로 나온** 개체가 자기 편에 깔린 입장 데미지를 밟는다.
@@ -2342,8 +2364,13 @@ enum BattleEngine {
         // 미클열매를 먹은 개체의 다음 기술은 명중을 굴리지 않는다 — 끄는 자리는 `applyHit` 이다
         // (이 함수는 값 사본을 받으므로 여기서 끄면 아무 데도 남지 않는다).
         if attacker.nextMoveNeverMisses { return nil }
+        if attacker.ability?.rawValue == "no-guard" || defender.ability?.rawValue == "no-guard" { return nil }
         guard !MoveSpec.neverMisses(move.accuracy), let accuracy = move.accuracy else { return nil }
-        let withAccuracy = accuracy * StatStages.accuracyPercent(stage: attacker.stage(.accuracy)) / 100
+        var adjusted = attacker.ability?.adjustedAccuracy(accuracy, move: move, weather: attacker.weather,
+                                                         confused: attacker.isConfused, defending: false) ?? accuracy
+        adjusted = defender.ability?.adjustedAccuracy(adjusted, move: move, weather: defender.weather,
+                                                      confused: defender.isConfused, defending: true) ?? adjusted
+        let withAccuracy = adjusted * StatStages.accuracyPercent(stage: attacker.stage(.accuracy)) / 100
         var chance = withAccuracy * StatStages.accuracyPercent(stage: -defender.stage(.evasion)) / 100
         // 명중을 손대는 지닌물건은 **랭크 뒤**에 곱한다(본가 순서). 두 방향을 각자 묻는 이유는
         // 물건이 다르기 때문이다: 올리는 것은 때리는 쪽(광각렌즈·포커스렌즈), 깎는 것은 맞는 쪽
@@ -2455,6 +2482,21 @@ enum BattleEngine {
         case nil:                   break
         }
         if let ability = attacker.ability { power = ability.adjustedPower(power, move: move) }
+        if attacker.hp * 3 <= attacker.stats.hp {
+            let boostType: PokemonType? = switch attacker.ability?.rawValue {
+            case "overgrow": .grass; case "blaze": .fire; case "torrent": .water; case "swarm": .bug
+            default: nil
+            }
+            if boostType == move.type { power = power * 3 / 2 }
+        }
+        if attacker.flashFireBoosted, move.type == .fire { power = power * 3 / 2 }
+        if attacker.ability?.rawValue == "sand-force", attacker.weather == .sandstorm,
+           [.rock, .ground, .steel].contains(move.type) { power = power * 13 / 10 }
+        if attacker.ability?.rawValue == "sheer-force",
+           move.ailmentChancePercent > 0 || move.statChangePercent > 0 || move.flinchPercent > 0 {
+            power = power * 13 / 10
+        }
+        if attacker.ability?.rawValue == "analytic", defender.movedThisTurn { power = power * 13 / 10 }
         // 충전은 전기 기술만, 방어태세는 구르기·아이스볼만 두 배로 만든다. **어느 기술인지는
         // 데이터가 답한다**(`ShowdownMoveData`) — 손 목록이면 세대마다 붙는 기술이 조용히 빠진다.
         // 가변위력을 뽑은 **뒤**라서 구르기의 연속 배율까지 함께 두 배가 된다(본가와 같다).
@@ -3010,7 +3052,7 @@ extension BattleEngine {
         case .toxic:
             defer { side.statusCounter += 1 }
             return (max(1, full * side.statusCounter / 16), .toxic)
-        case .paralysis, .sleep, .freeze, .confusion, .flinch, nil: return nil
+        case .paralysis, .sleep, .freeze, .confusion, .infatuation, .flinch, nil: return nil
         }
     }
 
@@ -3198,6 +3240,8 @@ extension BattleEngine {
         }
         // 방진고글은 날씨의 턴 끝 데미지만 막는다 — 위력 보정(만능우산)은 여기를 지나지 않는다.
         guard side.isAlive, side.heldEffect?.blocksWeatherResidual != true,
+              side.ability?.rawValue != "overcoat",
+              side.ability?.ignoresResidualDamage != true,
               let weather = field.weather,
               let amount = weather.residualDamage(for: side.activeTypes, maxHP: side.stats.hp)
         else { return events }
@@ -3800,7 +3844,7 @@ extension BattleEngine {
                     drained = drained * scale.numerator / scale.denominator
                 }
                 events += heal(&attacker, actor: attackerActor, upTo: drained)
-            } else if percent < 0 {
+            } else if percent < 0, attacker.ability?.ignoresRecoil != true {
                 let amount = max(1, damage * -percent / 100)
                 attacker.hp = max(0, attacker.hp - amount)
                 events.append(.damage(attackerActor, amount: amount, cause: .recoil))
@@ -3857,11 +3901,27 @@ extension BattleEngine {
                                           attackerActor: attackerActor,
                                           defenderActor: defenderActor)
         }
+        if outcome.isCritical, defender.isAlive, defender.ability?.rawValue == "anger-point" {
+            let amount = defender.changeStage(.atk, by: 6)
+            if amount != 0 { events.append(.boost(defenderActor, .atk, amount)) }
+        }
+        if outcome.damage > 0, !hitsSubstitute {
+            events += afterHitAbilities(attacker: &attacker, defender: &defender,
+                                        attackerActor: attackerActor, defenderActor: defenderActor,
+                                        move: move, rng: &rng)
+        }
         // 2차효과는 데미지 뒤다 — 쓰러진 상대에게는 붙지 않는다(그 경우 rng 도 쓰지 않는다).
         // 층에 막힌 기술은 2차효과·상대 volatile 도 주인에게 닿지 않는다 — 인형은 마비되지 않는다.
+        let statusBeforeSecondary = defender.status
         if defender.isAlive, !hitsSubstitute {
-            events += applySecondaryEffect(of: move, to: &defender, actor: defenderActor,
-                                           field: field, defenderTeam: defenderTeam, rng: &rng)
+            if attacker.ability?.rawValue != "sheer-force", defender.ability?.blocksSecondaryEffects != true {
+                events += applySecondaryEffect(of: move, attacker: attacker, to: &defender, actor: defenderActor,
+                                               field: field, defenderTeam: defenderTeam, rng: &rng)
+            }
+            if defender.ability?.rawValue == "synchronize", statusBeforeSecondary != defender.status,
+               let reflected = defender.status, [.burn, .paralysis, .poison, .toxic].contains(reflected) {
+                events += inflict(reflected, on: &attacker, actor: attackerActor, rng: &rng)
+            }
             // 상대에게 붙는 volatile(조이기·저주·나이트메어)은 **대상 단위 입구**인 여기서 붙인다.
             // `applyAttack` 에 두면 대상마다 `applyHit` 을 직접 부르는 광역 모드(`WaveBattle`)에서
             // 아무에게도 안 붙는다 — 방어 판정이 이 자리로 내려온 것과 같은 이유다.
@@ -4090,7 +4150,8 @@ extension BattleEngine {
             }
         }
         if defender.isAlive, defender.ability?.rawValue == "cursed-body", rng.next() % 100 < 30 {
-            attacker.disabledMoveID = move.id; attacker.disabledTurns = 4
+            attacker.disabledMoveID = move.id
+            _ = attacker.start(.disable, turns: 4)
         }
         if defender.isAlive, defender.ability?.rawValue == "weak-armor", move.damageClass == .physical {
             let down = defender.changeStage(.def, by: -1), up = defender.changeStage(.spe, by: 2)
@@ -4146,6 +4207,10 @@ extension BattleEngine {
         var defiantTriggered = false
         for change in applicable {
             let targetsSelf = change.change > 0
+            var delta = change.change
+            let affectedAbility = targetsSelf ? attacker.ability : defender.ability
+            if affectedAbility?.rawValue == "contrary" { delta *= -1 }
+            if affectedAbility?.rawValue == "simple" { delta *= 2 }
             // 하얀안개는 **상대가 내리는** 랭크만 막는다. 자기 상승까지 막으면 쓴 쪽이 손해를 본다.
             // 클리어참은 하얀안개와 **같은 물음**에 답한다 — 남이 내리는 랭크만 막는다.
             if !targetsSelf, field.blocksStatDrop(against: defenderTeam)
@@ -4153,6 +4218,15 @@ extension BattleEngine {
             // 은밀망토는 **덤으로 붙는** 하락만 막는다. 변화기의 하락은 그 기술 자체라 지나간다.
             if !targetsSelf, move.damageClass != .status,
                defender.heldEffect?.blocksAddedEffects == true { continue }
+            if !targetsSelf {
+                switch defender.ability?.rawValue {
+                case "clear-body", "white-smoke": continue
+                case "hyper-cutter" where change.stat == .atk: continue
+                case "big-pecks" where change.stat == .def: continue
+                case "keen-eye" where change.stat == .accuracy: continue
+                default: break
+                }
+            }
             let applied = targetsSelf
                 ? attacker.changeStage(change.stat, by: delta)
                 : defender.changeStage(change.stat, by: delta)
@@ -4170,7 +4244,8 @@ extension BattleEngine {
 
     /// 기술의 2차효과(상태 부여). 붙을 수 있는지를 **확률 판정보다 먼저** 보므로, 이미 다른 상태가
     /// 걸려 있거나 면역인 상대에게는 rng 를 쓰지 않는다 — 두 피어의 소비량이 같아야 한다.
-    private static func applySecondaryEffect(of move: MoveSpec, to side: inout BattleSide,
+    private static func applySecondaryEffect(of move: MoveSpec, attacker: BattleSide,
+                                             to side: inout BattleSide,
                                              actor: BattleActor, field: BattleField,
                                              defenderTeam: BattleTeamSlot,
                                              rng: inout SplitMix64) -> [BattleEvent] {
@@ -4181,7 +4256,9 @@ extension BattleEngine {
         // 은밀망토는 공격기에 딸린 덤만 막는다 — 변화기는 그것이 기술 자체라 지나간다. 확률을
         // 굴리기 **전에** 막으므로 rng 소비가 줄지만, 두 피어가 같은 물건을 보므로 갈리지 않는다.
         if move.damageClass != .status, side.heldEffect?.blocksAddedEffects == true { return [] }
-        if move.flinchPercent > 0, side.isAlive, Int(rng.next() % 100) < move.flinchPercent { side.flinched = true }
+        let multiplier = attacker.ability?.rawValue == "serene-grace" ? 2 : 1
+        if move.flinchPercent > 0, side.isAlive, side.ability?.blocksFlinch != true,
+           Int(rng.next() % 100) < min(100, move.flinchPercent * multiplier) { side.flinched = true }
         // 필드가 막는 상태는 걸리지 않는다 — 땅에 닿은 쪽만이다(일렉트릭필드는 잠듦,
         // 미스트필드는 주 상태 전부). 막히면 확률 판정을 굴리지 않아 rng 소비가 줄지만, 두 피어가
         // 같은 필드를 보므로 갈리지 않는다.
@@ -4190,7 +4267,7 @@ extension BattleEngine {
         guard let status = move.inflictedStatus, side.canBeAfflicted(by: status),
               !field.blocksStatus(against: defenderTeam),
               !(field.terrain?.blocks(status) == true && BattleField.isGrounded(side)),
-              Int(rng.next() % 100) < move.ailmentChancePercent else { return [] }
+              Int(rng.next() % 100) < min(100, move.ailmentChancePercent * multiplier) else { return [] }
         return inflict(status, on: &side, actor: actor, rng: &rng)
     }
 
@@ -4205,17 +4282,22 @@ extension BattleEngine {
         // 물건의 턴 머리 굴림은 **순서를 재기 전**이다 — 선공을 가져갔는지가 순서의 입력이다.
         events += rollTurnStartItems(&a, actor: .a, rng: &rng)
         events += rollTurnStartItems(&b, actor: .b, rng: &rng)
+        if turn == 1 {
+            if let summoned = a.ability?.summonedWeather ?? b.ability?.summonedWeather {
+                _ = field.start(summoned)
+            }
+        }
         let weatherSuppressed = [a.ability?.rawValue, b.ability?.rawValue]
             .contains { $0 == "cloud-nine" || $0 == "air-lock" }
-        let weather = weatherSuppressed ? BattleWeather.clear
-            : (a.ability?.summonedWeather ?? b.ability?.summonedWeather ?? .clear)
+        let weather = weatherSuppressed ? nil : field.weather
         a.weather = weather; b.weather = weather
         if turn == 1 { events += entryEffects(a: &a, b: &b) }
         updateForm(&a); updateForm(&b)
         a.turnsActive += 1; b.turnsActive += 1
         // 마비가 스피드를 깎으므로 순서 계산이 상태를 봐야 한다 — `stats.spe` 를 그대로 넘기면
         // 마비가 스탯 표시에만 남고 선공은 그대로다.
-        let aIsFirst = firstMoverIsA(priorityA: moveA.turnPriority, priorityB: moveB.turnPriority,
+        let aIsFirst = firstMoverIsA(priorityA: effectivePriority(moveA, side: a),
+                                     priorityB: effectivePriority(moveB, side: b),
                                      speedA: orderingSpeed(a, team: .a, field: field),
                                      speedB: orderingSpeed(b, team: .b, field: field),
                                      movesLastA: movesLast(a), movesLastB: movesLast(b),
@@ -4242,8 +4324,60 @@ extension BattleEngine {
         // 날씨는 잔뎀 뒤, 그리고 **개체 몫 전부가 끝난 뒤에** 한 번 줄인다.
         events += endOfTurnWeather(&a, actor: .a, field: field)
         events += endOfTurnWeather(&b, actor: .b, field: field)
+        events += endOfTurnAbility(&a, opponent: b, actor: .a, rng: &rng)
+        events += endOfTurnAbility(&b, opponent: a, actor: .b, rng: &rng)
+        if a.isAlive, a.ability?.rawValue == "bad-dreams", b.isAlive, b.status == .sleep {
+            events += abilityDamage(&b, actor: .b, amount: max(1, b.stats.hp / 8))
+        }
+        if b.isAlive, b.ability?.rawValue == "bad-dreams", a.isAlive, a.status == .sleep {
+            events += abilityDamage(&a, actor: .a, amount: max(1, a.stats.hp / 8))
+        }
         events += advanceField(&field)
         return events
+    }
+
+    private static func endOfTurnAbility(_ side: inout BattleSide, opponent: BattleSide,
+                                         actor: BattleActor, rng: inout SplitMix64) -> [BattleEvent] {
+        guard side.isAlive else { return [] }
+        var events: [BattleEvent] = []
+        let ability = side.ability?.rawValue
+        if ability == "speed-boost" {
+            let amount = side.changeStage(.spe, by: 1)
+            if amount != 0 { events.append(.boost(actor, .spe, amount)) }
+        }
+        if ability == "rain-dish", side.weather == .rain
+            || ability == "ice-body", side.weather == .snow
+            || ability == "dry-skin", side.weather == .rain {
+            events += heal(&side, actor: actor, upTo: max(1, side.stats.hp / 16))
+        }
+        if (ability == "dry-skin" || ability == "solar-power"), side.weather == .sun {
+            events += abilityDamage(&side, actor: actor, amount: max(1, side.stats.hp / 8))
+        }
+        if ability == "hydration", side.weather == .rain, let status = side.status {
+            side.status = nil; side.statusCounter = 0; events.append(.cureStatus(actor, status))
+        }
+        if ability == "shed-skin", let status = side.status, rng.next() % 3 == 0 {
+            side.status = nil; side.statusCounter = 0; events.append(.cureStatus(actor, status))
+        }
+        if ability == "moody" {
+            let stats: [BattleStat] = [.atk, .def, .spa, .spd, .spe, .accuracy, .evasion]
+            let upIndex = Int(rng.next() % UInt64(stats.count))
+            var downIndex = Int(rng.next() % UInt64(stats.count - 1))
+            if downIndex >= upIndex { downIndex += 1 }
+            let up = side.changeStage(stats[upIndex], by: 2)
+            let down = side.changeStage(stats[downIndex], by: -1)
+            if up != 0 { events.append(.boost(actor, stats[upIndex], up)) }
+            if down != 0 { events.append(.boost(actor, stats[downIndex], down)) }
+        }
+        return events
+    }
+
+    private static func abilityDamage(_ side: inout BattleSide, actor: BattleActor,
+                                      amount: Int) -> [BattleEvent] {
+        guard side.isAlive, side.ability?.ignoresResidualDamage != true else { return [] }
+        let dealt = min(side.hp, max(1, amount))
+        side.hp -= dealt
+        return [.damage(actor, amount: dealt, cause: .move)] + (side.isAlive ? [] : [.faint(actor)])
     }
 
     private static func effectivePriority(_ move: MoveSpec, side: BattleSide) -> Int {
@@ -4289,7 +4423,7 @@ extension BattleEngine {
     private static func updateForm(_ side: inout BattleSide) {
         if side.ability?.rawValue == "forecast" {
             side.typeOverride = [side.weather == .rain ? .water : side.weather == .sun ? .fire :
-                                 side.weather == .hail ? .ice : .normal]
+                                 side.weather == .snow ? .ice : .normal]
         }
         if side.ability?.rawValue == "zen-mode", side.hp * 2 <= side.stats.hp {
             side.typeOverride = [.fire, .psychic]
