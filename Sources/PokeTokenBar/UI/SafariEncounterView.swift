@@ -290,7 +290,7 @@ struct SafariEncounterView: View {
     private func banner(_ outcome: SafariOutcome) -> some View {
         VStack(spacing: 6) {
             Text(bannerText(outcome)).font(.caption.bold())
-            Button(l.safariContinue) {
+            Button("\(l.safariContinue) 1") {
                 pendingOutcome = nil
                 displayedEncounter = nil
             }
@@ -298,6 +298,9 @@ struct SafariEncounterView: View {
             // 가 비어버린 채로 애니메이션이 계속 그 값을 참조하려 들 수 있다 — 애니메이션이
             // 끝날 때까지는 막는다.
             .buttonStyle(.bordered).controlSize(.small).disabled(isCommitting || isAnimating)
+            // 배너는 액션 버튼과 상호 배타적으로 뜬다(`body` 의 pendingOutcome 분기) — 미끼
+            // 버튼의 "1" 과 동시에 활성화될 일이 없어 같은 키를 재사용해도 안전하다.
+            .keyboardShortcut("1", modifiers: [])
         }
     }
 
