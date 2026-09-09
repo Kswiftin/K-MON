@@ -418,6 +418,15 @@ struct SettingsView: View {
             toggleRow(l.companionNotificationsLabel, $settings.companionNotifications)
             groupRow {
                 VStack(alignment: .leading, spacing: 1) {
+                    Text("배틀·레이드 자동 열기")
+                    Text("끄면 내 턴이나 체육관·레이드 이벤트가 발생해도 팝오버가 자동으로 열리지 않습니다.")
+                        .font(.caption2).foregroundStyle(.secondary)
+                }
+                Spacer()
+                Toggle("", isOn: $settings.automaticBattlePopoverEnabled).labelsHidden()
+            }
+            groupRow {
+                VStack(alignment: .leading, spacing: 1) {
                     Text(l.raidNotificationsLabel)
                     Text(l.raidNotificationsHint).font(.caption2).foregroundStyle(.secondary)
                 }

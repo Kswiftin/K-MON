@@ -68,6 +68,11 @@ final class AppSettings {
         didSet { defaults.set(rosterSortAscending, forKey: "rosterSortAscending") }
     }
     var companionNotifications: Bool { didSet { defaults.set(companionNotifications, forKey: "companionNotifications") } }
+    /// 내 턴·체육관/레이드 이벤트가 발생했을 때 앱이 메뉴바 팝오버를 스스로 열지 여부.
+    /// 기본값은 기존 동작을 보존하는 켜짐이다. 끄면 사용자의 명시적 열기만 팝오버를 띄운다.
+    var automaticBattlePopoverEnabled: Bool {
+        didSet { defaults.set(automaticBattlePopoverEnabled, forKey: "automaticBattlePopoverEnabled") }
+    }
     /// 레이드 알림(5★ 부화 15분 전 · 근처 방 개설). 부화 시각이 무작위라 습관이 대신해 주지
     /// 못하므로 기본은 켬이다 — 끄면 예약 부화는 사실상 참여 불가가 된다.
     var raidNotifications: Bool { didSet { defaults.set(raidNotifications, forKey: "raidNotifications") } }
@@ -135,6 +140,7 @@ final class AppSettings {
         rosterSort = (defaults.string(forKey: "rosterSort").flatMap(RosterSort.init(rawValue:))) ?? .caught
         rosterSortAscending = defaults.object(forKey: "rosterSortAscending") as? Bool ?? true
         companionNotifications = defaults.object(forKey: "companionNotifications") as? Bool ?? true
+        automaticBattlePopoverEnabled = defaults.object(forKey: "automaticBattlePopoverEnabled") as? Bool ?? true
         raidNotifications = defaults.object(forKey: "raidNotifications") as? Bool ?? true
         updateNotificationsEnabled = defaults.object(forKey: "updateNotificationsEnabled") as? Bool ?? true
         automaticUpdateDownloadsEnabled = defaults.object(forKey: "automaticUpdateDownloadsEnabled") as? Bool ?? true
