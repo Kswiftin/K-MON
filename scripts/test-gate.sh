@@ -189,6 +189,12 @@ LOGIC_CORE=(
   # (`SafariEncounter.act`)·등급 가중 추첨이 여기 있다. `act` 가 미끼/진흙/볼/도망 네 입력의
   # 유일한 게이트라 게이트 밖에 두면 그 단일 진입점 자체가 무테스트로 남는다.
   "Sources/PokeTokenBar/Core/SafariZone.swift"
+  # 사파리존 걷기 상태기계(격자 이동·벽 충돌)와 방문(`SafariVisit.advance`/`act`) — 걸음 소진·
+  # 방문당/하루 포획 상한이 새 조우를 막는 소스 차단 게이트가 여기 있다. 웨이브 런과 같은 이유로
+  # 게이트 대상이다.
+  "Sources/PokeTokenBar/Core/SafariWalker.swift"
+  "Sources/PokeTokenBar/Core/SafariVisit.swift"
+  "Sources/PokeTokenBar/Core/SafariZoneSave.swift"
 )
 
 # 기능이 **박제된 두 번째 화면**에 남는 부류를 막는다. `eee5c86` 이 팝오버 홈을 창으로 옮기며
