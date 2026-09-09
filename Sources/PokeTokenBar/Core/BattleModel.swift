@@ -4276,8 +4276,9 @@ extension BattleEngine {
                 _ = field.start(summoned)
             }
         }
-        let weatherSuppressed = [a.ability?.rawValue, b.ability?.rawValue]
-            .contains { $0 == "cloud-nine" || $0 == "air-lock" }
+        // 한 줄 리터럴 배열 + 클로저 비교로 쓰면 타입체커가 시간 안에 못 푼다(빌드 실패).
+        let abilityIDs: [String] = [a.ability?.rawValue, b.ability?.rawValue].compactMap { $0 }
+        let weatherSuppressed = abilityIDs.contains("cloud-nine") || abilityIDs.contains("air-lock")
         let weather = weatherSuppressed ? nil : field.weather
         a.weather = weather; b.weather = weather
         if turn == 1 { events += entryEffects(a: &a, b: &b) }

@@ -2136,6 +2136,10 @@ enum EvoLineItemState: Equatable, Sendable {
     case done
     case current
     case future
+    /// 이 개체가 **거친 적 없는 앞 단계**. 체인 중간·끝에서 잡힌 개체(사파리존·레이드)의 라인을
+    /// 뿌리부터 보여 주려고 표시 전용으로 붙인다 — `pathIDs` 에는 들어가지 않으므로 레벨·졸업·
+    /// 도감 계산은 그대로다.
+    case unreached
 }
 
 struct EvoLineItem: Equatable, Sendable {

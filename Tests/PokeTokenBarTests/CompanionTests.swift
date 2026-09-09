@@ -1339,6 +1339,25 @@ final class CompanionStoreTests: XCTestCase {
         ])
     }
 
+    /// 사파리존·레이드로 **체인 중간**을 잡은 개체는 앞 단계를 거친 적이 없다. 그래도 라인은
+    /// 뿌리부터 보여야 한다 — 나로테(949)를 잡았는데 나오하(948)가 아예 안 보이면 화면이 "이 종은
+    /// 여기서 시작한다" 고 말하는 셈이다. 안 거친 앞 단계는 `.unreached` 로 **표시만** 붙이고
+    /// `pathIDs`(레벨·졸업·도감 계산의 근거)는 그대로 둔다.
+    func testLineNodesShowsUnreachedAncestorsForAMidChainCatch() async {
+        let s = threeStageStore(TestClock(), tag: "line-nodes-midchain")
+        let result = await s.catchInSafariZone(speciesID: 444)
+        XCTAssertEqual(result, .companion, "테스트 전제: 잡은 개체가 동행 자리로 간다")
+        await s.debugReloadCurrentLine()
+
+        XCTAssertEqual(s.lineNodes, [
+            EvoLineItem(.species(443), .unreached),
+            EvoLineItem(.species(444), .current),
+            EvoLineItem(.species(445), .future),
+        ])
+        XCTAssertEqual(s.state.active?.pathIDs, [444], "표시용 조상이 실제 경로에 섞이면 안 된다")
+        XCTAssertEqual(s.state.active?.totalForms, 2, "조상이 남은 단계 수를 부풀리면 안 된다")
+    }
+
     func testRealizedLineItemsUsesStageIndexForCurrentMarker() {
         XCTAssertEqual(CompanionStore.realizedLineItems(pathIDs: [1, 2], stageIndex: 0), [
             EvoLineItem(.species(1), .current),

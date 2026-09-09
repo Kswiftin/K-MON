@@ -165,4 +165,15 @@ final class EvoLineLayoutTests: XCTestCase {
                                              maxWidth: PopoverMetrics.contentWidth)
         XCTAssertFalse(a.back); XCTAssertFalse(a.forward)
     }
+
+    /// 안 거친 앞 단계(`.unreached`)와 앞으로 갈 단계(`.future`)는 **눈으로 갈려야** 한다 —
+    /// 둘 다 옅게만 그리면 "이 개체가 지나온 적 없는 1단계" 와 "곧 될 모습" 이 같아 보인다.
+    /// 지나온 칸·현재 칸은 원색 그대로다.
+    func testUnreachedStageRendersFullyDesaturatedUnlikeFutureStage() {
+        XCTAssertEqual(EvoLineView.saturation(.unreached), 0, "안 거친 단계는 완전 회색이다")
+        XCTAssertNotEqual(EvoLineView.saturation(.unreached), EvoLineView.saturation(.future),
+                          "미도달과 미래가 같은 색이면 구분이 사라진다")
+        XCTAssertEqual(EvoLineView.saturation(.done), 1)
+        XCTAssertEqual(EvoLineView.saturation(.current), 1)
+    }
 }

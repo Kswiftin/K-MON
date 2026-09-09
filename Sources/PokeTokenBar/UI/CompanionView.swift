@@ -422,6 +422,16 @@ struct EvoLineView: View {
 
     // MARK: 라인 본체
 
+    /// 상태별 채도 — `.unreached` 만 완전 회색(0)이다. 순수 함수로 떼어 둔 이유는 라인이
+    /// 세 종류의 "지금이 아닌 칸"(지나온 곳·갈 곳·안 거친 곳)을 한 줄에 섞어 그리기 때문이다.
+    static func saturation(_ state: EvoLineItemState) -> Double {
+        switch state {
+        case .done, .current: return 1
+        case .future: return 0.4
+        case .unreached: return 0
+        }
+    }
+
     private var row: some View {
         HStack(alignment: .top, spacing: Self.spacing) {
             ForEach(Array(nodes.enumerated()), id: \.offset) { i, node in
@@ -443,8 +453,10 @@ struct EvoLineView: View {
                                 .accessibilityLabel(Text(mysteryLabel))
                         }
                     }
-                        .opacity(node.state == .future ? 0.32 : 1)
-                        .saturation(node.state == .future ? 0.4 : 1)
+                        .opacity(node.state == .done || node.state == .current ? 1 : 0.32)
+                        // 안 거친 앞 단계(`.unreached`)는 색을 완전히 뺀다 — 앞으로 갈 곳
+                        // (`.future`, 옅은 색)과 이미 지나온 곳을 한눈에 가르기 위해서다.
+                        .saturation(Self.saturation(node.state))
                         .overlay(alignment: .bottom) {
                             if node.state == .current {
                                 Circle().fill(Color.accentColor).frame(width: 4, height: 4).offset(y: 2)
