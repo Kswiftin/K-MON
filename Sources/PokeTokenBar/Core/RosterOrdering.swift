@@ -55,9 +55,9 @@ enum RosterOrdering {
     /// 되면 이 함수도 같이 바꿔야 한다.
     static func displayName(_ mon: MonState,
                             resolved: [Int: String] = [:]) -> String {
-        if let name = resolved[mon.presentationID], !name.isEmpty { return name }
+        if let name = resolved[mon.presentationID], !name.isEmpty { return mon.formQualifiedName(name) }
         if let stored = mon.names?[mon.currentID], let name = PokemonNaming.name(stored), !name.isEmpty {
-            return name
+            return mon.formQualifiedName(name)
         }
         return "#\(mon.currentID)"
     }

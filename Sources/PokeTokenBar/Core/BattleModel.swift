@@ -559,7 +559,8 @@ struct BattleSnapshot: Codable, Sendable, Equatable {
     ///
     /// **원문을 싣는 이유**: 아직 구현하지 않은 특성도 그대로 실어 두면 `BattleAbility` 에 case 를
     /// 늘릴 때 스냅샷 계약을 안 건드려도 된다. 모르는 값은 해석 시점에 `nil` 로 접힌다.
-    /// 세이브에는 없다 — 특성은 종에서 파생되므로 저장할 값이 아니다.
+    /// 개체가 특성캡슐·패치를 쓴 경우에는 `MonState.abilitySlug`에 저장된 선택이 실린다.
+    /// 구버전 개체는 nil이며 종의 첫 일반 특성으로 폴백한다.
     ///
     /// 스냅샷을 만드는 네 자리가 이 값을 싣는지는
     /// `VariableDamageTests.testEveryBattleSnapshotSiteCarriesTheWireOnlyFields` 가 소스에서 센다

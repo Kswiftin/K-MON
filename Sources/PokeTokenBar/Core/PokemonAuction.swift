@@ -131,9 +131,19 @@ final class PokemonAuctionCenter {
         let fallback = NSFullUserName().isEmpty ? (Host.current().localizedName ?? "Trainer") : NSFullUserName()
         trainerName = configured.isEmpty ? fallback : configured
         serviceName = LANServiceName.make(base: trainerName, suffix: "#\(String(UUID().uuidString.prefix(6)))")
+        // 앱 교체·업데이트로 프로세스가 재시작돼도 출품을 복구한다.
+        // 네트워크 리스너 ID는 새로 발급해 예전 세션의 연결을 재사용하지 않는다.
+        for mon in companion.persistedAuctionMons {
+            let id = UUID()
+            localListings[id] = TradePokemonSnapshot(mon: mon, displayName: displayName(mon))
+        }
     }
 
-    func start() { startBrowser() }
+    func start() { startBrowser(); restorePublishedListings() }
+
+    func restorePublishedListings() {
+        for id in localListings.keys where listeners[id] == nil { startListener(for: id) }
+    }
 
     func publish(_ mon: MonState?) {
         guard let mon else { return }
@@ -142,13 +152,15 @@ final class PokemonAuctionCenter {
               !companion.isFavorite(mon.id), !isCommitted(mon.id) else { return }
         let id = UUID()
         localListings[id] = TradePokemonSnapshot(mon: mon, displayName: displayName(mon))
+        companion.setAuctionListed(mon.id, listed: true)
         startListener(for: id)
     }
 
     /// 게시를 내린다. **내가 남에게 건 제안은 건드리지 않는다** — 그 연결은 상대 게시물의
     /// 것이라, 여기서 같이 끊으면 진행 중인 내 교환이 이유 없이 끊긴다.
     func cancelListing(_ listingID: UUID) {
-        guard localListings.removeValue(forKey: listingID) != nil else { return }
+        guard let removed = localListings.removeValue(forKey: listingID) else { return }
+        companion.setAuctionListed(removed.mon.id, listed: false)
         listeners[listingID]?.cancel(); listeners[listingID] = nil
         for offer in offers where offer.listingID == listingID && offer.status == .pending { reject(offer.id) }
         offers.removeAll { $0.listingID == listingID }
@@ -416,6 +428,7 @@ final class PokemonAuctionCenter {
             setStatus(.completed, for: offerID)
             let listingID = offer.listingID
             localListings[listingID] = nil
+            companion.setAuctionListed(listing.mon.id, listed: false)
             listeners[listingID]?.cancel(); listeners[listingID] = nil
             send(.completed(offerID: offerID, memories: outgoingMemories),
                  on: connection, id: connectionID)
@@ -547,7 +560,7 @@ final class PokemonAuctionCenter {
 
     private func displayName(_ mon: MonState) -> String {
         if let nickname = mon.nickname, !nickname.isEmpty { return nickname }
-        return mon.names?[mon.currentID]?["ko"] ?? "#\(mon.currentID)"
+        return mon.formQualifiedName(mon.names?[mon.currentID]?["ko"] ?? "#\(mon.currentID)")
     }
 
     private func startListener(for listingID: UUID) {

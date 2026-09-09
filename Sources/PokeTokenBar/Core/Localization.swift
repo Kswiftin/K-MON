@@ -1494,6 +1494,8 @@ struct L {
         switch kind {
         case .rareCandy: return "이상한 사탕"
         case .mint:      return "민트"
+        case .abilityCapsule: return "특성캡슐"
+        case .abilityPatch: return "특성패치"
         case .teraShard: return "테라피스"
         case .lifeOrb: return "생명의구슬"
         case .focusSash: return "기합의띠"
@@ -1754,6 +1756,10 @@ struct L {
             return "현재 포켓몬의 경험치를 \(xp) 올려줘요."
         case .mint:
             return "현재 포켓몬의 성격을 랜덤으로 바꿔줘요."
+        case .abilityCapsule:
+            return "현재 포켓몬의 일반 특성을 다른 일반 특성으로 바꿔줘요."
+        case .abilityPatch:
+            return "현재 포켓몬의 특성을 숨은 특성으로 바꿔줘요."
         case .heartScale:
             return "지금까지 배울 수 있었던 기술 하나를 다시 떠올려요. 기술이 4개면 하나를 잊어요."
         case .teraShard:

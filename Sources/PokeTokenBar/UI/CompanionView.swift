@@ -802,13 +802,16 @@ struct CompanionHeader: View {
             }
         }
         .task(id: store.currentPresentationID) { await store.loadCurrentTypes() }
-        .task(id: "\(store.currentPresentationID ?? 0)-ko") {
+        .task(id: "\(store.currentPresentationID ?? 0)-\(store.state.active?.abilitySlug ?? "default")-ko") {
             guard let speciesID = store.currentPresentationID else {
                 abilityText = nil
                 return
             }
-            abilityText = await PokeAPIClient.shared
-                .chatSpeciesIdentity(speciesID: speciesID).ability
+            let profile = try? await PokeAPIClient.shared.battleProfile(speciesID: speciesID)
+            if let slug = store.state.active?.abilitySlug ?? profile?.abilitySlug {
+                abilityText = await PokeAPIClient.shared.localizedAbilityName(slug: slug)
+                    + (store.state.active?.abilityIsHidden == true ? " (숨은 특성)" : "")
+            } else { abilityText = nil }
         }
         // 진화에 필요한 기술 이름. 기술을 배우면 요구가 사라지므로 무브셋이 바뀔 때도 다시 본다.
         .task(id: store.currentMoveSetIdentity) { await store.loadEvolutionRequiredMove() }

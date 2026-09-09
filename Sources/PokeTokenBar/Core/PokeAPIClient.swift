@@ -38,6 +38,8 @@ protocol PokeProviding: Sendable {
     /// 획득 가능 범위 전 종의 타입 (GraphQL 1쿼리, 디스크 캐시). 도감 타입 필터가 읽는다 —
     /// **아직 안 잡은 종에도 걸려야** 해서 `battleProfile` 종별 조회로는 대체할 수 없다(1천 회 넘는다).
     func speciesTypeIndex() async throws -> [Int: [PokemonType]]
+    /// 폼을 포함한 Pokémon ID의 일반/숨은 특성 후보.
+    func abilityOptions(pokemonID: Int) async throws -> [PokemonAbilityOption]
 }
 
 extension PokeProviding {
@@ -61,6 +63,17 @@ extension PokeProviding {
     func speciesTypeIndex() async throws -> [Int: [PokemonType]] {
         try await PokeAPIClient.shared.speciesTypeIndex()
     }
+
+    func abilityOptions(pokemonID: Int) async throws -> [PokemonAbilityOption] {
+        try await PokeAPIClient.shared.abilityOptions(pokemonID: pokemonID)
+    }
+
+}
+
+struct PokemonAbilityOption: Sendable, Equatable {
+    let slug: String
+    let isHidden: Bool
+    let slot: Int
 }
 
 /// PokéAPI 클라이언트 — 종/진화체인을 런타임 fetch + 파싱. 포켓몬 데이터는 레포에 번들하지 않는다.
@@ -452,6 +465,20 @@ actor PokeAPIClient: PokeProviding {
                                            weightHectograms: dto.weight, abilitySlug: abilitySlug)
         battleProfileCache[speciesID] = profile
         return profile
+    }
+
+    func abilityOptions(pokemonID: Int) async throws -> [PokemonAbilityOption] {
+        let dto: PokemonAbilitiesDTO = try await get(base.appendingPathComponent("pokemon/\(pokemonID)"))
+        return dto.abilities.sorted { $0.slot < $1.slot }.map {
+            PokemonAbilityOption(slug: $0.ability.name, isHidden: $0.is_hidden, slot: $0.slot)
+        }
+    }
+
+    func localizedAbilityName(slug: String) async -> String {
+        guard let dto: AbilityDTO = try? await get(base.appendingPathComponent("ability/\(slug)")) else {
+            return slug.replacingOccurrences(of: "-", with: " ")
+        }
+        return PokemonNaming.name(localizedNames(dto.names)) ?? slug.replacingOccurrences(of: "-", with: " ")
     }
 
     // MARK: 무브셋 (네트워크 대전)

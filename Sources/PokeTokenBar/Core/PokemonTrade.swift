@@ -286,7 +286,7 @@ final class PokemonTradeCenter {
 
     private func displayName(for mon: MonState) -> String {
         if let nickname = mon.nickname, !nickname.isEmpty { return nickname }
-        return mon.names?[mon.currentID].flatMap { PokemonNaming.name($0) } ?? "#\(mon.currentID)"
+        return mon.formQualifiedName(mon.names?[mon.currentID].flatMap { PokemonNaming.name($0) } ?? "#\(mon.currentID)")
     }
 
     /// **국면을 반드시 본다.** `.confirm(true)` 는 상대가 부르는 프레임이라 두 번 올 수 있는데
