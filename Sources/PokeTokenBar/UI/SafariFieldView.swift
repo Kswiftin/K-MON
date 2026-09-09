@@ -37,9 +37,10 @@ struct SafariFieldView: View {
                     Text(l.safariZoneName(zone)).font(.caption.bold())
                 }
                 Spacer()
-                Label("\(store.safariVisit?.balls ?? 0)", systemImage: "circle.fill")
-                Label("\(store.safariVisit?.stepsRemaining ?? 0)", systemImage: "figure.walk")
-                Label("\(store.safariZoneCatchesRemainingToday)", systemImage: "pawprint.fill")
+                Label(l.safariBallsRemainingLabel(store.safariVisit?.balls ?? 0), systemImage: "circle.fill")
+                Label(l.safariStepsRemainingLabel(store.safariVisit?.stepsRemaining ?? 0), systemImage: "figure.walk")
+                Label(l.safariCatchesRemainingTodayLabel(store.safariZoneCatchesRemainingToday),
+                     systemImage: "pawprint.fill")
             }
             .font(.caption2)
             // 볼·걸음이 남았는데 아무 일도 안 일어나면 버그처럼 보인다 — 새 조우가 더 안 뜨는
@@ -57,9 +58,12 @@ struct SafariFieldView: View {
     /// 이번 방문에서 잡은 포켓몬을 걷기 화면에도 보여준다 — 조우 화면에서만 잠깐 보고 마는 대신
     /// 계속 확인할 수 있게.
     private func caughtRow(_ speciesIDs: [Int]) -> some View {
-        HStack(spacing: 2) {
-            ForEach(Array(speciesIDs.enumerated()), id: \.offset) { _, speciesID in
-                SpriteView(speciesID: speciesID, size: 20, shiny: false)
+        VStack(alignment: .leading, spacing: 2) {
+            Text(l.safariCaughtThisVisitLabel).font(.caption2).foregroundStyle(.secondary)
+            HStack(spacing: 2) {
+                ForEach(Array(speciesIDs.enumerated()), id: \.offset) { _, speciesID in
+                    SpriteView(speciesID: speciesID, size: 20, shiny: false)
+                }
             }
         }
     }
@@ -97,11 +101,12 @@ struct SafariFieldView: View {
         guard let images = trainerImages[walker.facing], !images.isEmpty else { return }
         let step = progress > 0 ? Int(progress * 3) % images.count : 0
         let image = images[step]
-        // 스프라이트 원본은 16×24 — 칸(24×24)에 폭을 맞추고 세로는 1.5배로 그려 발이 칸 아래에
-        // 온다(발밑 칸이 곧 `walker.cell` 이 되도록 y 를 위로 반 칸만큼 올린다).
-        let width = Self.cellSize
-        let height = Self.cellSize * 1.5
-        let rect = CGRect(x: cellX * Self.cellSize,
+        // 스프라이트 원본은 16×24 — 정수배(2배)로 그려야 `.interpolation(.none)` 확대가 각
+        // 픽셀 경계에서 깨끗하다(1.5배 같은 비정수배는 픽셀이 살짝 뭉개진다). 칸(24×24)보다
+        // 커지므로 가로는 칸 중앙에, 세로는 발이 칸 아래에 오도록 맞춘다.
+        let width: CGFloat = 32
+        let height: CGFloat = 48
+        let rect = CGRect(x: cellX * Self.cellSize - (width - Self.cellSize) / 2,
                           y: cellY * Self.cellSize - (height - Self.cellSize),
                           width: width, height: height)
         ctx.draw(Image(decorative: image, scale: 1).interpolation(.none), in: rect)

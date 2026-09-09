@@ -1377,6 +1377,10 @@ struct L {
     var safariZoneNoMoreCatchesTodayBanner: String {
         "오늘의 포획 기회를 다 썼어요. 산책은 계속할 수 있어요."
     }
+    func safariBallsRemainingLabel(_ count: Int) -> String { "볼 \(count)개" }
+    func safariStepsRemainingLabel(_ count: Int) -> String { "걸음 \(count)" }
+    func safariCatchesRemainingTodayLabel(_ count: Int) -> String { "오늘 포획 \(count)마리 남음" }
+    var safariCaughtThisVisitLabel: String { "이번 방문에서 잡은 포켓몬" }
     var safariZoneWalkEndedTitle: String { "오늘의 산책이 끝났어요." }
     func safariZoneWalkEndedSummary(caughtCount: Int) -> String {
         caughtCount == 0 ? "이번엔 못 잡았어요."
