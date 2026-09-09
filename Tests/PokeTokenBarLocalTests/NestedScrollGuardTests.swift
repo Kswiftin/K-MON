@@ -20,6 +20,7 @@ import Testing
     private static let ownsItsOwnScroll: Set<String> = [
         "PopoverView.swift", "SettingsView.swift", "MemoryHomePresenter.swift",
         "PokemonChatView.swift", "RogueRunView.swift", "RaidView.swift",
+        "SafariZoneView.swift",
     ]
 
     private static var uiDirectory: URL {
