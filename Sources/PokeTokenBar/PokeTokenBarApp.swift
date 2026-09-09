@@ -204,6 +204,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, UNU
     /// 치워야 할 때 닫히지 않으면 곤란하고, 배틀은 창을 닫아도 살아 있어 다시 열면 이어진다.
     private func observeBattleWindow() {
         withObservationTracking {
+            _ = settings.automaticBattlePopoverEnabled
             _ = battleCenter.wantsForegroundWindow
             // 턴이 넘어간 것도 창을 여는 사건이다. 이걸 안 보면 1:1 LAN 은 `wantsForegroundWindow`
             // 가 읽는 값이 턴마다 안 바뀌어 관찰이 다시 울리지 않았고, 한 번 닫힌 창이 배틀이
@@ -237,9 +238,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, UNU
     /// 닫히지 않으면 곤란하고, 배틀은 창을 닫아도 살아 있어 다시 열면 이어진다.
     private func applyBattleWindow() {
         // 터미널에서 보고 있는 사용자에게 창이 튀어나오면 화면이 통째로 가려진다 — 그쪽이
-        // 대전을 보고 있는 중일 수도 있다. 붙어 있는 동안에는 앱이 스스로 앞에 나서지 않는다.
-        guard !isTerminalControlling else { return }
-        guard battleCenter.wantsForegroundWindow else { return }
+        // 대전을 보고 있는 중일 수도 있다. 또 사용자가 자동 열기를 껐다면, 내 턴·체육관·레이드
+        // 이벤트 어느 쪽도 앱을 앞에 내세우면 안 된다.
+        guard BattleWindowPresentationPolicy.shouldOpenAutomatically(
+            automaticOpeningEnabled: settings.automaticBattlePopoverEnabled,
+            terminalControlling: isTerminalControlling,
+            wantsForegroundWindow: battleCenter.wantsForegroundWindow
+        ) else { return }
 
         // 닫힌 창을 되살리는 것은 **내가 골라야 할 때**뿐이다 — 이미 낸 뒤에도 열면 닫아도 곧바로
         // 되살아난다. 열려 있으면 이 판정과 무관하게 아래 화면 이동은 그대로 한다.

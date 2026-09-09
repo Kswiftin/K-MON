@@ -56,4 +56,18 @@ final class GlobalHotKeyTests: XCTestCase {
         let reopened = AppSettings(defaults: defaults)
         XCTAssertNil(reopened.togglePopoverShortcut)
     }
+
+    /// 내 턴·방 이벤트가 있어도 자동으로 팝오버를 열지 않는 선택은 다음 실행 뒤에도 유지돼야 한다.
+    @MainActor
+    func testAutomaticBattlePopoverSettingDefaultsToEnabledAndPersists() {
+        let suiteName = "automatic-battle-popover-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let settings = AppSettings(defaults: defaults)
+        XCTAssertTrue(settings.automaticBattlePopoverEnabled)
+        settings.automaticBattlePopoverEnabled = false
+
+        XCTAssertFalse(AppSettings(defaults: defaults).automaticBattlePopoverEnabled)
+    }
 }
