@@ -2698,6 +2698,10 @@ struct CompanionState: Codable, Sendable {
     /// 해도 영구 도감/보관함에 등록되는 채널이라 레이드의 하루 상한(최대 6마리)을 넘기면 안 된다.
     var safariZoneCatchDate = ""
     var safariZoneCatchesToday = 0
+    /// 사파리존 출시 기념 — 오늘(배포일) 방문·포획 원장을 한 번 비워 주는 1회성 보너스를
+    /// 받았는지. 재설치해도 세이브(이 값)가 남아 있으면 다시 안 준다. `CompanionStore` 가
+    /// 로드 직후 이 값이 거짓이면 위 네 원장을 비우고 참으로 바꾼다.
+    var safariZoneUpdateBonusClaimed = false
     var battleRank = BattleRank()
     /// 진행 중인 랭크전의 에스크로 — 개시 때 지갑에서 빠져나간 판돈과 상대 랭크를 적어 둔다.
     /// 정산이 배틀 **끝**에만 있던 때는 지고 있을 때 앱을 종료하면 판돈을 안 냈다(상대는 승리
@@ -2793,6 +2797,7 @@ struct CompanionState: Codable, Sendable {
         safariZoneVisitsToday   = c.lenient(Int.self, forKey: .safariZoneVisitsToday, default: 0)
         safariZoneCatchDate     = c.lenient(String.self, forKey: .safariZoneCatchDate, default: "")
         safariZoneCatchesToday  = c.lenient(Int.self, forKey: .safariZoneCatchesToday, default: 0)
+        safariZoneUpdateBonusClaimed = c.lenient(Bool.self, forKey: .safariZoneUpdateBonusClaimed, default: false)
         battleRank         = c.lenient(BattleRank.self, forKey: .battleRank, default: BattleRank())
         pendingRanked      = c.lenientOptional(PendingRankedBattle.self, forKey: .pendingRanked)
         trainer            = c.lenient(TrainerLevel.self, forKey: .trainer, default: TrainerLevel())
