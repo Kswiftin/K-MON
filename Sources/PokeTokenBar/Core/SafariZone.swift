@@ -136,6 +136,26 @@ enum SafariZone {
     private static let uncommonWeightPercent = 18
     private static let rareWeightPercent = 7   // commonWeightPercent + uncommonWeightPercent + rareWeightPercent == 100
 
+    struct EncounterPoolEntry: Sendable, Equatable {
+        let speciesID: Int
+        let rarity: Rarity
+        let chancePercent: Double
+    }
+
+    /// 구역 선택 화면에 보여 주는 종별 실제 조우 확률. 먼저 등급을 가중 추첨하고 그 등급 안에서
+    /// 균등 추첨하므로 `등급 가중치 / 해당 등급 종 수`가 한 종의 확률이다. 화면과 실제 추첨이
+    /// 서로 다른 숫자를 말하지 않도록 `chooseEncounter`와 같은 풀·가중치를 여기서 공유한다.
+    static func encounterPool(for zone: ZoneID) -> [EncounterPoolEntry] {
+        let pools = gradePools(for: zone)
+        func entries(_ species: [Int], rarity: Rarity, weight: Int) -> [EncounterPoolEntry] {
+            let chance = Double(weight) / Double(species.count)
+            return species.map { EncounterPoolEntry(speciesID: $0, rarity: rarity, chancePercent: chance) }
+        }
+        return entries(pools.common, rarity: .common, weight: commonWeightPercent)
+            + entries(pools.uncommon, rarity: .uncommon, weight: uncommonWeightPercent)
+            + entries(pools.rare, rarity: .rare, weight: rareWeightPercent)
+    }
+
     /// 등급을 먼저 가중 추첨한 뒤, 그 등급의 서브풀에서 균등하게 한 종을 고른다.
     /// `RaidBoss.catchAttempts` 처럼 결정론 RNG 를 그대로 쓴다 — 소켓 없이 테스트 가능.
     static func chooseEncounter(zone: ZoneID, rng: inout SplitMix64) -> Int {

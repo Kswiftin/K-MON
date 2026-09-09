@@ -1376,6 +1376,11 @@ struct L {
         "오늘 남은 방문 \(remaining)/\(cap)"
     }
     var safariZoneEnter: String { "입장" }
+    var safariZoneEncounterPool: String { "출현 포켓몬" }
+    func safariZoneEncounterChance(_ percent: Double) -> String {
+        String(format: "%.1f%%", percent)
+    }
+    var safariZoneUndiscoveredPokemon: String { "아직 잡지 못한 포켓몬" }
     var safariZoneNoVisitsLeftToday: String { "오늘의 방문 횟수를 다 썼어요. 내일 다시 와 주세요." }
     var safariZoneNoMoreCatchesTodayBanner: String {
         "오늘의 포획 기회를 다 썼어요. 산책은 계속할 수 있어요."
