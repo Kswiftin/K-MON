@@ -112,4 +112,29 @@ final class SafariVisitTests: XCTestCase {
             XCTAssertNil(visit.currentEncounter, "seed \(seed): 볼이 없는데 조우가 생겼다")
         }
     }
+
+    // MARK: revertUncommittedCatch — CompanionStore.catchInSafariZone 실패 시 되돌리기
+
+    /// `act(.ball)` 이 `.caught` 를 낸 직후 실제 커밋(`catchInSafariZone`)이 실패하면
+    /// `catchesThisVisit`/`caughtSpeciesIDs` 를 그 만큼 되돌려야 한다 — 안 그러면 잡지도 못한
+    /// 개체 때문에 방문당 상한이 부풀려진다.
+    func testRevertUncommittedCatchUndoesTheLastOptimisticCatch() {
+        var visit = SafariVisit(zone: .grassland, seed: 1, balls: SafariZone.ballsPerVisit,
+                                stepsRemaining: SafariZone.stepsPerVisit,
+                                walker: SafariWalker(startingAt: SafariCell(x: 5, y: 5)),
+                                currentEncounter: nil, catchesThisVisit: 1,
+                                caughtSpeciesIDs: [10], visitLog: [], hasEnded: false, rngState: 1)
+        visit.revertUncommittedCatch()
+        XCTAssertEqual(visit.catchesThisVisit, 0)
+        XCTAssertTrue(visit.caughtSpeciesIDs.isEmpty)
+    }
+
+    /// 되돌릴 게 없으면(이 방문에서 아직 한 마리도 안 잡음) no-op — 카운터가 음수로 내려가면
+    /// 안 된다.
+    func testRevertUncommittedCatchIsNoOpWhenNothingWasCaught() {
+        var visit = makeVisit()
+        visit.revertUncommittedCatch()
+        XCTAssertEqual(visit.catchesThisVisit, 0)
+        XCTAssertTrue(visit.caughtSpeciesIDs.isEmpty)
+    }
 }

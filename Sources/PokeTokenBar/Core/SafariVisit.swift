@@ -86,6 +86,18 @@ struct SafariVisit: Sendable {
         return outcome
     }
 
+    /// `act(.ball)` 이 `.caught` 를 낸 직후, 그 개체를 실제로 영구 반영하는
+    /// `CompanionStore.catchInSafariZone` 이 실패했을 때(스프라이트 없음·라인 조회 실패 등)
+    /// 호출한다. `catchesThisVisit`/`caughtSpeciesIDs` 는 조우 결과가 나는 즉시 낙관적으로
+    /// 갱신되므로, 실제 커밋이 실패하면 이 방문 로컬 카운터만 그 만큼 되돌려 방문당 상한이
+    /// 잡지도 못한 개체 때문에 부풀려지지 않게 한다. `hasEnded` 는 건드리지 않는다 — 이미
+    /// 종료 판정이 난 방문을 되살리면 화면 흐름(요약 화면 전환)이 더 꼬인다.
+    mutating func revertUncommittedCatch() {
+        guard catchesThisVisit > 0, !caughtSpeciesIDs.isEmpty else { return }
+        catchesThisVisit -= 1
+        caughtSpeciesIDs.removeLast()
+    }
+
     /// 저장된 방문을 복원할 때만 쓰는 이니셜라이저(`SafariZoneSave.restored` 전용). 다른 모든
     /// 필드는 `advance`/`act` 로만 바뀌어야 하므로, 이 경로 밖에서 직접 만들지 않는다.
     init(zone: SafariZone.ZoneID, seed: UInt64, balls: Int, stepsRemaining: Int,
