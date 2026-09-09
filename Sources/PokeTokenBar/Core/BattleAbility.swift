@@ -11,7 +11,7 @@ struct BattleAbility: RawRepresentable, Sendable, Equatable, Hashable {
     let rawValue: String
 
     init?(rawValue: String) {
-        guard Self.generationFiveSlugs.contains(rawValue) else { return nil }
+        guard Self.supportedSlugs.contains(rawValue) else { return nil }
         self.rawValue = rawValue
     }
 
@@ -57,6 +57,10 @@ struct BattleAbility: RawRepresentable, Sendable, Equatable, Hashable {
         "magic-bounce", "sap-sipper", "prankster", "sand-force", "iron-barbs", "zen-mode",
         "victory-star", "turboblaze", "teravolt"
     ]
+
+    /// 1~5세대 전체 목록에 더해 기존 엔진이 이미 지원하던 이후 세대 특성도 유지한다.
+    /// `water-bubble`을 누락하면 리베이스 전에는 동작하던 화상 면역이 조용히 사라진다.
+    private static let supportedSlugs = generationFiveSlugs.union(["water-bubble"])
 
     /// 0배로 접는 기술 타입 — 특성 하나가 막는 타입은 **하나뿐**이다. 한 표가 전 타입을 막으면
     /// 부유가 모든 기술을 무효로 만든다.
