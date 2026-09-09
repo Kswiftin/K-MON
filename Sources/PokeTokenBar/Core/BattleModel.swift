@@ -2265,13 +2265,17 @@ enum BattleEngine {
 
     static func typeMultiplier(of move: MoveSpec, attacker: BattleSide, defender: BattleSide) -> Double {
         let bypasses = attacker.ability?.ignoresDefensiveAbilities == true
+        let contact = defender.heldEffect?.groundContact
+        if move.type == .ground, contact == .airborne { return 0 }
+        let grounded = move.type == .ground && contact == .grounded
         if !bypasses, defender.ability?.rawValue == "soundproof", move.isSound { return 0 }
-        if !bypasses, defender.ability?.immuneMoveType == move.type { return 0 }
-        var types = defender.battleTypes
+        if !bypasses, !grounded, defender.ability?.immuneMoveType == move.type { return 0 }
+        var types = grounded ? defender.battleTypes.filter { $0 != .flying } : defender.battleTypes
         if attacker.ability?.rawValue == "scrappy", move.type == .normal || move.type == .fighting {
             types.removeAll { $0 == .ghost }
         }
         var multiplier = TypeChart.effectiveness(move.type, against: types)
+        if multiplier == 0, defender.heldEffect?.ignoresTypeImmunity == true { multiplier = 1 }
         if !bypasses, defender.ability == .wonderGuard, move.damageClass != .status, multiplier <= 1 { multiplier = 0 }
         if attacker.ability?.rawValue == "tinted-lens", multiplier > 0, multiplier < 1 { multiplier *= 2 }
         return multiplier
