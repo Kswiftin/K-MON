@@ -2894,6 +2894,13 @@ final class CompanionStore {
         return commitCaughtMon(speciesID: speciesID, line: line, source: .safariZone)
     }
 
+    /// 사파리존 조우 화면이 스프라이트 옆에 보여줄 이름 — `catchInSafariZone` 과 같은 라인 조회를
+    /// 쓰지만 원장은 건드리지 않는다(표시 전용이라 몇 번을 조회해도 안전하다).
+    func safariEncounterName(_ speciesID: Int) async -> String {
+        guard let line = try? await provider.line(baseSpeciesID: speciesID) else { return "#\(speciesID)" }
+        return line.localizedName(speciesID)
+    }
+
     /// `catchRaidBoss`/`catchInSafariZone` 이 공유하는 커밋 경로.
     ///
     /// **잡은 자리에서 시작하는 경로로 세운다.** 레이드 세 티어 풀은 전부 최종 진화체라 그 경로는

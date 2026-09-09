@@ -4,24 +4,26 @@ import SwiftUI
 ///
 /// **결과가 나는 즉시 `SafariVisit.currentEncounter` 가 `nil` 이 된다.** 배너를 보여주는
 /// 동안에도 조우 정보(스프라이트·단계)를 화면에 붙잡아야 하므로, `displayedEncounter` 가
-/// 그 마지막 스냅샷을 들고 있다가 사용자가 "계속"을 누르면 놓는다.
+/// 그 마지막 스냅샷을 들고 있다가 사용자가 "계속"을 누르면 놓는다. 배너 표시 여부(`pendingOutcome`)
+/// 는 이 뷰의 로컬 상태가 아니라 부모(`SafariZoneView`)가 바인딩으로 들고 있다 — 그래야 배너가
+/// 뜨는 동안 부모가 이 뷰를 걷기 화면으로 바꿔치기하지 않는다.
 struct SafariEncounterView: View {
     @Bindable var store: CompanionStore
-    @State private var resultBanner: SafariOutcome?
+    @Binding var pendingOutcome: SafariOutcome?
     @State private var displayedEncounter: SafariEncounter?
+    @State private var speciesName: String?
     @State private var isCommitting = false
 
     private var l: L { store.l }
     private var encounter: SafariEncounter? { store.safariVisit?.currentEncounter ?? displayedEncounter }
 
     var body: some View {
-        VStack(spacing: 8) {
+        VStack(alignment: .leading, spacing: 6) {
             if let encounter {
                 header(encounter)
                 stageGauges(encounter)
-                Spacer(minLength: 0)
-                if let resultBanner {
-                    banner(resultBanner)
+                if let pendingOutcome {
+                    banner(pendingOutcome)
                 } else {
                     actionButtons
                 }
@@ -30,23 +32,31 @@ struct SafariEncounterView: View {
         }
         .onChange(of: store.safariVisit?.currentEncounter) { old, new in
             if let old, new == nil { displayedEncounter = old }
-            if new != nil { displayedEncounter = nil; resultBanner = nil }
+            if new != nil { displayedEncounter = nil; pendingOutcome = nil }
         }
     }
 
     private func header(_ encounter: SafariEncounter) -> some View {
-        HStack {
-            Spacer()
-            SpriteView(speciesID: encounter.speciesID, size: 64, shiny: false)
-            Spacer()
+        VStack(spacing: 2) {
+            HStack {
+                Spacer()
+                SpriteView(speciesID: encounter.speciesID, size: 64, shiny: false)
+                Spacer()
+            }
+            Text(speciesName ?? " ").font(.caption.bold())
+        }
+        .task(id: encounter.speciesID) {
+            speciesName = await store.safariEncounterName(encounter.speciesID)
         }
     }
 
     private func stageGauges(_ encounter: SafariEncounter) -> some View {
-        HStack {
-            Label(l.safariCatchStageLabel(encounter.catchStage), systemImage: "arrow.up.circle")
+        let catchPercent = SafariZone.catchPercent(rarity: encounter.rarity, catchStage: encounter.catchStage)
+        let fleePercent = SafariZone.fleePercent(fleeStage: encounter.fleeStage)
+        return HStack {
+            Label(l.safariCatchPercentLabel(catchPercent), systemImage: "arrow.up.circle")
             Spacer()
-            Label(l.safariFleeStageLabel(encounter.fleeStage), systemImage: "arrow.down.circle")
+            Label(l.safariFleePercentLabel(fleePercent), systemImage: "arrow.down.circle")
         }
         .font(.caption2)
     }
@@ -69,7 +79,7 @@ struct SafariEncounterView: View {
 
     private func perform(_ action: SafariAction) {
         guard let outcome = mutate({ $0.act(action) }), outcome != .continuing else { return }
-        resultBanner = outcome
+        pendingOutcome = outcome
         guard outcome == .caught, let speciesID = displayedEncounter?.speciesID ?? encounter?.speciesID
         else { return }
         isCommitting = true
@@ -89,7 +99,7 @@ struct SafariEncounterView: View {
         VStack(spacing: 6) {
             Text(bannerText(outcome)).font(.caption.bold())
             Button(l.safariContinue) {
-                resultBanner = nil
+                pendingOutcome = nil
                 displayedEncounter = nil
             }
             .buttonStyle(.bordered).controlSize(.small).disabled(isCommitting)
