@@ -650,8 +650,8 @@ struct L {
     var launchAtLogin: String { "로그인 시 자동 시작" }
     var bundledOnly: String { ".app 번들로 설치된 경우에만 사용 가능 (scripts/build-app.sh)" }
     var popoverShortcutLabel: String { "상단 창 열기/닫기 단축키" }
-    var popoverShortcutHint: String { "다른 앱에 있을 때도 이 단축키로 열고 닫을 수 있습니다." }
-    var popoverShortcutRecording: String { "키를 누르세요… (Esc로 취소)" }
+    var popoverShortcutHint: String { "다른 앱에 있을 때도 이 단축키로 열고 닫을 수 있습니다. ⌘⌥⇧⌃ 중 하나 이상을 함께 눌러야 합니다." }
+    var popoverShortcutRecording: String { "⌘⌥⇧⌃+키 (Esc 취소)" }
     var popoverShortcutEmpty: String { "설정 안 함" }
     var popoverShortcutClear: String { "지우기" }
     var notificationsSection: String { "알림" }
