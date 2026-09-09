@@ -475,7 +475,10 @@ final class PokopiaTownTests: XCTestCase {
     func testDevelopmentGrowsWithTerrainDiversity() {
         var seenNames: [String] = []
         for count in 1...TownTerrain.allCases.count {
-            let development = PokopiaTown.development(terrain(welcomingHabitats: count))
+            // 축 B 는 0 으로 고정한다 — 이 테스트는 축 A(종수→정원·이름)만 본다. 주민을 넣으면 정착이
+            // 레벨을 올려 이름 단정이 다른 축 때문에 통과하거나 실패한다(`defect-log.md` "판정 하나가
+            // 두 축을 보게 되면" 부류).
+            let development = PokopiaTown.development(terrain(welcomingHabitats: count), residents: [])
             XCTAssertEqual(development.habitats, count, "\(count)종 마을을 못 만들었다")
             XCTAssertEqual(development.capacity,
                            min(PokopiaTown.populationLimit,
@@ -483,17 +486,16 @@ final class PokopiaTownTests: XCTestCase {
             XCTAssertFalse(development.name.isEmpty)
             seenNames.append(development.name)
         }
-        // 이름이 단조로 늘어난다 — 한 이름만 나오면 단계가 화면에서 뜻을 잃는다.
-        XCTAssertGreaterThan(Set(seenNames).count, 1)
-        XCTAssertEqual(seenNames.first, "빈 터")
-        XCTAssertEqual(seenNames.last, "포코피아")
+        // 주민이 없을 때의 이름표는 축 A 만 봤던 시절과 글자 하나 같아야 한다 — 레벨을 넣으며 구간이
+        // 밀리면 지형 3종 마을이 하루아침에 "마을" 로 승격된다.
+        XCTAssertEqual(seenNames, ["빈 터", "작은 마을", "작은 마을", "마을", "마을", "큰 마을", "큰 마을", "포코피아"])
     }
 
     /// 정원이 자리를 **연다**: 종이 하나 늘면 딱 그만큼 늘고, 상한을 넘지 않는다.
     func testCapacityIsMonotoneAndClamped() {
         var previous = 0
         for count in 1...TownTerrain.allCases.count {
-            let capacity = PokopiaTown.development(terrain(welcomingHabitats: count)).capacity
+            let capacity = PokopiaTown.development(terrain(welcomingHabitats: count), residents: []).capacity
             XCTAssertGreaterThan(capacity, previous, "\(count)종에서 자리가 안 늘었다")
             XCTAssertLessThanOrEqual(capacity, PokopiaTown.populationLimit)
             previous = capacity
@@ -506,8 +508,96 @@ final class PokopiaTownTests: XCTestCase {
     func testDevelopmentAgreesWithTheHabitatBoard() {
         for count in 1...TownTerrain.allCases.count {
             let field = terrain(welcomingHabitats: count)
-            XCTAssertEqual(PokopiaTown.development(field).habitats,
+            XCTAssertEqual(PokopiaTown.development(field, residents: []).habitats,
                            PokopiaTown.habitats(field).filter(\.isWelcoming).count)
         }
+    }
+
+    // MARK: 환경 레벨 (두 축)
+
+    /// 주민이 없으면 레벨은 곧 지형 종수다 — 축 B 가 0 이라는 것을 눈으로 확인하는 자리.
+    /// 종수 0(잘린 배열)은 Lv.1 로 올려 세운다 — Lv.0 은 화면에 없는 값이다.
+    func testWithoutResidentsTheLevelIsTheHabitatCount() {
+        for count in 1...TownTerrain.allCases.count {
+            XCTAssertEqual(PokopiaTown.development(terrain(welcomingHabitats: count), residents: []).level, count)
+        }
+        let truncated = PokopiaTown.development([.water], residents: [])
+        XCTAssertEqual(truncated.habitats, 0, "전제: 1칸은 아무 지형도 못 넘긴다")
+        XCTAssertEqual(truncated.level, 1)
+        XCTAssertEqual(truncated.settled, 0)
+    }
+
+    /// 정착 비율 절반이 첫 계단이다. 축 A 는 4종에 **고정**한다 — 바꾸면 어느 축이 레벨을 움직였는지 못 가른다.
+    /// 3명 중 1명(33%)은 안 오르고, 2명 중 1명(50%)은 오른다 — 경계는 `>=` 다.
+    func testHalfOfTheResidentsSettledLiftsOneLevel() {
+        let field = terrain(welcomingHabitats: 4)                  // 풀·흙·물·모래 넘김, 나무 0칸
+        let home = resident(7, [.water])                           // 정착
+        let lost = resident(149, [.dragon])                        // 드래곤→나무, 0칸 → 미정착
+        XCTAssertTrue(PokopiaTown.isSettled(home, terrain: field))
+        XCTAssertFalse(PokopiaTown.isSettled(lost, terrain: field), "전제: 나무가 있으면 이 테스트는 아무것도 못 가른다")
+
+        let base = PokopiaTown.development(field, residents: []).level
+        let third = PokopiaTown.development(field, residents: [home, lost, resident(148, [.dragon])])
+        XCTAssertEqual(third.settled, 1)
+        XCTAssertEqual(third.level, base, "1/3 정착인데 레벨이 올랐다")
+        let half = PokopiaTown.development(field, residents: [home, lost])
+        XCTAssertEqual(half.level, base + 1, "절반 정착이 한 계단을 안 올렸다")
+        XCTAssertEqual(half.capacity, third.capacity, "축 B 가 정원을 건드렸다 — 금지한 되먹임이다")
+    }
+
+    /// 정원을 채우고 전원 정착하면 두 계단이다. 셋을 가른다: 전원 정착이지만 정원 미달(+1) ·
+    /// 정원은 찼지만 한 명 미정착(+1) · 정원 가득 전원 정착(+2). 앞 둘 없이 셋째만 세면
+    /// "전원 정착이면 +2" 인 구현과 구별되지 않는다.
+    func testAFullAndFullySettledTownLiftsTwoLevels() {
+        let field = terrain(welcomingHabitats: 3)                  // 풀·흙·물 → 정원 6
+        let base = PokopiaTown.development(field, residents: []).level
+        let settled = (1...6).map { resident($0, [.water]) }
+        XCTAssertEqual(PokopiaTown.development(field, residents: Array(settled.prefix(5))).level, base + 1,
+                       "정원 미달인데 두 계단 올랐다")
+        XCTAssertEqual(PokopiaTown.development(field, residents: Array(settled.prefix(5)) + [resident(149, [.dragon])]).level,
+                       base + 1, "한 명이 자리를 잃었는데 두 계단 올랐다")
+        XCTAssertEqual(PokopiaTown.development(field, residents: settled).level, base + 2)
+        // 종수 3 + 두 계단 = Lv.5 는 "마을" 이다. 이름이 종수(3 → "작은 마을")를 읽으면 여기서 갈린다.
+        XCTAssertEqual(PokopiaTown.development(field, residents: settled).name, "마을",
+                       "이름이 레벨이 아니라 종수를 읽는다")
+    }
+
+    /// **8종 + 16마리 전원 정착 = `maxLevel`** 이라는 등식. 어긋나면 Lv.10 이 영영 도달 불가거나
+    /// (안 끝나는 목표), 지형만으로 닿아 주민을 지킬 이유가 사라진다. `maxLevel` 의 현재 값 동결은
+    /// 이 자리 하나다(`defect-log.md` 의 리터럴 동결 부류) — 다른 테스트는 `PokopiaTown.maxLevel` 로 읽는다.
+    func testFullDiversityAndFullSettlementReachTheMaxLevel() {
+        XCTAssertEqual(PokopiaTown.maxLevel, 10)
+        // 여덟 지형을 돌려 깐 마을(`testAFullGridAlwaysWelcomesSomebody` 와 같은 격자) — 어떤 타입도 정착한다.
+        let field = (0..<PokopiaTown.tileCount).map { TownTerrain.allCases[$0 % TownTerrain.allCases.count] }
+        let everyone = (1...PokopiaTown.populationLimit).map { resident($0, [.water]) }
+        let top = PokopiaTown.development(field, residents: everyone)
+        XCTAssertEqual(top.habitats, TownTerrain.allCases.count)
+        XCTAssertEqual(top.settled, PokopiaTown.populationLimit)
+        XCTAssertEqual(top.level, PokopiaTown.maxLevel)
+        XCTAssertEqual(top.name, "포코피아")
+        // 한 명 빠지면 정원 미달이라 Lv.9 — 최고 레벨은 정원까지 채워야 한다.
+        XCTAssertEqual(PokopiaTown.development(field, residents: Array(everyone.dropLast())).level,
+                       PokopiaTown.maxLevel - 1)
+    }
+
+    /// 지형을 지우면 레벨은 내려가고 주민은 남는다. 레벨이 `normalized` 나 정원 판정에 새면 여기서
+    /// 주민 수가 줄거나 정원이 0 이 된다 — 그것은 이 기능이 금지한 자동 퇴거다.
+    func testRemovingTerrainLowersTheLevelButKeepsEveryResident() {
+        var state = PokopiaTownState()
+        state.terrain = terrain(welcomingHabitats: 3)              // 풀·흙·물
+        state.residents = [resident(7, [.water]), resident(9, [.water])]
+        let before = PokopiaTown.development(state.terrain, residents: state.residents)
+        XCTAssertEqual(before.settled, 2)
+
+        // 물을 전부 풀로 되돌린다 — 두 주민이 자리를 잃는다.
+        state.terrain = state.terrain.map { $0 == .water ? .grass : $0 }
+        let after = PokopiaTown.development(state.terrain, residents: state.residents)
+        XCTAssertEqual(after.settled, 0)
+        XCTAssertLessThan(after.level, before.level, "자리를 잃었는데 레벨이 안 내려갔다")
+        // 하강의 절반은 축 A(물 종이 빠져 종수 3→2)다. 축 B 도 0 으로 돌아갔는지는 주민 없는 같은 마을과
+        // 맞대야 보인다 — 이 줄이 없으면 정착을 무시하는 lift 도 위의 `<` 를 통과한다(주입으로 확인, 2026-09-09).
+        XCTAssertEqual(after.level, PokopiaTown.development(state.terrain, residents: []).level,
+                       "정착 0 인데 축 B 가 레벨을 얹고 있다")
+        XCTAssertEqual(PokopiaTown.normalized(state).residents, state.residents, "정규화가 자리 잃은 주민을 잘랐다")
     }
 }

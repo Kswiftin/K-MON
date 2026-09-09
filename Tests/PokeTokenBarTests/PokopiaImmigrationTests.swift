@@ -48,7 +48,8 @@ final class PokopiaImmigrationTests: XCTestCase {
         }
         // 결과를 센다 — `shapeTownTile` 은 이미 그 지형이면 false 라, 반환값을 단정하면
         // 기본 지형과 겹치는 줄(풀·길)에서 픽스처가 죽는다.
-        let development = PokopiaTown.development(store.memoryAlbum.town.terrain)
+        let development = PokopiaTown.development(store.memoryAlbum.town.terrain,
+                                                  residents: store.memoryAlbum.town.residents)
         XCTAssertEqual(development.habitats, TownTerrain.allCases.count)
         XCTAssertEqual(development.capacity, PokopiaTown.populationLimit)
     }
@@ -215,7 +216,9 @@ final class PokopiaImmigrationTests: XCTestCase {
                               types: pool.reduce(into: [:]) { $0[$1] = [.water] })
         makeWatery(store)   // 물·풀·길 = 3종 → 6자리
 
-        let before = PokopiaTown.development(store.memoryAlbum.town.terrain)
+        // 실제 주민을 넘긴다 — 여기서 보는 것은 정원(축 A)이고, 정원은 주민을 봐도 바뀌지 않아야 한다.
+        let before = PokopiaTown.development(store.memoryAlbum.town.terrain,
+                                             residents: store.memoryAlbum.town.residents)
         XCTAssertEqual(before.habitats, 3)
         XCTAssertEqual(before.capacity, 3 * PokopiaTown.residentsPerHabitat)
 
@@ -229,7 +232,8 @@ final class PokopiaImmigrationTests: XCTestCase {
         for col in 0..<PokopiaTown.habitatThreshold {
             XCTAssertTrue(store.memoryAlbum.shapeTownTile(col: col, row: 4, to: .sand))
         }
-        let after = PokopiaTown.development(store.memoryAlbum.town.terrain)
+        let after = PokopiaTown.development(store.memoryAlbum.town.terrain,
+                                            residents: store.memoryAlbum.town.residents)
         XCTAssertEqual(after.habitats, 4)
         XCTAssertEqual(after.capacity, before.capacity + PokopiaTown.residentsPerHabitat)
 

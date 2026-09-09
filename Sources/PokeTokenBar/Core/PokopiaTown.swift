@@ -64,7 +64,7 @@ enum PokopiaTown {
     /// 가리지 않는 밀도의 상한으로 잡았다. **소유가 아니므로** 룸메이트 3명 같은 소유 상한과는
     /// 축이 다르다.
     ///
-    /// 실제로 지금 몇 마리가 살 수 있는지는 `development(_:).capacity` 가 정한다(지형 다양성이
+    /// 실제로 지금 몇 마리가 살 수 있는지는 `development(_:residents:).capacity` 가 정한다(지형 다양성이
     /// 자리를 연다). 이 값은 그 위의 벽이고, **신뢰경계(`normalized`)만 이 값을 쓴다** —
     /// 정원을 신뢰경계에 넣으면 지형을 지울 때 주민이 잘려 나간다(금지한 자동 퇴거다).
     static let populationLimit = 16
@@ -184,43 +184,66 @@ enum PokopiaTown {
             .map(\.1)
     }
 
-    // MARK: - 마을 개발도 (지형 다양성이 보상이다)
+    // MARK: - 마을 개발도 · 환경 레벨 (지형 다양성이 정원을, 정착이 마지막 레벨을 연다)
 
     /// 지형 한 종이 문턱을 넘을 때 열리는 주민 자리. **8종 × 2 = 16 = `populationLimit`** 이
     /// 성립해야 한다 — 어긋나면 모든 지형을 다 밀어도 상한에 못 닿거나(영영 안 끝나는 목표),
     /// 절반만 밀어도 상한에 닿는다(다양하게 만들 이유가 사라진다). 테스트가 그 등식을 센다.
     static let residentsPerHabitat = 2
 
-    /// 마을 개발도. **파생이다** — 저장 필드가 없다. 지형만 보면 답이 나오므로 저장하면
-    /// 지형과 어긋날 수 있는 두 번째 진실이 생긴다(`memory-home-plan.md` 의 원칙).
+    /// 환경 레벨의 최고치. 원작도 마을당 Lv.1~10 이다. **8 + 2 = 10** — 지형 여덟 종이 Lv.8 까지
+    /// 열고, 주민 정착(아래 `development`)이 마지막 두 레벨을 준다. 등식은 테스트가 센다
+    /// (`testFullDiversityAndFullSettlementReachTheMaxLevel`) — 어긋나면 Lv.10 이 도달 불가가 되거나
+    /// 지형만으로 닿아 주민을 지킬 이유가 사라진다.
+    static let maxLevel = 10
+
+    /// 마을 개발도. **파생이다** — 저장 필드가 없다. 지형과 주민만 보면 답이 나오므로 저장하면
+    /// 그 둘과 어긋날 수 있는 두 번째 진실이 생긴다(`memory-home-plan.md` 의 원칙).
     struct TownDevelopment: Equatable {
         /// 문턱을 넘은 지형 **종수**(0...8). 타입 수가 아니다 — 보상의 축이 "얼마나 다양한가" 다.
         let habitats: Int
         /// 지금 살 수 있는 주민 수.
         let capacity: Int
-        /// 화면에 쓰는 단계 이름. 숫자만 보여 주면 8종이 무엇의 끝인지 읽히지 않는다.
+        /// 자리를 지키고 있는 주민 수(`isSettled`). 화면이 "정착 s/r" 로 쓴다 — 화면이 세면 술어가 둘이 된다.
+        let settled: Int
+        /// 환경 레벨 1...`maxLevel`. **두 축**이다 — 지형 종수(축 A)가 레벨 하나씩을 열고, 정착 비율(축 B)이
+        /// 위에 최대 둘을 얹는다. 정원(`capacity`)은 축 A 만 본다 — 축 B 가 정원을 열면 주민이 주민을
+        /// 부르는 되먹임이 된다. 원작처럼 **내려갈 수 있다** — 지형을 지워 주민이 자리를 잃으면 비율이 떨어진다.
+        /// 내려가는 것은 레벨만이다: 정원·주민·`normalized` 는 레벨을 읽지 않는다(자동 퇴거 금지).
+        let level: Int
+        /// 화면에 쓰는 **레벨 구간** 이름. 숫자만 보여 주면 10이 무엇의 끝인지 읽히지 않는다.
         let name: String
     }
 
     /// 이 마을의 개발도. 종수는 `habitats(_:)` 에서 온다 — 현황표와 **같은 판정**을 쓰므로
-    /// "부르는 중" 이라 적힌 줄 수와 개발도가 어긋날 수 없다.
+    /// "부르는 중" 이라 적힌 줄 수와 개발도가 어긋날 수 없다. 정착은 `isSettled` 에서 온다 —
+    /// 주민 줄의 붉은 배경과 같은 술어라 "정착 2/3" 와 붉은 줄 수가 어긋날 수 없다.
     ///
     /// `capacity` 를 `populationLimit` 로 클램프한다. 상한은 **여전히 절대 천장**이고,
     /// 개발도는 그 아래에서 열리는 자리를 정한다 — `normalized` 는 개발도를 보지 않는다.
     /// (보면 지형을 지울 때 주민이 잘려 나가고, 그것은 이 기능이 금지한 자동 퇴거다.)
-    static func development(_ terrain: [TownTerrain]) -> TownDevelopment {
+    ///
+    /// 축 B 의 두 계단: 주민 **절반 이상**이 정착하면 +1, **정원이 차고 전원** 정착하면 +1 더.
+    /// 비율(정착/주민)이지 정원 대비가 아니다 — 주민이 적은 마을과 주민이 불행한 마을은 다른
+    /// 상태다. 주민이 없으면 0 이다(0/0 을 만족으로 읽지 않는다). 정수 비교만 쓴다(`settled * 2 >=
+    /// residents.count`) — 규칙표에 부동소수를 들이지 않는다.
+    static func development(_ terrain: [TownTerrain], residents: [TownResident]) -> TownDevelopment {
         let count = habitats(terrain).filter(\.isWelcoming).count
+        let capacity = min(populationLimit, count * residentsPerHabitat)
+        let settled = residents.filter { isSettled($0, terrain: terrain) }.count
+        var lift = 0
+        if !residents.isEmpty && settled * 2 >= residents.count { lift += 1 }
+        if !residents.isEmpty && settled == residents.count && residents.count >= capacity { lift += 1 }
+        let level = max(1, min(maxLevel, count + lift))
         let name: String
-        switch count {
-        case 0...1: name = "빈 터"
+        switch level {
+        case 1:     name = "빈 터"
         case 2...3: name = "작은 마을"
         case 4...5: name = "마을"
         case 6...7: name = "큰 마을"
-        default:    name = "포코피아"
+        default:    name = "포코피아"     // 8...maxLevel
         }
-        return TownDevelopment(habitats: count,
-                               capacity: min(populationLimit, count * residentsPerHabitat),
-                               name: name)
+        return TownDevelopment(habitats: count, capacity: capacity, settled: settled, level: level, name: name)
     }
 
     /// 이번 세션에 찾아올 종. **순수 함수다** — 판정과 발송(알림)을 가른다.
@@ -237,7 +260,7 @@ enum PokopiaTown {
         // **정원은 개발도가 정한다** — `populationLimit` 은 절대 천장이고, 지형을 다양하게
         // 만들지 않으면 그 천장까지 열리지 않는다. 풀 172칸짜리 마을이 16마리를 다 받으면
         // "다양하게 만들 이유" 가 없어진다.
-        guard residents.count < development(terrain).capacity else { return nil }
+        guard residents.count < development(terrain, residents: residents).capacity else { return nil }
         let welcoming = welcomingTypes(terrain)
         guard !welcoming.isEmpty else { return nil }
         let living = Set(residents.map(\.speciesID))
