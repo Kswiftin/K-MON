@@ -54,6 +54,11 @@ You can enable Do Not Disturb to block system notifications, the floating pet, a
 - **Nearby trainer cards** — the Friends tab shows each peer's dressed avatar, ranked tier color, and partner Pokémon.
 - **Wave run** — pick a starter and take on 30 waves, with a boss every fourth wave (clearing one heals the party back to 70% HP) and one item pick after each wave. On wild waves you can throw one of the run's five balls (nine at most) to catch your opponent and grow the party to six. Roughly one wild wave in eight sends two opponents at once, and those are fought two-on-two with both of your Pokémon on the field — you choose an action per slot, and wide-reaching moves such as Earthquake hit several Pokémon in one go. Every run is drawn fresh, there is no daily limit, and a run in progress survives quitting and reopening the app. Your first clear each day awards one Egg and 5,000 Star Pieces.
 
+## Safari Zone & Pokopia Town
+
+- **Safari Zone** — enter one of three zones (grassland, wetland, cave) and walk the field with the arrow keys to find wild Pokémon. On an encounter, choose bait (raises catch chance, but flee chance rises too), mud (lowers flee chance, but catch chance drops too), a ball, or fleeing, and throwing a ball plays an animation of it flying at the Pokémon. The encounter screen shows the opponent's gender, types, and ability up front, and the field has obstacles — trees, puddles, boulders. Balls and steps are capped per visit, and both visits and catches are capped per day.
+- **Pokopia Town** — transform into a species registered in your Pokédex to push terrain matching that type (grass, water, sand, rock, and more) at no cost. Every finished focus session rolls an immigration check, and a Pokémon that fits the town's environment moves in on its own — the more varied the terrain, the more residents the town can hold. Environment level (Lv.1–10, five stages from empty lot to Pokopia) rises and falls with terrain variety and settlement rate, in its own window.
+
 ## Tour
 
 <table>
@@ -112,6 +117,20 @@ Create a room from the Friends tab or join one nearby and fight two to four trai
 <h3>Focus log & weekly recap</h3>
 Finished sessions stack up by day, each keeping the one-line label you gave it at the start. The weekly recap puts bars per weekday, totals per label, a daily average, and your chained-session count on one screen.
 </td>
+</tr>
+<tr>
+<td width="45%" align="center"><img src="assets/screenshot-safari-walk.png" width="180" alt="Safari Zone walking screen"><br><br><img src="assets/screenshot-safari-encounter.png" width="180" alt="Safari Zone encounter screen"></td>
+<td width="55%" valign="middle">
+<h3>Safari Zone</h3>
+Walk the field with the arrow keys to find wild Pokémon. On an encounter, choose bait, mud, a ball, or fleeing, and check the opponent's gender, types, and ability up front.
+</td>
+</tr>
+<tr>
+<td width="55%" valign="middle">
+<h3>Pokopia Town</h3>
+Push terrain that matches whatever species you're transformed into, and a Pokémon that fits the town's environment moves in and settles after every finished focus session.
+</td>
+<td width="45%" align="center"><img src="assets/screenshot-pokopia-town.png" width="180" alt="Pokopia Town"></td>
 </tr>
 </table>
 
