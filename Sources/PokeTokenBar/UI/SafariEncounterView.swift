@@ -74,7 +74,13 @@ struct SafariEncounterView: View {
         else { return }
         isCommitting = true
         Task {
-            _ = await store.catchInSafariZone(speciesID: speciesID)
+            // act(.caught) 가 낙관적으로 이미 catchesThisVisit 을 올렸다 — 실제 영구 반영이
+            // 실패하면(라인 조회 실패 등) 그 낙관적 갱신을 되돌려야 방문당 상한이 잡지도 못한
+            // 개체 때문에 부풀려지지 않는다. `isCaught` 로 판정해 `RaidCatchResult` 에 새 case
+            // 가 추가돼도 기본이 "실패로 보고 되돌린다" 쪽이 되게 한다.
+            if !(await store.catchInSafariZone(speciesID: speciesID)).isCaught {
+                mutate { $0.revertUncommittedCatch() }
+            }
             isCommitting = false
         }
     }
