@@ -692,7 +692,10 @@ final class SaveTransferTests: XCTestCase {
                                           // 사파리존 방문(참여)·포획(보상) 원장 — 레이드 지급·포획
                                           // 원장과 같은 이유로 따로 두고(서로 안 태우게) 병합한다.
                                           "safariZoneVisitDate", "safariZoneVisitsToday",
-                                          "safariZoneCatchDate", "safariZoneCatchesToday"]
+                                          "safariZoneCatchDate", "safariZoneCatchesToday",
+                                          // 출시 기념 1회성 보너스 수령 여부 — 어느 한쪽 기기에서라도
+                                          // 이미 받았으면 병합 후에도 받은 것으로 유지해야 한다.
+                                          "safariZoneUpdateBonusClaimed"]
         let classified = progress.union(deviceLedger).union(accountLedger)
         let actual = Set(Mirror(reflecting: CompanionState()).children.compactMap(\.label))
         XCTAssertEqual(actual, classified, """

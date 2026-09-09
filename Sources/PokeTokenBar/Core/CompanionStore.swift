@@ -287,6 +287,7 @@ final class CompanionStore {
         self.memoryAlbum.initializeMemoryHomePublicNickname(from: state.trainerName)
         migrateAchievementRoomStyleUnlocks()
         backfillFirstMeetingDates()
+        claimSafariZoneUpdateBonusIfNeeded()
         reconcileStoredEggDates()
         // 정산 없이 앱이 죽은 랭크전은 여기서 패배로 마감한다(에스크로는 이미 빠져나가 있다).
         settleAbandonedRankedBattleIfNeeded()
@@ -4603,6 +4604,25 @@ final class CompanionStore {
         state = SaveTransfer.sanitized(s, origin: .localDisk)
         loadOutcome = .loaded
     }
+    /// 사파리존 출시를 기념해 배포일 하루만 방문·포획 원장을 비워 준다. `safariZoneUpdateBonusClaimed`
+    /// 가 이미 참이면(재설치로 다시 실행해도 세이브의 이 값은 남아 있다) 아무것도 안 한다 — 중복
+    /// 지급 없이 딱 한 번이다. 배포일이 지난 뒤 처음 실행하는 사용자는 날짜가 안 맞아 못 받는다
+    /// (요청된 동작 — "그날 실행한 사람만"). **배포 직전에 `safariZoneUpdateBonusDayKey` 를 실제
+    /// 배포일로 맞춰야 한다.**
+    private static let safariZoneUpdateBonusDayKey = "2026-09-09"
+
+    private func claimSafariZoneUpdateBonusIfNeeded() {
+        guard !state.safariZoneUpdateBonusClaimed else { return }
+        guard Self.dayKey(clock()) == Self.safariZoneUpdateBonusDayKey else { return }
+        state.safariZoneVisitDate = ""
+        state.safariZoneVisitsToday = 0
+        state.safariZoneCatchDate = ""
+        state.safariZoneCatchesToday = 0
+        state.safariZoneUpdateBonusClaimed = true
+        AppLog.write("safari zone update bonus claimed")
+        save()
+    }
+
     /// `firstMetAt` 이전 세이브는 가장 이른 앨범 기록으로 보정한다. 새 동행은 부화 시각을 직접 저장한다.
     private func backfillFirstMeetingDates() {
         var changed = false

@@ -501,6 +501,10 @@ enum SaveTransfer {
         if s.safariZoneCatchesToday != 0 || !s.safariZoneCatchDate.isEmpty {
             p.append("szc\(s.safariZoneCatchDate):\(s.safariZoneCatchesToday)")
         }
+        // 출시 기념 1회성 보너스 — 손으로 이 값을 다시 `false` 로 되돌리면 배포일 안에는 방문·
+        // 포획 원장이 몇 번이든 다시 비워진다. 위 방문·포획 원장과 같은 이유로 서명 대상이다.
+        // 거짓일 때는 payload 에 안 넣어 구버전 세이브(이 필드가 아예 없던)와 서명이 갈리지 않는다.
+        if s.safariZoneUpdateBonusClaimed { p.append("szub") }
         if s.focusEggs != 0 { p.append("fe\(s.focusEggs)") }
         if !s.focusEggReadyDates.isEmpty {
             p.append("fer" + s.focusEggReadyDates.map { String($0.timeIntervalSince1970) }.joined(separator: ","))
@@ -655,6 +659,10 @@ enum SaveTransfer {
         (state.safariZoneCatchDate, state.safariZoneCatchesToday) = Self.mergedGymDefenseLedger(
             imported: (imported.safariZoneCatchDate, imported.safariZoneCatchesToday),
             current: (current.safariZoneCatchDate, current.safariZoneCatchesToday))
+        // 출시 기념 1회성 보너스 — 어느 한쪽 기기에서라도 이미 받았으면 병합 후에도 받은 것으로
+        // 유지한다. `||`가 아니라 `&&`를 쓰면 세이브를 주고받는 것만으로 이미 받은 보너스가 다시
+        // 지급될 수 있다.
+        state.safariZoneUpdateBonusClaimed = imported.safariZoneUpdateBonusClaimed || current.safariZoneUpdateBonusClaimed
         return state
     }
 
