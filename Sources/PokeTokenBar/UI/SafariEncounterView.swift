@@ -13,6 +13,19 @@ struct SafariEncounterView: View {
     @State private var displayedEncounter: SafariEncounter?
     @State private var speciesName: String?
     @State private var isCommitting = false
+    /// 던지기→반응 두 단계가 재생되는 동안 버튼을 막는다. `isCommitting`(포획 영구 반영 대기)
+    /// 과는 별개 축 — 애니메이션은 항상 먼저 끝나고, 잡았을 때만 그 뒤에 커밋이 이어진다.
+    @State private var isAnimating = false
+    /// 던지는 아이템(볼/미끼/진흙)의 현재 위치·회전·불투명도. 조우가 바뀌면 리셋한다.
+    @State private var thrownAction: SafariAction?
+    @State private var thrownItemOffset: CGSize = .zero
+    @State private var thrownItemRotation: Double = 0
+    @State private var thrownItemOpacity: Double = 0
+    /// 포켓몬 쪽 반응 — 흔들림(shake)·축소(흡수)·투명도(페이드)·바운스(scale).
+    @State private var targetShake: CGFloat = 0
+    @State private var targetScale: CGFloat = 1
+    @State private var targetOpacity: Double = 1
+    @State private var mudOverlayOpacity: Double = 0
 
     private var l: L { store.l }
     private var encounter: SafariEncounter? { store.safariVisit?.currentEncounter ?? displayedEncounter }
@@ -35,22 +48,62 @@ struct SafariEncounterView: View {
         }
         .onChange(of: store.safariVisit?.currentEncounter) { old, new in
             if let old, new == nil { displayedEncounter = old }
-            if new != nil { displayedEncounter = nil; pendingOutcome = nil }
+            if new != nil { displayedEncounter = nil; pendingOutcome = nil; resetAnimationState() }
         }
+    }
+
+    private func resetAnimationState() {
+        thrownAction = nil
+        thrownItemOffset = .zero
+        thrownItemRotation = 0
+        thrownItemOpacity = 0
+        targetShake = 0
+        targetScale = 1
+        targetOpacity = 1
+        mudOverlayOpacity = 0
     }
 
     private func header(_ encounter: SafariEncounter) -> some View {
         VStack(spacing: 2) {
-            HStack {
-                Spacer()
-                SpriteView(speciesID: encounter.speciesID, size: 64, shiny: false)
-                Spacer()
+            ZStack {
+                HStack {
+                    Spacer()
+                    SpriteView(speciesID: encounter.speciesID, size: 64, shiny: false)
+                        .offset(x: targetShake)
+                        .scaleEffect(targetScale)
+                        .opacity(targetOpacity)
+                    Spacer()
+                }
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8).fill(Color.brown.opacity(mudOverlayOpacity))
+                        .allowsHitTesting(false)
+                )
+                if let thrownAction {
+                    thrownItemImage(thrownAction)
+                        .offset(thrownItemOffset)
+                        .rotationEffect(.degrees(thrownItemRotation))
+                        .opacity(thrownItemOpacity)
+                }
             }
             Text(speciesName ?? " ").font(.caption.bold())
         }
         .task(id: encounter.speciesID) {
             speciesName = await store.safariEncounterName(encounter.speciesID)
         }
+    }
+
+    private func thrownItemImage(_ action: SafariAction) -> some View {
+        let sprite: PixelSprite
+        let palette: PixelPalette
+        switch action {
+        case .ball: sprite = SafariActionPixelArt.ball; palette = SafariActionPixelArt.ballPalette
+        case .bait: sprite = SafariActionPixelArt.bait; palette = SafariActionPixelArt.baitPalette
+        case .mud: sprite = SafariActionPixelArt.mud; palette = SafariActionPixelArt.mudPalette
+        case .run: sprite = SafariActionPixelArt.ball; palette = SafariActionPixelArt.ballPalette
+        }
+        guard let cgImage = sprite.cgImage(palette: palette) else { return AnyView(EmptyView()) }
+        return AnyView(Image(decorative: cgImage, scale: 1).interpolation(.none)
+            .resizable().frame(width: 16, height: 16))
     }
 
     private func stageGauges(_ encounter: SafariEncounter) -> some View {
@@ -77,23 +130,40 @@ struct SafariEncounterView: View {
     private func actionButton(_ title: String, action: SafariAction, disabled: Bool = false) -> some View {
         Button(title) { perform(action) }
             .buttonStyle(.bordered).controlSize(.small)
-            .disabled(disabled || isCommitting)
+            .disabled(disabled || isCommitting || isAnimating)
     }
 
+    /// **던지기 → 결과 확정(`act` 호출) → 반응**, 이 순서를 지킨다. `act()` 를 던지기 애니메이션
+    /// 뒤로 미루는 이유는, `act()` 가 호출되는 순간 `currentEncounter` 가 `nil` 이 될 수 있어(잡음·
+    /// 도망·시간초과) 그 즉시 배너/걷기 화면 전환 로직이 반응하기 때문이다 — 애니메이션이 재생될
+    /// 새도 없이 화면이 넘어간다. 결과를 먼저 정하고 그 결과에 맞는 반응(흡수/흔들림/바운스)을
+    /// 재생한 뒤에야 화면을 넘긴다.
     private func perform(_ action: SafariAction) {
-        guard let outcome = mutate({ $0.act(action) }), outcome != .continuing else { return }
-        // 도망은 사용자가 직접 조우를 그만두는 선택이다 — 결과가 뻔하므로(항상 놓아줌) 배너로
-        // 한 번 더 확인시키지 않고 바로 걷기 화면으로 돌아간다.
+        guard !isAnimating else { return }
+        // 도망은 사용자가 직접 조우를 그만두는 선택이라 던지는 연출이 없다 — 결과가 뻔하므로
+        // (항상 놓아줌) 배너로 한 번 더 확인시키지 않고 바로 걷기 화면으로 돌아간다.
         if action == .run {
+            guard let outcome = mutate({ $0.act(action) }), outcome != .continuing else { return }
             pendingOutcome = nil
             displayedEncounter = nil
             return
         }
-        pendingOutcome = outcome
-        guard outcome == .caught, let speciesID = displayedEncounter?.speciesID ?? encounter?.speciesID
-        else { return }
-        isCommitting = true
+        isAnimating = true
         Task {
+            await playThrow(action)
+            guard let outcome = mutate({ $0.act(action) }) else {
+                isAnimating = false
+                resetAnimationState()
+                return
+            }
+            await playReaction(action: action, outcome: outcome)
+            isAnimating = false
+            resetAnimationState()
+            guard outcome != .continuing else { return }
+            pendingOutcome = outcome
+            guard outcome == .caught, let speciesID = displayedEncounter?.speciesID ?? encounter?.speciesID
+            else { return }
+            isCommitting = true
             // act(.caught) 가 낙관적으로 이미 catchesThisVisit 을 올렸다 — 실제 영구 반영이
             // 실패하면(라인 조회 실패 등) 그 낙관적 갱신을 되돌려야 방문당 상한이 잡지도 못한
             // 개체 때문에 부풀려지지 않는다. `isCaught` 로 판정해 `RaidCatchResult` 에 새 case
@@ -110,6 +180,63 @@ struct SafariEncounterView: View {
             pendingOutcome = nil
             displayedEncounter = nil
         }
+    }
+
+    /// 아이템이 트레이너 자리(화면 아래)에서 포켓몬 쪽(화면 위)으로 날아간다 — 결과와 무관한
+    /// 공통 연출. 볼은 날아가며 회전한다.
+    private func playThrow(_ action: SafariAction) async {
+        thrownAction = action
+        thrownItemOffset = CGSize(width: 0, height: 40)
+        thrownItemOpacity = 1
+        thrownItemRotation = 0
+        let duration = 0.45
+        withAnimation(.easeIn(duration: duration)) {
+            thrownItemOffset = .zero
+            if action == .ball { thrownItemRotation = 360 }
+        }
+        try? await Task.sleep(nanoseconds: UInt64(duration * 1_000_000_000))
+    }
+
+    /// 결과에 따라 포켓몬·아이템이 반응한다. 잡았으면 포켓몬이 흡수되며 볼이 몇 번 흔들리고,
+    /// 볼이 실패했으면(도망·시간초과 포함) 포켓몬이 짧게 흔들리고 볼은 사라진다. 미끼/진흙은
+    /// 결과와 무관하게 항상 같은 반응(바운스/흔들림+얼룩)을 보여준다.
+    private func playReaction(action: SafariAction, outcome: SafariOutcome) async {
+        switch action {
+        case .ball where outcome == .caught:
+            withAnimation(.easeIn(duration: 0.3)) { targetScale = 0.1; targetOpacity = 0 }
+            try? await Task.sleep(nanoseconds: 300_000_000)
+            for _ in 0..<3 {
+                withAnimation(.easeInOut(duration: 0.1)) { thrownItemRotation += 20 }
+                try? await Task.sleep(nanoseconds: 100_000_000)
+                withAnimation(.easeInOut(duration: 0.1)) { thrownItemRotation -= 20 }
+                try? await Task.sleep(nanoseconds: 100_000_000)
+            }
+        case .ball:
+            await shakeTarget()
+            withAnimation(.easeOut(duration: 0.2)) { thrownItemOpacity = 0 }
+            try? await Task.sleep(nanoseconds: 200_000_000)
+        case .bait:
+            withAnimation(.easeInOut(duration: 0.12)) { targetScale = 1.08 }
+            try? await Task.sleep(nanoseconds: 120_000_000)
+            withAnimation(.easeInOut(duration: 0.12)) { targetScale = 1.0 }
+            try? await Task.sleep(nanoseconds: 120_000_000)
+        case .mud:
+            await shakeTarget()
+            withAnimation(.easeIn(duration: 0.15)) { mudOverlayOpacity = 0.25 }
+            try? await Task.sleep(nanoseconds: 150_000_000)
+            withAnimation(.easeOut(duration: 0.15)) { mudOverlayOpacity = 0 }
+            try? await Task.sleep(nanoseconds: 150_000_000)
+        case .run:
+            break
+        }
+    }
+
+    private func shakeTarget() async {
+        withAnimation(.easeInOut(duration: 0.08)) { targetShake = -6 }
+        try? await Task.sleep(nanoseconds: 80_000_000)
+        withAnimation(.easeInOut(duration: 0.08)) { targetShake = 6 }
+        try? await Task.sleep(nanoseconds: 80_000_000)
+        withAnimation(.easeInOut(duration: 0.08)) { targetShake = 0 }
     }
 
     private func banner(_ outcome: SafariOutcome) -> some View {
