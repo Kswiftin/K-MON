@@ -93,6 +93,9 @@ struct SafariEncounterView: View {
                     Text(gender.symbol).font(.caption.bold())
                         .foregroundStyle(gender == .male ? .blue : .pink)
                 }
+                if store.isSpeciesAlreadyOwned(encounter.speciesID) {
+                    ownedBadge
+                }
             }
             HStack(spacing: 4) {
                 ForEach(types, id: \.self) { TypeBadge(type: $0) }
@@ -115,6 +118,18 @@ struct SafariEncounterView: View {
                 mutate { $0.setCurrentEncounterGender(gender) }
             }
         }
+    }
+
+    /// 이미 도감에 등록한 종이면 이름 옆에 붙는 몬스터볼 표식 — 던지는 볼과 같은 스프라이트를
+    /// 재사용한다(새 이미지 파이프라인을 만들지 않는다).
+    private var ownedBadge: some View {
+        Group {
+            if let cgImage = SafariActionPixelArt.ball.cgImage(palette: SafariActionPixelArt.ballPalette) {
+                Image(decorative: cgImage, scale: 1).interpolation(.none)
+                    .resizable().frame(width: 12, height: 12)
+            }
+        }
+        .help("이미 도감에 등록된 포켓몬입니다")
     }
 
     private func thrownItemImage(_ action: SafariAction) -> some View {
@@ -144,18 +159,20 @@ struct SafariEncounterView: View {
 
     private var actionButtons: some View {
         HStack(spacing: 6) {
-            actionButton(l.safariBaitAction, action: .bait)
-            actionButton(l.safariMudAction, action: .mud)
-            actionButton(l.safariBallAction, action: .ball,
+            actionButton("\(l.safariBaitAction) 1", action: .bait, shortcut: "1")
+            actionButton("\(l.safariMudAction) 2", action: .mud, shortcut: "2")
+            actionButton("\(l.safariBallAction) 3", action: .ball, shortcut: "3",
                         disabled: (store.safariVisit?.balls ?? 0) <= 0)
-            actionButton(l.safariRunAction, action: .run)
+            actionButton("\(l.safariRunAction) 4", action: .run, shortcut: "4")
         }
     }
 
-    private func actionButton(_ title: String, action: SafariAction, disabled: Bool = false) -> some View {
+    private func actionButton(_ title: String, action: SafariAction, shortcut: KeyEquivalent,
+                              disabled: Bool = false) -> some View {
         Button(title) { perform(action) }
             .buttonStyle(.bordered).controlSize(.small)
             .disabled(disabled || isCommitting || isAnimating)
+            .keyboardShortcut(shortcut, modifiers: [])
     }
 
     /// **던지기 → 결과 확정(`act` 호출) → 반응**, 이 순서를 지킨다. `act()` 를 던지기 애니메이션

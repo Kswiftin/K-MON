@@ -69,7 +69,7 @@ struct ChallengeView: View {
             challengeCard(title: l.dungeonTitle, systemImage: "map.fill", tint: .red,
                           subtitle: "무작위로 이어지는 웨이브를 오르는 로그라이크 런.") { nav.showDungeon = true }
             challengeCard(title: l.safariZoneTitle, systemImage: "leaf.fill", tint: .green,
-                          subtitle: "미끼·진흙·볼·도망으로 야생을 잡는 그레이트 마쉬식 산책.") {
+                          subtitle: "벌판을 걸어 다니며 미끼·진흙·볼·도망으로 야생 포켓몬을 잡으세요.") {
                 nav.showSafariZone = true
             }
             challengeCard(title: "포켓몬 경매 시장",
