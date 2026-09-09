@@ -190,4 +190,15 @@ final class SafariZoneTests: XCTestCase {
         XCTAssertEqual(Double(uncommonCount) / Double(trials), 0.18, accuracy: 0.03)
         XCTAssertEqual(Double(rareCount) / Double(trials), 0.07, accuracy: 0.03)
     }
+
+    /// 트레이너 스폰 칸((7,4) = `bounds.width/2, bounds.height/2`)은 어느 존에서도 장애물이면
+    /// 안 된다 — 스폰하자마자 갇히는 결함을 원천 차단한다.
+    func testObstaclesNeverBlockTheSpawnCell() {
+        let bounds = SafariFieldBounds.standard
+        let spawnCell = SafariCell(x: bounds.width / 2, y: bounds.height / 2)
+        for zone in SafariZone.ZoneID.allCases {
+            XCTAssertFalse(SafariZone.obstacles(for: zone).contains(spawnCell),
+                           "\(zone): 스폰 칸이 장애물이면 안 된다")
+        }
+    }
 }

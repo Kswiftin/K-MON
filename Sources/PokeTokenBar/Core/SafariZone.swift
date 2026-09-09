@@ -151,6 +151,17 @@ enum SafariZone {
         }
         return subPool[Int(rng.next() % UInt64(subPool.count))]
     }
+
+    /// 벌판에 고정 배치된 장애물 칸(나무·물웅덩이·바위 — 그림은 존마다 다르지만 좌표는 공유한다).
+    /// 트레이너 스폰 칸(`bounds.width/2, bounds.height/2` = (7,4))은 항상 비운다 — 스폰하자마자
+    /// 갇히는 결함을 원천 차단한다.
+    private static let obstacleCells: Set<SafariCell> = [
+        SafariCell(x: 2, y: 2), SafariCell(x: 11, y: 2), SafariCell(x: 2, y: 6),
+        SafariCell(x: 11, y: 6), SafariCell(x: 6, y: 1), SafariCell(x: 7, y: 7),
+        SafariCell(x: 4, y: 4), SafariCell(x: 10, y: 4),
+    ]
+
+    static func obstacles(for zone: ZoneID) -> Set<SafariCell> { obstacleCells }
 }
 
 /// 조우 중 고를 수 있는 행동 — 그레이트 마쉬 원본 그대로 넷.
@@ -179,10 +190,20 @@ struct SafariEncounter: Sendable, Codable, Equatable {
     /// 보여주기 위해서다. 볼/도망에는 의미가 없어 그 액션들에서는 매번 `nil` 로 되돌린다("이전
     /// 액션의 부작용 값이 이번 액션 로그에 잘못 새어 들어가는" 부류를 원천 차단).
     private(set) var lastSideEffect: Bool?
+    /// 이 조우의 확정 성별 — 조우가 뜬 직후 화면이 한 번만 굴려서 채운다(`setGender`). 화면에
+    /// 보여준 성별과 실제로 잡힌 성별이 갈리면 안 되므로, 잡을 때(`commitCaughtMon`)도 새로
+    /// 굴리지 않고 이 값을 그대로 쓴다.
+    private(set) var gender: PokemonGender?
 
     init(speciesID: Int, rarity: Rarity) {
         self.speciesID = speciesID
         self.rarity = rarity
+    }
+
+    /// 이미 정해져 있으면 무시한다 — 화면이 재진입 때마다 실수로 다시 불러도 안전하다.
+    mutating func setGender(_ gender: PokemonGender) {
+        guard self.gender == nil else { return }
+        self.gender = gender
     }
 
     /// **네 액션의 유일한 진입점.** `bait`/`mud`/`ball`/`run` 을 각각 별도 public mutating func

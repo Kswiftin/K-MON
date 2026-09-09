@@ -62,4 +62,27 @@ final class SafariWalkerTests: XCTestCase {
         XCTAssertEqual(arrivals, 5, "0.1s 틱 10번(1.0s)이면 칸당 0.18s 를 5번 다 건너야 한다")
         XCTAssertEqual(walker.cell, SafariCell(x: 5, y: 0))
     }
+
+    // MARK: 장애물 거부
+
+    /// 장애물 칸으로 이동하려 하면 벽과 같은 방식으로 막힌다 — 방향만 바뀌고 제자리.
+    func testWalkerRejectsObstacleAndOnlyTurnsFacing() {
+        var walker = SafariWalker(startingAt: SafariCell(x: 5, y: 5))
+        let obstacles: Set<SafariCell> = [SafariCell(x: 5, y: 6)]
+        let arrived = walker.tick(dt: 0.1, heldKeys: [.down], bounds: bounds, obstacles: obstacles)
+        XCTAssertFalse(arrived)
+        XCTAssertEqual(walker.cell, SafariCell(x: 5, y: 5), "장애물 칸으로 들어가면 안 된다")
+        XCTAssertEqual(walker.facing, .down, "막혀도 바라보는 방향은 바뀌어야 한다")
+    }
+
+    /// `obstacles` 파라미터가 있어도 목표 칸과 무관하면 정상적으로 이동한다 — 장애물 판정이
+    /// 엉뚱한 칸까지 막지 않는지 확인.
+    func testWalkerMovesNormallyWhenTargetIsNotAnObstacle() {
+        var walker = SafariWalker(startingAt: SafariCell(x: 5, y: 5))
+        let obstacles: Set<SafariCell> = [SafariCell(x: 9, y: 9)]
+        _ = walker.tick(dt: 0.1, heldKeys: [.down], bounds: bounds, obstacles: obstacles)
+        let arrived = walker.tick(dt: 0.1, heldKeys: [.down], bounds: bounds, obstacles: obstacles)
+        XCTAssertTrue(arrived, "장애물과 무관한 칸으로는 정상 도착해야 한다")
+        XCTAssertEqual(walker.cell, SafariCell(x: 5, y: 6))
+    }
 }

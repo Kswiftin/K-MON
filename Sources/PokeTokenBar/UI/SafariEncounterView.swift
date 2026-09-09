@@ -12,6 +12,8 @@ struct SafariEncounterView: View {
     @Binding var pendingOutcome: SafariOutcome?
     @State private var displayedEncounter: SafariEncounter?
     @State private var speciesName: String?
+    @State private var types: [PokemonType] = []
+    @State private var abilityText: String?
     @State private var isCommitting = false
     /// 던지기→반응 두 단계가 재생되는 동안 버튼을 막는다. `isCommitting`(포획 영구 반영 대기)
     /// 과는 별개 축 — 애니메이션은 항상 먼저 끝나고, 잡았을 때만 그 뒤에 커밋이 이어진다.
@@ -85,10 +87,33 @@ struct SafariEncounterView: View {
                         .opacity(thrownItemOpacity)
                 }
             }
-            Text(speciesName ?? " ").font(.caption.bold())
+            HStack(spacing: 4) {
+                Text(speciesName ?? " ").font(.caption.bold())
+                if let gender = encounter.gender, gender != .genderless {
+                    Text(gender.symbol).font(.caption.bold())
+                        .foregroundStyle(gender == .male ? .blue : .pink)
+                }
+            }
+            HStack(spacing: 4) {
+                ForEach(types, id: \.self) { TypeBadge(type: $0) }
+            }
+            if let abilityText {
+                Text(abilityText).font(.caption2).foregroundStyle(.secondary)
+                    .lineLimit(2).multilineTextAlignment(.center)
+            }
         }
         .task(id: encounter.speciesID) {
-            speciesName = await store.safariEncounterName(encounter.speciesID)
+            async let name = store.safariEncounterName(encounter.speciesID)
+            async let loadedTypes = store.safariEncounterTypes(encounter.speciesID)
+            async let identity = PokeAPIClient.shared.chatSpeciesIdentity(speciesID: encounter.speciesID)
+            speciesName = await name
+            types = await loadedTypes
+            abilityText = await identity.ability
+            // 조우가 뜬 직후 딱 한 번만 굴린다 — `SafariEncounter.setGender` 가 이미 정해진
+            // 값이면 무시하므로, 재진입(창을 닫았다 열어도)에도 안전하다.
+            if encounter.gender == nil, let gender = await store.rollSafariEncounterGender(encounter.speciesID) {
+                mutate { $0.setCurrentEncounterGender(gender) }
+            }
         }
     }
 
@@ -156,29 +181,35 @@ struct SafariEncounterView: View {
                 resetAnimationState()
                 return
             }
+            // `act()` 가 방금 `currentEncounter` 를 `nil` 로 만들었을 수 있다(잡음·도망·시간초과) —
+            // `pendingOutcome` 을 반응 애니메이션 재생 **전에** 여기서 동기적으로 세워야
+            // `SafariZoneView` 가 그 프레임에 이미 "배너를 보여주는 중"으로 판단한다. 반응
+            // 애니메이션이 끝날 때까지 이걸 미루면, 그 사이(`currentEncounter == nil` 인데
+            // `pendingOutcome` 도 아직 `nil` 인 프레임)에 부모가 걷기 화면으로 바꿔치기해 버려서
+            // 화면이 통째로 비는 결함이 났다(미끼 사용 후 도망친 조우에서 실제로 재현됨).
+            if outcome != .continuing {
+                pendingOutcome = outcome
+            }
             await playReaction(action: action, outcome: outcome)
             isAnimating = false
             resetAnimationState()
             guard outcome != .continuing else { return }
-            pendingOutcome = outcome
             guard outcome == .caught, let speciesID = displayedEncounter?.speciesID ?? encounter?.speciesID
             else { return }
+            let gender = displayedEncounter?.gender ?? encounter?.gender
             isCommitting = true
             // act(.caught) 가 낙관적으로 이미 catchesThisVisit 을 올렸다 — 실제 영구 반영이
             // 실패하면(라인 조회 실패 등) 그 낙관적 갱신을 되돌려야 방문당 상한이 잡지도 못한
             // 개체 때문에 부풀려지지 않는다. `isCaught` 로 판정해 `RaidCatchResult` 에 새 case
-            // 가 추가돼도 기본이 "실패로 보고 되돌린다" 쪽이 되게 한다.
-            if !(await store.catchInSafariZone(speciesID: speciesID)).isCaught {
+            // 가 추가돼도 기본이 "실패로 보고 되돌린다" 쪽이 되게 한다. `gender` 는 조우가 뜰 때
+            // 화면이 미리 굴려 보여준 값 — 여기서 새로 안 굴리고 그대로 넘겨 화면에 보여준 성별과
+            // 실제로 잡힌 성별이 갈리지 않게 한다.
+            if !(await store.catchInSafariZone(speciesID: speciesID, gender: gender)).isCaught {
                 mutate { $0.revertUncommittedCatch() }
             }
             isCommitting = false
-            // 커밋까지 끝난 뒤 2초 더 배너를 보여주고 자동으로 걷기 화면으로 넘어간다. 그 사이
-            // 사용자가 이미 "계속"을 직접 눌렀으면(pendingOutcome이 다른 값으로 바뀌었으면) 다시
-            // 건드리지 않는다.
-            try? await Task.sleep(nanoseconds: 2_000_000_000)
-            guard pendingOutcome == .caught else { return }
-            pendingOutcome = nil
-            displayedEncounter = nil
+            // 잡았을 때도 자동으로 안 넘어간다 — 도망·시간초과와 똑같이 "계속" 버튼을 눌러야
+            // 걷기 화면으로 돌아간다.
         }
     }
 
@@ -246,7 +277,10 @@ struct SafariEncounterView: View {
                 pendingOutcome = nil
                 displayedEncounter = nil
             }
-            .buttonStyle(.bordered).controlSize(.small).disabled(isCommitting)
+            // 반응 애니메이션이 아직 재생 중일 때(`isAnimating`) 누르면, `displayedEncounter`
+            // 가 비어버린 채로 애니메이션이 계속 그 값을 참조하려 들 수 있다 — 애니메이션이
+            // 끝날 때까지는 막는다.
+            .buttonStyle(.bordered).controlSize(.small).disabled(isCommitting || isAnimating)
         }
     }
 
@@ -270,17 +304,25 @@ struct SafariEncounterView: View {
     }
 
     /// 로그는 고정 높이 안에서만 스크롤한다(`BattleField.swift` 의 82pt 채팅창과 같은 규칙) —
-    /// `NestedScrollGuardTests` 가 높이 안 묶인 중첩 스크롤을 막는다.
+    /// `NestedScrollGuardTests` 가 높이 안 묶인 중첩 스크롤을 막는다. 줄이 늘어날 때마다 마지막
+    /// 줄로 자동 스크롤해 최신 내용이 항상 보이게 한다.
     private var log: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 2) {
-                ForEach(Array(currentEncounterLog.enumerated()), id: \.offset) { _, entry in
-                    Text(logLine(entry)).font(.caption2).foregroundStyle(.secondary)
+        ScrollViewReader { proxy in
+            ScrollView {
+                VStack(alignment: .leading, spacing: 2) {
+                    ForEach(Array(currentEncounterLog.enumerated()), id: \.offset) { index, entry in
+                        Text(logLine(entry)).font(.caption2).foregroundStyle(.secondary)
+                            .id(index)
+                    }
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(height: 100)
+            .onChange(of: currentEncounterLog.count) {
+                guard let lastIndex = currentEncounterLog.indices.last else { return }
+                withAnimation { proxy.scrollTo(lastIndex, anchor: .bottom) }
+            }
         }
-        .frame(height: 60)
     }
 
     private func logLine(_ entry: SafariLogEntry) -> String {

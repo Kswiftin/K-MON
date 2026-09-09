@@ -2885,13 +2885,17 @@ final class CompanionStore {
     /// 사파리존에서 잡은 조우를 데려간다. `catchRaidBoss` 와 원장 모양만 다르다(티어별이 아니라
     /// 방문당·하루 이중 상한) — 나머지 절차(개체 생성·배치·기억·알림)는 `commitCaughtMon` 을
     /// 공유한다.
+    /// `gender` — 조우 화면이 조우 시작 시 미리 굴려 화면에 보여준 값(`rollSafariEncounterGender`)
+    /// 을 그대로 넘긴다. 화면에 보여준 성별과 실제로 잡힌 성별이 갈리면 안 되므로, 여기서 새로
+    /// 굴리지 않고 `commitCaughtMon` 에 그대로 전달한다(`nil` 이면 기존처럼 즉석에서 굴린다 —
+    /// 화면이 어떤 이유로든 못 구했을 때의 방어적 폴백).
     @discardableResult
-    func catchInSafariZone(speciesID: Int) async -> RaidCatchResult {
+    func catchInSafariZone(speciesID: Int, gender: PokemonGender? = nil) async -> RaidCatchResult {
         guard safariZoneCatchesRemainingToday > 0 else { return .claimedToday }
         guard PokemonAssets.hasAnimatedSprite(speciesID: speciesID),
               let line = try? await provider.line(baseSpeciesID: speciesID) else { return .unavailable }
         guard claimSafariZoneCatch() else { return .claimedToday }
-        return commitCaughtMon(speciesID: speciesID, line: line, source: .safariZone)
+        return commitCaughtMon(speciesID: speciesID, line: line, source: .safariZone, presetGender: gender)
     }
 
     /// 사파리존 조우 화면이 스프라이트 옆에 보여줄 이름 — `catchInSafariZone` 과 같은 라인 조회를
@@ -2899,6 +2903,21 @@ final class CompanionStore {
     func safariEncounterName(_ speciesID: Int) async -> String {
         guard let line = try? await provider.line(baseSpeciesID: speciesID) else { return "#\(speciesID)" }
         return line.localizedName(speciesID)
+    }
+
+    /// 조우 화면이 스프라이트 옆에 보여줄 타입 — 활성 동행 전용인 `currentTypes`/`loadCurrentTypes`
+    /// 와 달리 임의 종 하나를 즉석 조회한다(표시 전용, 도감에 영구 저장하지 않는다).
+    func safariEncounterTypes(_ speciesID: Int) async -> [PokemonType] {
+        (try? await provider.battleProfile(speciesID: speciesID))?.types ?? []
+    }
+
+    /// 조우가 뜬 직후 화면이 한 번만 부른다 — 그 종의 실제 성비(`genderRate`)로 성별을 굴려
+    /// 돌려준다. 화면은 이 값을 `SafariEncounter.gender` 에 확정해 두고, 실제로 잡을 때도 같은
+    /// 값을 그대로 쓴다(`catchInSafariZone(gender:)`) — 보여준 성별과 잡힌 성별이 달라지지
+    /// 않도록.
+    func rollSafariEncounterGender(_ speciesID: Int) async -> PokemonGender? {
+        guard let line = try? await provider.line(baseSpeciesID: speciesID) else { return nil }
+        return PokemonGender.from(genderRate: line.genderRate, roll: rng.next())
     }
 
     /// `catchRaidBoss`/`catchInSafariZone` 이 공유하는 커밋 경로.
@@ -2916,10 +2935,13 @@ final class CompanionStore {
     /// 알을 위해 산 물건이라 여기서 소모하지 않는다.
     private enum CaughtMonSource { case raid, safariZone }
 
-    private func commitCaughtMon(speciesID: Int, line: EvoLine, source: CaughtMonSource) -> RaidCatchResult {
+    /// `presetGender` — 사파리존이 조우 시점에 미리 굴려 화면에 보여준 성별. 있으면 그대로 쓰고,
+    /// 없으면(레이드, 또는 어떤 이유로든 사전 굴림이 안 된 사파리존) 기존처럼 여기서 즉석 굴린다.
+    private func commitCaughtMon(speciesID: Int, line: EvoLine, source: CaughtMonSource,
+                                 presetGender: PokemonGender? = nil) -> RaidCatchResult {
         let isShiny = Self.rollsShiny(roll: rng.next(), charmOwned: ownsShinyCharm)
         let nature = PokemonNature.allCases[Int(rng.next() % UInt64(PokemonNature.allCases.count))]
-        let gender = PokemonGender.from(genderRate: line.genderRate, roll: rng.next())
+        let gender = presetGender ?? PokemonGender.from(genderRate: line.genderRate, roll: rng.next())
         let caught = MonState(baseID: speciesID, pathIDs: [speciesID], plannedPathIDs: [speciesID],
                               stageIndex: 0, usedAtStage: 0, rarity: line.rarity, totalForms: 1,
                               isShiny: isShiny, nature: nature, gender: gender,

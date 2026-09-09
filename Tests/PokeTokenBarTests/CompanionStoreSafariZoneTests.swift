@@ -60,6 +60,16 @@ final class CompanionStoreSafariZoneTests: XCTestCase {
         XCTAssertEqual(store.state.active?.currentID, 20)
     }
 
+    /// 조우 화면이 미리 굴려 보여준 성별과, 실제로 잡힌 개체의 성별이 달라지면 안 된다 —
+    /// 라이츄(#26)는 수컷 쪽이 훨씬 흔한 성비(75%/25%)라, 강제로 넘긴 암컷이 그대로 나오는지가
+    /// `presetGender` 가 실제로 존중된다는 강한 증거다.
+    func testCatchInSafariZoneUsesThePresetGenderWhenGiven() async {
+        let store = stubStore(TestClock(), tag: "safari-catch-preset-gender")
+        let result = await store.catchInSafariZone(speciesID: 20, gender: .female)
+        XCTAssertEqual(result, .companion)
+        XCTAssertEqual(store.state.active?.gender, .female, "미리 굴려 보여준 성별을 그대로 써야 한다")
+    }
+
     /// 하루 포획 상한을 다 쓰면 더 이상 잡을 수 없다 — 볼·걸음이 남아 있어도 `MonState` 를
     /// 안 만든다. §입장·일일 제한이 지키려는 바로 그 상한이다.
     func testCatchInSafariZoneRejectsAfterDailyCatchCapIsReached() async {
