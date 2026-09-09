@@ -212,7 +212,16 @@ final class BattleAbilityTests: XCTestCase {
         let wait = MoveSpec(id: 1, names: ["en": "Wait"], type: .normal, power: 0,
                             damageClass: .status, accuracy: nil, pp: 10, targetsUser: true)
         var rng = SplitMix64(seed: 1)
-        _ = BattleEngine.resolveTurn(a: &rain, b: &swimmer, moveA: wait, moveB: wait, turn: 1, rng: &rng)
+        var field = BattleField()
+        _ = BattleEngine.resolveTurn(
+            a: &rain,
+            b: &swimmer,
+            moveA: wait,
+            moveB: wait,
+            turn: 1,
+            field: &field,
+            rng: &rng
+        )
         XCTAssertEqual(swimmer.weather, .rain)
         XCTAssertEqual(swimmer.effectiveSpeed, swimmer.stats.spe * 2)
     }
