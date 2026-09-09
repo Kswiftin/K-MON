@@ -13,6 +13,10 @@ struct CompanionStorageLocations: Sendable {
     /// 재화도 도감도 주지 않는 자기 계측 데이터라 무결성 서명·세이브 이전 경로에 닿지 않는다.
     /// 대신 이 디렉토리 안에 있으므로 `PTB_STATE_DIR` 프로필 격리는 그대로 받는다.
     static let focusSessionsFileName = "focus-sessions.json"
+    /// 진행 중인 사파리존 방문. 웨이브 런과 같은 이유로 **세이브 본체와 다른 파일이다** — 방문은
+    /// 재화도 도감도 직접 주지 않는다(포획 커밋은 `CompanionStore.catchInSafariZone` 이 별도로
+    /// 하고 그 결과만 세이브 본체에 남는다).
+    static let safariZoneFileName = "safari-zone.json"
 
     let directory: URL
     var stateURL: URL { directory.appendingPathComponent(Self.stateFileName) }
@@ -20,6 +24,7 @@ struct CompanionStorageLocations: Sendable {
     var chatURL: URL { directory.appendingPathComponent(Self.chatFileName) }
     var waveRunURL: URL { directory.appendingPathComponent(Self.waveRunFileName) }
     var focusSessionsURL: URL { directory.appendingPathComponent(Self.focusSessionsFileName) }
+    var safariZoneURL: URL { directory.appendingPathComponent(Self.safariZoneFileName) }
 
     /// 기본은 Application Support/PokeTokenBar. `PTB_STATE_DIR` 가 있으면 그 디렉토리를 쓴다 —
     /// 개발/QA 격리용(실제 companion 상태를 건드리지 않고 데모 상태로 실행). 프로덕션은 무영향.

@@ -335,6 +335,10 @@ enum SaveTransfer {
         s.raidCatchDateTierThree = clampedKey(s.raidCatchDateTierThree)
         s.raidCatchDateTierFive = clampedKey(s.raidCatchDateTierFive)
         s.waveRunEggRewardDate = clampedKey(s.waveRunEggRewardDate)
+        s.safariZoneVisitDate = clampedKey(s.safariZoneVisitDate)
+        s.safariZoneVisitsToday = min(max(0, s.safariZoneVisitsToday), SafariZone.dailyVisitCap)
+        s.safariZoneCatchDate = clampedKey(s.safariZoneCatchDate)
+        s.safariZoneCatchesToday = min(max(0, s.safariZoneCatchesToday), SafariZone.dailyCatchCap)
         // 하한이 1 인 이유는 **1인 레이드**다 — `2...4` 였을 때는 혼자 돈 레이드 전적이 불러오기에서
         // 통째로 사라진다(보스는 사람이 아니라 이 수에 들지 않는다).
         s.battleHistory = Array(s.battleHistory
@@ -486,6 +490,17 @@ enum SaveTransfer {
         // 지우는 것만으로 같은 날 클리어할 때마다 알을 다시 받는다. 새 필드라 조건부 append,
         // `integrityVersion` 은 올리지 않는다.
         if !s.waveRunEggRewardDate.isEmpty { p.append("wed\(s.waveRunEggRewardDate)") }
+        // 사파리존 방문(참여) 원장 — 손으로 오늘 방문 횟수를 0 으로 되돌리면 하루 상한이
+        // 사라진다. `gd`(체육관 방어)와 같은 부류라 서명 대상이다. 새 필드라 조건부 append,
+        // `integrityVersion` 은 올리지 않는다.
+        if s.safariZoneVisitsToday != 0 || !s.safariZoneVisitDate.isEmpty {
+            p.append("szv\(s.safariZoneVisitDate):\(s.safariZoneVisitsToday)")
+        }
+        // 사파리존 포획(보상) 원장 — 잡은 개체는 도감/보관함에 영구히 남으므로 지우고 다시 잡는
+        // 쪽이 지급보다 이득이 크다. 방문 원장과 분리한 이유는 `rd`/`rc` 와 같다.
+        if s.safariZoneCatchesToday != 0 || !s.safariZoneCatchDate.isEmpty {
+            p.append("szc\(s.safariZoneCatchDate):\(s.safariZoneCatchesToday)")
+        }
         if s.focusEggs != 0 { p.append("fe\(s.focusEggs)") }
         if !s.focusEggReadyDates.isEmpty {
             p.append("fer" + s.focusEggReadyDates.map { String($0.timeIntervalSince1970) }.joined(separator: ","))
@@ -632,6 +647,14 @@ enum SaveTransfer {
         state.waveRun = RunProgress.merged(imported.waveRun, current.waveRun)
         // 웨이브 런 클리어 알도 하루 원장이다 — 레이드 지급 원장과 같은 이유로 더 최근 날짜를 남긴다.
         state.waveRunEggRewardDate = max(imported.waveRunEggRewardDate, current.waveRunEggRewardDate)
+        // 사파리존 방문·포획 원장도 체육관 방어 원장과 같은 부류(날짜+카운트)다. 같은 날이면
+        // **많이 쓴/받은 쪽**을 남긴다 — 적은 쪽을 쓰면 기기를 옮기는 것만으로 하루 상한이 되살아난다.
+        (state.safariZoneVisitDate, state.safariZoneVisitsToday) = Self.mergedGymDefenseLedger(
+            imported: (imported.safariZoneVisitDate, imported.safariZoneVisitsToday),
+            current: (current.safariZoneVisitDate, current.safariZoneVisitsToday))
+        (state.safariZoneCatchDate, state.safariZoneCatchesToday) = Self.mergedGymDefenseLedger(
+            imported: (imported.safariZoneCatchDate, imported.safariZoneCatchesToday),
+            current: (current.safariZoneCatchDate, current.safariZoneCatchesToday))
         return state
     }
 
