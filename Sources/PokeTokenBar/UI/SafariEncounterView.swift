@@ -156,11 +156,19 @@ struct SafariEncounterView: View {
                 resetAnimationState()
                 return
             }
+            // `act()` 가 방금 `currentEncounter` 를 `nil` 로 만들었을 수 있다(잡음·도망·시간초과) —
+            // `pendingOutcome` 을 반응 애니메이션 재생 **전에** 여기서 동기적으로 세워야
+            // `SafariZoneView` 가 그 프레임에 이미 "배너를 보여주는 중"으로 판단한다. 반응
+            // 애니메이션이 끝날 때까지 이걸 미루면, 그 사이(`currentEncounter == nil` 인데
+            // `pendingOutcome` 도 아직 `nil` 인 프레임)에 부모가 걷기 화면으로 바꿔치기해 버려서
+            // 화면이 통째로 비는 결함이 났다(미끼 사용 후 도망친 조우에서 실제로 재현됨).
+            if outcome != .continuing {
+                pendingOutcome = outcome
+            }
             await playReaction(action: action, outcome: outcome)
             isAnimating = false
             resetAnimationState()
             guard outcome != .continuing else { return }
-            pendingOutcome = outcome
             guard outcome == .caught, let speciesID = displayedEncounter?.speciesID ?? encounter?.speciesID
             else { return }
             isCommitting = true
@@ -246,7 +254,10 @@ struct SafariEncounterView: View {
                 pendingOutcome = nil
                 displayedEncounter = nil
             }
-            .buttonStyle(.bordered).controlSize(.small).disabled(isCommitting)
+            // 반응 애니메이션이 아직 재생 중일 때(`isAnimating`) 누르면, `displayedEncounter`
+            // 가 비어버린 채로 애니메이션이 계속 그 값을 참조하려 들 수 있다 — 애니메이션이
+            // 끝날 때까지는 막는다.
+            .buttonStyle(.bordered).controlSize(.small).disabled(isCommitting || isAnimating)
         }
     }
 
