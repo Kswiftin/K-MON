@@ -12,6 +12,8 @@ struct SafariEncounterView: View {
     @Binding var pendingOutcome: SafariOutcome?
     @State private var displayedEncounter: SafariEncounter?
     @State private var speciesName: String?
+    @State private var types: [PokemonType] = []
+    @State private var abilityText: String?
     @State private var isCommitting = false
     /// 던지기→반응 두 단계가 재생되는 동안 버튼을 막는다. `isCommitting`(포획 영구 반영 대기)
     /// 과는 별개 축 — 애니메이션은 항상 먼저 끝나고, 잡았을 때만 그 뒤에 커밋이 이어진다.
@@ -85,10 +87,33 @@ struct SafariEncounterView: View {
                         .opacity(thrownItemOpacity)
                 }
             }
-            Text(speciesName ?? " ").font(.caption.bold())
+            HStack(spacing: 4) {
+                Text(speciesName ?? " ").font(.caption.bold())
+                if let gender = encounter.gender, gender != .genderless {
+                    Text(gender.symbol).font(.caption.bold())
+                        .foregroundStyle(gender == .male ? .blue : .pink)
+                }
+            }
+            HStack(spacing: 4) {
+                ForEach(types, id: \.self) { TypeBadge(type: $0) }
+            }
+            if let abilityText {
+                Text(abilityText).font(.caption2).foregroundStyle(.secondary)
+                    .lineLimit(2).multilineTextAlignment(.center)
+            }
         }
         .task(id: encounter.speciesID) {
-            speciesName = await store.safariEncounterName(encounter.speciesID)
+            async let name = store.safariEncounterName(encounter.speciesID)
+            async let loadedTypes = store.safariEncounterTypes(encounter.speciesID)
+            async let identity = PokeAPIClient.shared.chatSpeciesIdentity(speciesID: encounter.speciesID)
+            speciesName = await name
+            types = await loadedTypes
+            abilityText = await identity.ability
+            // 조우가 뜬 직후 딱 한 번만 굴린다 — `SafariEncounter.setGender` 가 이미 정해진
+            // 값이면 무시하므로, 재진입(창을 닫았다 열어도)에도 안전하다.
+            if encounter.gender == nil, let gender = await store.rollSafariEncounterGender(encounter.speciesID) {
+                mutate { $0.setCurrentEncounterGender(gender) }
+            }
         }
     }
 
@@ -171,12 +196,15 @@ struct SafariEncounterView: View {
             guard outcome != .continuing else { return }
             guard outcome == .caught, let speciesID = displayedEncounter?.speciesID ?? encounter?.speciesID
             else { return }
+            let gender = displayedEncounter?.gender ?? encounter?.gender
             isCommitting = true
             // act(.caught) 가 낙관적으로 이미 catchesThisVisit 을 올렸다 — 실제 영구 반영이
             // 실패하면(라인 조회 실패 등) 그 낙관적 갱신을 되돌려야 방문당 상한이 잡지도 못한
             // 개체 때문에 부풀려지지 않는다. `isCaught` 로 판정해 `RaidCatchResult` 에 새 case
-            // 가 추가돼도 기본이 "실패로 보고 되돌린다" 쪽이 되게 한다.
-            if !(await store.catchInSafariZone(speciesID: speciesID)).isCaught {
+            // 가 추가돼도 기본이 "실패로 보고 되돌린다" 쪽이 되게 한다. `gender` 는 조우가 뜰 때
+            // 화면이 미리 굴려 보여준 값 — 여기서 새로 안 굴리고 그대로 넘겨 화면에 보여준 성별과
+            // 실제로 잡힌 성별이 갈리지 않게 한다.
+            if !(await store.catchInSafariZone(speciesID: speciesID, gender: gender)).isCaught {
                 mutate { $0.revertUncommittedCatch() }
             }
             isCommitting = false

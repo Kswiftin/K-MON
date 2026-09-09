@@ -50,4 +50,29 @@ enum SafariFieldPixelArt {
             ]
         }
     }
+
+    /// 벌판에 고정 배치되는 장애물(`SafariZone.obstacles(for:)`) 한 칸을 그리는 스프라이트 —
+    /// 존마다 그림만 다르고(나무·물웅덩이·바위) 좌표는 공유한다. 바닥 타일과 달리 칸을 꽉
+    /// 채우지 않는다(가장자리는 투명 `0`) — 밑에 깔린 바닥 타일이 비쳐 보여야 장애물처럼 도드라진다.
+    static func obstaclePalette(for zone: SafariZone.ZoneID) -> PixelPalette {
+        switch zone {
+        case .grassland: return PixelPalette(colors: [0, 0x5A3A26, 0x2A6B2E])       // 줄기, 잎
+        case .wetland: return PixelPalette(colors: [0, 0x3B7FA8])                    // 물웅덩이
+        case .cave: return PixelPalette(colors: [0, 0x7A7A7A, 0x5A5A5A])             // 바위, 그림자
+        }
+    }
+
+    static func obstacle(for zone: SafariZone.ZoneID) -> PixelSprite {
+        switch zone {
+        case .grassland:
+            return tile(["........", "..2222..", ".222222.", "22222222",
+                         ".222222.", "..1111..", "..1111..", "........"])
+        case .wetland:
+            return tile(["........", ".111111.", "11111111", "11111111",
+                         "11111111", ".111111.", "........", "........"])
+        case .cave:
+            return tile(["........", "..1111..", ".112211.", "11222211",
+                         "12222221", ".112211.", "........", "........"])
+        }
+    }
 }

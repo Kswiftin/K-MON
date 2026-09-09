@@ -12,12 +12,19 @@ struct SafariFieldView: View {
     /// 칸(y행 우선)마다 어느 타일을 쓸지 — 존이 바뀔 때 한 번만 결정론으로 계산해 고정한다.
     /// 매 프레임 다시 고르면 같은 칸이 프레임마다 다른 타일로 깜빡인다.
     @State private var tilePlan: [Int] = []
+    /// 장애물(나무·물웅덩이·바위) 이미지 — 존마다 한 장뿐이라 타일처럼 배치표가 필요 없다.
+    @State private var obstacleImage: CGImage?
     @State private var lastTickDate: Date?
     @State private var isVisible = true
 
     private var l: L { store.l }
     private static let cellSize: CGFloat = 24
     private static let bounds = SafariFieldBounds.standard
+
+    /// 표준 quad ease-in-out — 0→0.5 구간은 가속, 0.5→1 구간은 감속한다.
+    private static func easeInOut(_ progress: Double) -> Double {
+        progress < 0.5 ? 2 * progress * progress : 1 - pow(-2 * progress + 2, 2) / 2
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 5) {
@@ -96,9 +103,15 @@ struct SafariFieldView: View {
         let origin = walker.moveOrigin ?? walker.cell
         let target = walker.moveTarget ?? walker.cell
         let progress = walker.moveProgress
-        let cellX = CGFloat(origin.x) + (CGFloat(target.x) - CGFloat(origin.x)) * progress
-        let cellY = CGFloat(origin.y) + (CGFloat(target.y) - CGFloat(origin.y)) * progress
+        // 좌표 보간에만 ease-in-out 을 먹인다 — Core(`SafariWalker.moveProgress`)는 그대로 선형
+        // 이라 걸음 소모·인카운터 굴림 타이밍은 안 바뀐다. 딱딱한 등속 대신 칸 진입·이탈이
+        // 자연스럽게 가속·감속한다.
+        let eased = Self.easeInOut(progress)
+        let cellX = CGFloat(origin.x) + (CGFloat(target.x) - CGFloat(origin.x)) * eased
+        let cellY = CGFloat(origin.y) + (CGFloat(target.y) - CGFloat(origin.y)) * eased
         guard let images = trainerImages[walker.facing], !images.isEmpty else { return }
+        // 발걸음 프레임 전환은 원본(선형) progress 로 재야 걷는 속도감과 어긋나지 않는다 —
+        // 좌표만 느슨해지고 발은 그대로 빠르게 바뀌면 미끄러지는 것처럼 보인다.
         let step = progress > 0 ? Int(progress * 3) % images.count : 0
         let image = images[step]
         // 스프라이트 원본은 16×24 — 정수배(2배)로 그려야 `.interpolation(.none)` 확대가 각
@@ -127,9 +140,14 @@ struct SafariFieldView: View {
     /// `(x*7 + y*13) % 타일종류수` 는 씨앗이 아니라 순수 좌표 해시라 같은 칸은 방문 내내
     /// 같은 타일을 쓴다(매 프레임 다시 고르면 깜빡인다).
     private func rebuildFieldTiles() {
-        guard let zone = store.safariVisit?.zone else { tileImages = []; tilePlan = []; return }
+        guard let zone = store.safariVisit?.zone else {
+            tileImages = []; tilePlan = []; obstacleImage = nil
+            return
+        }
         let palette = SafariFieldPixelArt.palette(for: zone)
         tileImages = SafariFieldPixelArt.tiles(for: zone).compactMap { $0.cgImage(palette: palette) }
+        obstacleImage = SafariFieldPixelArt.obstacle(for: zone)
+            .cgImage(palette: SafariFieldPixelArt.obstaclePalette(for: zone))
         guard !tileImages.isEmpty else { tilePlan = []; return }
         tilePlan = (0..<(Self.bounds.width * Self.bounds.height)).map { index in
             let x = index % Self.bounds.width, y = index / Self.bounds.width
@@ -139,12 +157,16 @@ struct SafariFieldView: View {
 
     private func drawTiles(ctx: GraphicsContext) {
         guard !tileImages.isEmpty else { return }
+        let obstacles = store.safariVisit.map { SafariZone.obstacles(for: $0.zone) } ?? []
         for y in 0..<Self.bounds.height {
             for x in 0..<Self.bounds.width {
                 let tile = tileImages[tilePlan[y * Self.bounds.width + x]]
                 let rect = CGRect(x: CGFloat(x) * Self.cellSize, y: CGFloat(y) * Self.cellSize,
                                   width: Self.cellSize, height: Self.cellSize)
                 ctx.draw(Image(decorative: tile, scale: 1).interpolation(.none), in: rect)
+                if let obstacleImage, obstacles.contains(SafariCell(x: x, y: y)) {
+                    ctx.draw(Image(decorative: obstacleImage, scale: 1).interpolation(.none), in: rect)
+                }
             }
         }
     }

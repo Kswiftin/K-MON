@@ -2,7 +2,7 @@ import Foundation
 
 /// 격자 칸 좌표. `(x: Int, y: Int)` 튜플로 두지 않는 이유는 튜플이 `Codable` 을 준수할 수 없어서다
 /// — `SafariWalker` 를 그대로 저장해야 하므로 칸도 이름 있는 타입이어야 한다.
-struct SafariCell: Sendable, Codable, Equatable {
+struct SafariCell: Sendable, Codable, Equatable, Hashable {
     var x: Int
     var y: Int
 }
@@ -70,8 +70,11 @@ struct SafariWalker: Sendable, Codable, Equatable {
 
     /// 매 프레임 호출. 칸에 **새로 도착한 순간**(스냅 시점)이면 `true` 를 돌려준다 — 호출부
     /// (`SafariVisit.advance`)가 걸음 소모·인카운터 굴림을 정확히 한 번 실행해야 한다는 신호다.
+    /// `obstacles` 칸은 벽과 같은 방식으로 막힌다(방향만 바뀌고 제자리) — 기본값 `[]` 라 장애물
+    /// 없는 기존 호출부·테스트는 그대로 컴파일된다.
     @discardableResult
-    mutating func tick(dt: Double, heldKeys: Set<SafariDirectionKey>, bounds: SafariFieldBounds) -> Bool {
+    mutating func tick(dt: Double, heldKeys: Set<SafariDirectionKey>, bounds: SafariFieldBounds,
+                       obstacles: Set<SafariCell> = []) -> Bool {
         let clampedDelta = min(Self.maxDeltaTime, max(0, dt))
         if moveProgress > 0 {
             moveProgress = min(1, moveProgress + clampedDelta / Self.secondsPerCell)
@@ -88,8 +91,8 @@ struct SafariWalker: Sendable, Codable, Equatable {
         }
         facing = direction.facing
         let candidate = SafariCell(x: cell.x + direction.delta.dx, y: cell.y + direction.delta.dy)
-        guard bounds.contains(candidate) else {
-            // 벽 — 방향만 바꾸고(이미 위에서 바꿨다) 제자리에 머문다.
+        guard bounds.contains(candidate), !obstacles.contains(candidate) else {
+            // 벽 또는 장애물 — 방향만 바꾸고(이미 위에서 바꿨다) 제자리에 머문다.
             return false
         }
         moveOrigin = cell

@@ -61,7 +61,8 @@ struct SafariVisit: Sendable {
     /// **그 자리에서 방문을 끝낸다** — 볼·걸음이 남아 있어도 더 걸을 이유가 없다.
     mutating func advance(dt: Double, heldKeys: Set<SafariDirectionKey>, catchesRemainingToday: Int) {
         guard !hasEnded, currentEncounter == nil else { return }
-        guard walker.tick(dt: dt, heldKeys: heldKeys, bounds: SafariFieldBounds.standard) else { return }
+        guard walker.tick(dt: dt, heldKeys: heldKeys, bounds: SafariFieldBounds.standard,
+                          obstacles: SafariZone.obstacles(for: zone)) else { return }
         stepsRemaining = max(0, stepsRemaining - 1)
         guard stepsRemaining > 0 else { hasEnded = true; return }
         let catchesRemainingThisVisit = SafariZone.catchesPerVisitCap - catchesThisVisit
@@ -108,6 +109,12 @@ struct SafariVisit: Sendable {
         guard catchesThisVisit > 0, !caughtSpeciesIDs.isEmpty else { return }
         catchesThisVisit -= 1
         caughtSpeciesIDs.removeLast()
+    }
+
+    /// 화면이 조우 시작 직후 한 번 굴린 성별을 확정해 싣는다 — `SafariEncounter.setGender` 로
+    /// 위임한다(이미 정해져 있으면 무시).
+    mutating func setCurrentEncounterGender(_ gender: PokemonGender) {
+        currentEncounter?.setGender(gender)
     }
 
     /// 저장된 방문을 복원할 때만 쓰는 이니셜라이저(`SafariZoneSave.restored` 전용). 다른 모든
