@@ -10,8 +10,6 @@
 [![Swift](https://img.shields.io/badge/Swift-6-f05138)](https://swift.org)
 [![License](https://img.shields.io/badge/license-MIT-3fb950)](LICENSE)
 
-[English](README.en.md) · **한국어** · [日本語](README.ja.md)
-
 </div>
 
 Pokédoro는 집중하는 동안 포켓몬 파트너를 모험에 보내고, 수집한 포켓몬으로 배틀과 포켓슬론을 즐기는 메뉴바 앱입니다. 평소에는 메뉴바에 `휴식 중` 또는 타이머만 표시되어 업무 중에도 자연스럽게 사용할 수 있습니다.
@@ -120,7 +118,7 @@ Pokédoro는 집중하는 동안 포켓몬 파트너를 모험에 보내고, 수
 </td>
 </tr>
 <tr>
-<td width="45%" align="center"><img src="assets/screenshot-safari-walk-ko.png" width="180" alt="사파리존 걷기 화면"><br><br><img src="assets/screenshot-safari-encounter-ko.png" width="180" alt="사파리존 조우 화면"></td>
+<td width="45%" align="center"><img src="assets/screenshot-safari-walk.png" width="180" alt="사파리존 걷기 화면"><br><br><img src="assets/screenshot-safari-encounter.png" width="180" alt="사파리존 조우 화면"></td>
 <td width="55%" valign="middle">
 <h3>사파리존</h3>
 방향키로 벌판을 걸어 다니며 야생 포켓몬을 찾습니다. 조우하면 미끼·진흙·볼·도망 중 골라 대응하고, 상대의 성별·타입·특성을 미리 확인할 수 있습니다.
@@ -131,7 +129,7 @@ Pokédoro는 집중하는 동안 포켓몬 파트너를 모험에 보내고, 수
 <h3>포코피아 마을</h3>
 변신한 종의 타입으로 지형을 밀고, 집중 세션을 마칠 때마다 마을 환경에 맞는 포켓몬이 찾아와 정착합니다.
 </td>
-<td width="45%" align="center"><img src="assets/screenshot-pokopia-town-ko.png" width="180" alt="포코피아 마을"></td>
+<td width="45%" align="center"><img src="assets/screenshot-pokopia-town.png" width="180" alt="포코피아 마을"></td>
 </tr>
 </table>
 
