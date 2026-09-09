@@ -7,6 +7,11 @@ struct SafariFieldView: View {
     @State private var heldKeys: Set<SafariDirectionKey> = []
     /// 착용이 바뀔 때만 다시 굽는다(`TrainerAvatarView` 와 같은 이유) — 매 프레임 합성 금지.
     @State private var trainerImages: [Facing: [CGImage]] = [:]
+    /// 존이 바뀔 때만 다시 굽는다 — 타일 자체는 `SafariFieldPixelArt.tiles(for:)` 2종뿐이다.
+    @State private var tileImages: [CGImage] = []
+    /// 칸(y행 우선)마다 어느 타일을 쓸지 — 존이 바뀔 때 한 번만 결정론으로 계산해 고정한다.
+    /// 매 프레임 다시 고르면 같은 칸이 프레임마다 다른 타일로 깜빡인다.
+    @State private var tilePlan: [Int] = []
     @State private var lastTickDate: Date?
     @State private var isVisible = true
 
@@ -19,8 +24,9 @@ struct SafariFieldView: View {
             summary
             field
         }
-        .onAppear { rebuildTrainerImages() }
+        .onAppear { rebuildTrainerImages(); rebuildFieldTiles() }
         .onChange(of: store.outfit) { rebuildTrainerImages() }
+        .onChange(of: store.safariVisit?.zone) { rebuildFieldTiles() }
         .onDisappear { isVisible = false }
     }
 
@@ -68,6 +74,7 @@ struct SafariFieldView: View {
     }
 
     private func drawField(ctx: GraphicsContext, size: CGSize) {
+        drawTiles(ctx: ctx)
         guard let walker = store.safariVisit?.walker else { return }
         let origin = walker.moveOrigin ?? walker.cell
         let target = walker.moveTarget ?? walker.cell
@@ -96,6 +103,32 @@ struct SafariFieldView: View {
             }
         }
         trainerImages = built
+    }
+
+    /// 존이 바뀔 때만 부른다 — 타일 이미지를 굽고, 칸마다 쓸 타일을 결정론으로 미리 정한다.
+    /// `(x*7 + y*13) % 타일종류수` 는 씨앗이 아니라 순수 좌표 해시라 같은 칸은 방문 내내
+    /// 같은 타일을 쓴다(매 프레임 다시 고르면 깜빡인다).
+    private func rebuildFieldTiles() {
+        guard let zone = store.safariVisit?.zone else { tileImages = []; tilePlan = []; return }
+        let palette = SafariFieldPixelArt.palette(for: zone)
+        tileImages = SafariFieldPixelArt.tiles(for: zone).compactMap { $0.cgImage(palette: palette) }
+        guard !tileImages.isEmpty else { tilePlan = []; return }
+        tilePlan = (0..<(Self.bounds.width * Self.bounds.height)).map { index in
+            let x = index % Self.bounds.width, y = index / Self.bounds.width
+            return (x * 7 + y * 13) % tileImages.count
+        }
+    }
+
+    private func drawTiles(ctx: GraphicsContext) {
+        guard !tileImages.isEmpty else { return }
+        for y in 0..<Self.bounds.height {
+            for x in 0..<Self.bounds.width {
+                let tile = tileImages[tilePlan[y * Self.bounds.width + x]]
+                let rect = CGRect(x: CGFloat(x) * Self.cellSize, y: CGFloat(y) * Self.cellSize,
+                                  width: Self.cellSize, height: Self.cellSize)
+                ctx.draw(Image(decorative: tile, scale: 1).interpolation(.none), in: rect)
+            }
+        }
     }
 
     /// 매 프레임 호출 — 실제 걸음 소모·인카운터 굴림은 `SafariVisit.advance` 가 한다. 여기서는

@@ -10,6 +10,13 @@ import SwiftUI
 struct SafariZoneView: View {
     let store: CompanionStore
     let onClose: () -> Void
+    /// 방금 끝난 조우의 결과 배너를 보여주는 중인가 — `SafariEncounterView` 대신 여기서 갖는다.
+    /// 조우가 끝나면 `SafariVisit.currentEncounter` 가 곧바로 `nil` 이 되므로, 이 값을
+    /// `SafariEncounterView` 의 로컬 상태로 두면 그 판정 하나로 이 뷰 자체가 `SafariFieldView`
+    /// 로 바뀌어 버려 배너가 한 프레임도 못 뜨고 사라진다(도망쳤는데 계속 몬스터 창이 떠 있는
+    /// 것처럼 보이던 결함의 근본원인). 부모가 들고 있어야 "배너를 보여주는 동안은 걷기 화면으로
+    /// 넘어가지 않는다"를 조건에 반영할 수 있다.
+    @State private var pendingOutcome: SafariOutcome?
 
     private var l: L { store.l }
 
@@ -19,8 +26,8 @@ struct SafariZoneView: View {
             if let visit = store.safariVisit {
                 if visit.hasEnded {
                     walkSummary(visit)
-                } else if visit.currentEncounter != nil {
-                    SafariEncounterView(store: store)
+                } else if visit.currentEncounter != nil || pendingOutcome != nil {
+                    SafariEncounterView(store: store, pendingOutcome: $pendingOutcome)
                 } else {
                     SafariFieldView(store: store)
                 }

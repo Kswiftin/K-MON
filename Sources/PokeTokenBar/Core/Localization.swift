@@ -1388,11 +1388,8 @@ struct L {
     var safariMudAction: String { "진흙" }
     var safariBallAction: String { "볼" }
     var safariRunAction: String { "도망" }
-    func safariCatchStageLabel(_ stage: Int) -> String { "포획 \(signed(stage))" }
-    func safariFleeStageLabel(_ stage: Int) -> String { "도망 \(signed(stage))" }
-    private func signed(_ value: Int) -> String {
-        value == 0 ? "0" : (value > 0 ? "+\(value)" : "\(value)")
-    }
+    func safariCatchPercentLabel(_ percent: Int) -> String { "포획 확률 \(percent)%" }
+    func safariFleePercentLabel(_ percent: Int) -> String { "도망 확률 \(percent)%" }
 
     var safariOutcomeCaught: String { "잡았다!" }
     var safariOutcomeFled: String { "상대가 도망쳤다..." }
