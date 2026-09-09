@@ -302,21 +302,6 @@ struct MoveSpec: Codable, Sendable, Equatable, Identifiable {
     var minHits: Int? = nil
     var maxHits: Int? = nil
 
-    /// 5세대까지의 기술 플래그. PokéAPI move 응답에는 flags가 없어 검증된 기술 ID 표를 사용한다.
-    var isPunch: Bool { Self.punchMoveIDs.contains(id) }
-    var isSound: Bool { Self.soundMoveIDs.contains(id) }
-    var isContact: Bool { Self.contactMoveIDs.contains(id) }
-    private static let punchMoveIDs: Set<Int> = [4,5,7,8,9,146,183,223,264,309,325,327,359,409,418]
-    private static let soundMoveIDs: Set<Int> = [45,46,47,48,103,173,195,215,253,304,319,320,336,405,448,547,555]
-    private static let contactMoveIDs: Set<Int> = [
-        1,2,3,4,5,7,8,9,10,11,12,15,17,19,20,21,22,23,24,25,26,27,29,30,31,32,33,34,35,36,37,38,44,
-        64,65,66,69,70,80,91,98,99,117,122,127,128,130,132,136,141,146,152,154,158,163,165,168,172,183,
-        185,200,206,209,211,223,224,229,231,232,233,238,242,245,249,252,263,264,276,280,282,291,292,299,
-        302,305,306,309,310,325,327,332,337,340,342,343,344,348,359,365,369,370,387,389,394,395,398,400,
-        401,404,407,409,413,416,418,421,422,423,424,425,428,431,438,440,442,450,452,453,457,458,467,480,
-        488,490,492,498,507,509,514,525,528,529,530,531,532,533,534,537,541,543,544,550,557
-    ]
-
     /// 턴 순서 비교용 우선도 — 값이 없으면 0.
     var turnPriority: Int { priority ?? 0 }
 
@@ -4120,7 +4105,7 @@ extension BattleEngine {
         if defender.isAlive, defender.ability?.rawValue == "color-change", move.damageClass != .status {
             defender.typeOverride = [move.type]
         }
-        if move.isContact, attacker.isAlive {
+        if move.makesContact, attacker.isAlive {
             if defender.ability?.rawValue == "rough-skin" || defender.ability?.rawValue == "iron-barbs" {
                 let amount = max(1, attacker.stats.hp / 8)
                 attacker.hp = max(0, attacker.hp - amount)
@@ -4171,7 +4156,7 @@ extension BattleEngine {
             let amount = attacker.changeStage(.atk, by: 1)
             if amount != 0 { events.append(.boost(attackerActor, .atk, amount)) }
         }
-        if !defender.isAlive, move.isContact, attacker.isAlive, defender.ability?.rawValue == "aftermath" {
+        if !defender.isAlive, move.makesContact, attacker.isAlive, defender.ability?.rawValue == "aftermath" {
             let amount = max(1, attacker.stats.hp / 4)
             attacker.hp = max(0, attacker.hp - amount)
             events.append(.damage(attackerActor, amount: amount, cause: .move))
