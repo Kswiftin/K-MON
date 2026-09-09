@@ -398,20 +398,18 @@ final class SeasonAccrualTests: XCTestCase {
     /// 졸업 단독 경로 — 모험을 **한 번도 하지 않고** 졸업만 해도 시즌 챌린지가 완료된다.
     func testGraduationAloneCompletesTheSeasonGraduationChallenge() async {
         let graduations = challenge(.graduations)
-        // 졸업은 트레이너 포인트·주간 미션에도 지급한다. 트레이너는 상한으로 묶고, 남는 증가분을
-        // 주간 미션 + 시즌 보상의 합과 대조한다.
+        // 졸업은 트레이너 포인트도 지급한다. 트레이너는 상한으로 묶고, 남는 증가분을
+        // 시즌 보상과 대조한다(현행 미션은 일일 배틀·던전·도감 등록뿐이다).
         let store = await hatchedStore(seeding: [graduations.id: graduations.target - 1],
                                        trainerPoints: TrainerLevel.maximumPoints)
         store.applyUsage(PokemonBalance.phaseThreshold(rarity: .common, totalForms: 3, stageIndex: 0))
         store.applyUsage(PokemonBalance.phaseThreshold(rarity: .common, totalForms: 3, stageIndex: 1))
         XCTAssertNil(store.activeAdventure, "이 경로엔 모험이 전혀 없다")
         let before = store.state.starPieces
-        let weeklyMission = MissionBoard.catalog.first { $0.id == "weeklyGraduation" }!.reward
-
         XCTAssertTrue(store.graduateCompanion())
 
         XCTAssertEqual(progress(store, graduations.id), graduations.target)
-        XCTAssertEqual(store.state.starPieces - before, weeklyMission + graduations.reward,
+        XCTAssertEqual(store.state.starPieces - before, graduations.reward,
                        "졸업만으로 시즌 보상이 들어온다")
     }
 

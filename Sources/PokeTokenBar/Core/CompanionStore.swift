@@ -1569,7 +1569,9 @@ final class CompanionStore {
         reward.trainerBonus = accrueTrainerPoints(minutes)
         // 미션은 **정산된** 분만 인정한다 — 시작만으로 진행되면 타이머를 켜 두는 것이 곧 미션
         // 진행이 되어 목표가 집중과 무관해진다.
-        reward.missionBonus = recordMission(.focusMinutes, minutes) + recordMission(.adventures, 1)
+        _ = recordMission(.focusMinutes, minutes)
+        _ = recordMission(.adventures, 1)
+        reward.missionBonus = 0   // 현행 미션 보상은 별의조각이 아니라 보관 알이다.
         // 시즌 챌린지도 같은 정산분을 센다 — 미션과 이벤트 어휘가 같아 훅이 이 한 줄로 끝난다.
         reward.seasonBonus = recordSeason(.focusMinutes, minutes) + recordSeason(.adventures, 1)
         // 업적도 **정산된** 분만 센다. 세 시작 경로가 모두 여기를 지나니 훅은 이 한 줄이다.
@@ -1680,22 +1682,24 @@ final class CompanionStore {
         return bonus
     }
 
-    /// 미션 기록의 **유일한** 경로 — 완료 보상(별의조각)과 알림도 여기서 처리한다.
+    /// 미션 기록의 **유일한** 경로 — 완료 보상(보관 알)과 알림도 여기서 처리한다.
     /// 적립 지점(모험 정산·졸업)마다 `state.missions` 를 직접 만지면 갱신과 클램프가 두 곳으로 갈라진다.
     /// 완료된 미션만 돌아오므로 "이미 줬나"를 따로 기억하지 않는다.
-    /// 반환값은 이번에 지급한 별의조각 — `accrueTrainerPoints` 와 같은 계약이다. 정산 경로는 이 값을
-    /// 보상 객체에 실어야 한다. 지갑만 늘리고 보고하지 않으면 알려준 값과 실제 잔액이 어긋난다.
-    /// `@discardableResult` 를 붙이지 않는 이유는 `accrueTrainerPoints` 와 같다(#200).
+    /// 반환값은 이번에 지급한 알 개수다. 기존 정산 객체의 `missionBonus`는 별의조각 단위라 이 값을
+    /// 싣지 않고, 완료 알림과 홈 미션 카드에서 알 지급을 직접 보여준다.
+    @discardableResult
     private func recordMission(_ event: MissionEvent, _ amount: Int) -> Int {
         let now = clock()
         let done = state.missions.record(event, amount,
-                                        dayKey: Self.dayKey(now), weekKey: Self.weekKey(now))
+                                        dayKey: Self.dayKey(now), weekKey: Self.weekKey(now),
+                                        assignmentSeed: DeviceID.stableIdentifier())
             .map { (name: l.missionName($0), reward: $0.reward) }
         guard let merged = Self.mergedCompletion(done) else { return 0 }
-        state.starPieces += merged.reward
+        let granted = addStoredEggs(merged.reward)
+        guard granted > 0 else { return 0 }
         notifyCompanionEvent(l.notifMissionDoneTitle,
-                             l.notifMissionDoneBody(merged.name, merged.reward))
-        return merged.reward
+                             l.notifMissionDoneBody(merged.name, granted))
+        return granted
     }
 
     /// 한 정산에서 완료된 목표를 **한 통**으로 묶는다 — 이름은 가운뎃점으로 잇고 보상은 합산한다.
@@ -1736,7 +1740,12 @@ final class CompanionStore {
     var missionRows: [(mission: Mission, progress: Int)] {
         let now = clock()
         let day = Self.dayKey(now), week = Self.weekKey(now)
-        return MissionBoard.catalog.map { ($0, state.missions.progress($0, dayKey: day, weekKey: week)) }
+        let before = state.missions
+        let assigned = state.missions.currentDailyMissions(dayKey: day, seed: DeviceID.stableIdentifier())
+        if state.missions != before { save() }
+        return assigned.map {
+            ($0, state.missions.progress($0, dayKey: day, weekKey: week))
+        }
     }
 
     /// 도감 완성 목표 지급의 **유일한** 경로. 호출부가 도감을 바꾸기 전에 `before` 를 잡아 두고 바꾼 뒤
@@ -2389,6 +2398,7 @@ final class CompanionStore {
         if won, !(mode == .coopBoss && participantCount < 2) {
             announcePayout(recordAchievement(.battle, 1), .battle)
         }
+        recordMission(.battles, 1)
         save()
     }
 
@@ -2777,6 +2787,7 @@ final class CompanionStore {
         state.waveRun.normalize()
         var grantedDailyEgg = false
         if cleared {
+            recordMission(.dungeonClears, 1)
             // 두 트랙이 같은 판에서 함께 넘어간다 — 배너는 **한 통**이다. 지급마다 띄우면
             // 같은 클리어를 두 번 말한다(`mergedCompletion` 이 미션에서 막은 그 문제).
             var paid = recordAchievement(.dungeon, 1)
@@ -2841,6 +2852,7 @@ final class CompanionStore {
         case .one: \.raidRewardDate
         case .three: \.raidRewardDateTierThree
         case .five: \.raidRewardDateTierFive
+        case .six: \.raidRewardDateTierSix
         }
     }
 
@@ -2850,7 +2862,26 @@ final class CompanionStore {
         case .one: \.raidCatchDate
         case .three: \.raidCatchDateTierThree
         case .five: \.raidCatchDateTierFive
+        case .six: \.raidCatchDateTierSix
         }
+    }
+
+    var weeklyRaidAttemptsRemaining: Int {
+        state.weeklyRaidAttemptDate == Self.dayKey(clock())
+            ? max(0, 2 - state.weeklyRaidAttemptsToday) : 2
+    }
+
+    @discardableResult
+    func claimWeeklyRaidAttempt() -> Bool {
+        let today = Self.dayKey(clock())
+        if state.weeklyRaidAttemptDate != today {
+            state.weeklyRaidAttemptDate = today
+            state.weeklyRaidAttemptsToday = 0
+        }
+        guard state.weeklyRaidAttemptsToday < 2 else { return false }
+        state.weeklyRaidAttemptsToday += 1
+        save()
+        return true
     }
 
     /// 현재 오전/오후, 1★ 레이드 보상을 이미 받았나. 정오 타이머 대신 구간 키를 비교한다.
@@ -2980,6 +3011,7 @@ final class CompanionStore {
     /// 없으면(레이드, 또는 어떤 이유로든 사전 굴림이 안 된 사파리존) 기존처럼 여기서 즉석 굴린다.
     private func commitCaughtMon(speciesID: Int, line: EvoLine, source: CaughtMonSource,
                                  presetGender: PokemonGender? = nil) -> RaidCatchResult {
+        let wasRegistered = isSpeciesAlreadyOwned(speciesID)
         let isShiny = Self.rollsShiny(roll: rng.next(), charmOwned: ownsShinyCharm)
         let nature = PokemonNature.allCases[Int(rng.next() % UInt64(PokemonNature.allCases.count))]
         let gender = presetGender ?? PokemonGender.from(genderRate: line.genderRate, roll: rng.next())
@@ -3018,6 +3050,7 @@ final class CompanionStore {
             notifyCompanionEvent(l.safariCaughtTitle, l.safariCaughtBody(name, toBox: destination == .box))
             AppLog.write("safari catch: species=\(speciesID) rarity=\(line.rarity) shiny=\(isShiny) to=\(destination)")
         }
+        if !wasRegistered { recordMission(.dexRegistrations, 1) }
         save()
         return destination
     }
@@ -3446,7 +3479,7 @@ final class CompanionStore {
         var paid = accrueTrainerPoints(TrainerLevel.graduationPoints)
         // 졸업은 파트너를 초기화하지만 미션 진행은 여기서 이어진다 — 모험을 한 번도 하지 않고
         // 졸업만 해도 기록된다(집중 경로와 독립).
-        paid += recordMission(.graduations, 1)
+        _ = recordMission(.graduations, 1)
         paid += recordSeason(.graduations, 1)
         // 도감 목표는 이 항목이 들어가기 **전**의 완료 집합과 비교해 지급한다 — 스냅샷을 먼저 잡는다.
         let goalsBefore = DexGoals.completed(in: state.dex)
@@ -4039,6 +4072,7 @@ final class CompanionStore {
         defer { isStoredEggHatching = false }
         guard let baseID = await chooseBase(),
               let line = try? await provider.line(baseSpeciesID: baseID) else { return }
+        let wasRegistered = isSpeciesAlreadyOwned(line.baseID)
         // 보증을 여기서도 검사한다. `chooseBase` 가 후보를 좁히지만 인덱스가 낡았거나 REST 폴백을
         // 타면 미달이 올라온다 — `hatchCore` 와 같은 관문이다. 알과 보증을 그대로 두고 다음 틱에 다시.
         if let tier = state.eggTier, line.rarity.sortRank < tier.sortRank {
@@ -4082,6 +4116,7 @@ final class CompanionStore {
                           companionID: mon.id, eventID: "hatch:\(mon.id.uuidString)")
         notifyCompanionEvent(shiny ? l.notifShinyHatchTitle : l.notifHatchTitle,
                              shiny ? l.notifShinyHatchBody(name) : l.notifHatchBody(name))
+        if !wasRegistered { recordMission(.dexRegistrations, 1) }
         AppLog.write("stored egg hatched: base=\(line.baseID) shiny=\(shiny)")
         save()
     }
@@ -4237,6 +4272,7 @@ final class CompanionStore {
             AppLog.write("hatch: line fetch failed for base \(baseID) — egg kept, retry next tick")
             return
         }
+        let wasRegistered = isSpeciesAlreadyOwned(line.baseID)
         // 라인 fetch 창(네트워크) 동안 활성 개체가 교체됐으면 이 부화 결과를 폐기한다. 세이브 불러오기가
         // 그 창에 들어오면, 여기서 멈추지 않는 한 갓 부화한 개체가 방금 불러온 개체를 덮어쓴다.
         // (loadCurrentLine·revealDitto 와 같은 세대 가드 — isHatching 락은 같은 앱 내 중복 부화만 막는다.)
@@ -4298,6 +4334,7 @@ final class CompanionStore {
                           companionID: hatchedID, eventID: "hatch:\(hatchedID.uuidString)")
         notifyCompanionEvent(showShiny ? l.notifShinyHatchTitle : l.notifHatchTitle,
                              showShiny ? l.notifShinyHatchBody(name) : l.notifHatchBody(name))
+        if !wasRegistered { recordMission(.dexRegistrations, 1) }
         justEvolvedTo = nil        // 새 부화는 "성장" 문구(진화 아님) — 직전 진화명이 남아 표시되지 않게
         displayState = .levelUp
         eventUntil = clock().addingTimeInterval(4)

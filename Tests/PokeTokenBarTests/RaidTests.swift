@@ -126,6 +126,8 @@ final class RaidTests: XCTestCase {
         XCTAssertLessThanOrEqual(RaidTier.three.bossHP, budget * 2)
         XCTAssertGreaterThan(RaidTier.five.bossHP, budget * 2, "5★는 둘로는 못 잡는다")
         XCTAssertLessThanOrEqual(RaidTier.five.bossHP, budget * 3)
+        XCTAssertGreaterThan(RaidTier.six.bossHP, budget * 4, "6★는 추천 인원보다 적으면 어렵게 둔다")
+        XCTAssertLessThanOrEqual(RaidTier.six.bossHP, budget * 5)
     }
 
     /// 화면이 그리는 권장 인원이 위 산수와 **같은 표**에서 나와야 한다 — 따로 적으면 갈라진다.
@@ -133,6 +135,7 @@ final class RaidTests: XCTestCase {
         XCTAssertEqual(RaidTier.one.recommendedRunners, 1)
         XCTAssertEqual(RaidTier.three.recommendedRunners, 2)
         XCTAssertEqual(RaidTier.five.recommendedRunners, 3)
+        XCTAssertEqual(RaidTier.six.recommendedRunners, 5)
     }
 
     /// 보스 레벨은 티어를 따라 오른다 — HP 가 절대값이라 **화력을 정하는 유일한 손잡이**다.
@@ -141,6 +144,16 @@ final class RaidTests: XCTestCase {
         XCTAssertLessThan(RaidTier.three.bossLevel, RaidTier.five.bossLevel)
         XCTAssertLessThanOrEqual(RaidTier.five.bossLevel, RaidBoss.partyLevel,
                                  "보스가 파티보다 높은 레벨이면 화력이 HP 표와 무관하게 튄다")
+        XCTAssertEqual(RaidTier.six.bossLevel, RaidBoss.partyLevel)
+    }
+
+    func testSixStarBossStaysFixedForTheWholeWeek() {
+        var calendar = Calendar(identifier: .iso8601)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        let monday = calendar.date(from: DateComponents(year: 2026, month: 9, day: 7, hour: 9))!
+        let sunday = calendar.date(byAdding: .day, value: 6, to: monday)!
+        XCTAssertEqual(RaidBoss.speciesID(at: monday, tier: .six, calendar: calendar),
+                       RaidBoss.speciesID(at: sunday, tier: .six, calendar: calendar))
     }
 
     // MARK: 정산 — 기여도가 무임승차를 가른다

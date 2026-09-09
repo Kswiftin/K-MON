@@ -1015,8 +1015,7 @@ struct L {
     var trainerLevelLabel: String { "트레이너" }
     var notifMissionDoneTitle: String { "🎯 미션 완료!" }
     func notifMissionDoneBody(_ name: String, _ stardust: Int) -> String {
-        let amount = GameNumberFormatter.compact(stardust)
-        return "\(name) — 별의조각 \(amount) 받았어요!"
+        "\(name) — 알 \(stardust)개를 받았어요!"
     }
     /// 목표 이름 — 미션과 시즌 챌린지가 **같은 문구를 공유**한다. 두 곳에 두면 한쪽만 고쳐진다.
     ///
@@ -1032,6 +1031,12 @@ struct L {
             return "집중 \(target)분"
         case .graduations:
             return "졸업 \(target)회"
+        case .battles:
+            return "배틀 \(target)회"
+        case .dungeonClears:
+            return "오늘의 던전 클리어 \(target)회"
+        case .dexRegistrations:
+            return "새로운 포켓몬 도감 등록 \(target)회"
         }
     }
 

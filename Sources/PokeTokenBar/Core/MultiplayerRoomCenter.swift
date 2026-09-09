@@ -428,7 +428,7 @@ final class MultiplayerRoomCenter {
     func startRaid() {
         guard isHost, let lobby, lobby.activity == .raid, lobby.canStart,
               let tier = raidTier else { return }
-        let dayKey = RaidBoss.periodKey(Date())
+        let dayKey = RaidBoss.bossKey(at: Date(), tier: tier)
         let epoch = sessionEpoch
         Task {
             guard let bossSnapshot = await raidBossSnapshot(tier: tier, dayKey: dayKey) else {
@@ -458,6 +458,9 @@ final class MultiplayerRoomCenter {
             guard RaidBoss.validRaidStart(fighters: fighters, tier: tier, dayKey: dayKey),
                   let started = try? MultiplayerBattle(fighters: fighters, mode: .coopBoss, seed: seed) else {
                 lastError = companion.l.raidBossLoadFailed; return
+            }
+            guard tier != .six || companion.claimWeeklyRaidAttempt() else {
+                lastError = "주간 6성 레이드는 하루에 두 번만 도전할 수 있습니다."; return
             }
             battle = started
             beginRaidCombat(fighters: fighters, seed: seed)
@@ -643,13 +646,18 @@ final class MultiplayerRoomCenter {
     /// 호스트가 연 판을 받아들일지. 거절하면 false 이고, 호출부는 수신 루프를 잇지 않는다.
     @discardableResult
     func applyGuestRaidStart(seed: UInt64, fighters: [MultiplayerFighter], tier: RaidTier,
-                             periodKey: String = RaidBoss.periodKey(Date())) -> Bool {
+                             periodKey: String? = nil) -> Bool {
         // **오늘의 보스가 맞는지 내가 직접 확인한다.** 보상은 내 지갑에 내가 넣으므로,
         // 호스트를 믿으면 조작된 방이 약한 보스에 5★ 딱지를 붙여 방 전원에게 5★ 를 뿌린다.
-        guard periodKey == RaidBoss.periodKey(Date()),
-              RaidBoss.validRaidStart(fighters: fighters, tier: tier, dayKey: periodKey),
+        let expectedKey = RaidBoss.bossKey(at: Date(), tier: tier)
+        let receivedKey = periodKey ?? expectedKey
+        guard receivedKey == expectedKey,
+              RaidBoss.validRaidStart(fighters: fighters, tier: tier, dayKey: receivedKey),
               let started = try? MultiplayerBattle(fighters: fighters, mode: .coopBoss, seed: seed) else {
             lastError = companion.l.raidBossMismatch; leaveRoom(); return false
+        }
+        guard tier != .six || companion.claimWeeklyRaidAttempt() else {
+            lastError = "주간 6성 레이드는 하루에 두 번만 도전할 수 있습니다."; leaveRoom(); return false
         }
         battle = started
         raidTier = tier
