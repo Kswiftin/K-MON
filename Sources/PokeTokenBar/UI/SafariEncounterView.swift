@@ -180,13 +180,8 @@ struct SafariEncounterView: View {
                 mutate { $0.revertUncommittedCatch() }
             }
             isCommitting = false
-            // 커밋까지 끝난 뒤 2초 더 배너를 보여주고 자동으로 걷기 화면으로 넘어간다. 그 사이
-            // 사용자가 이미 "계속"을 직접 눌렀으면(pendingOutcome이 다른 값으로 바뀌었으면) 다시
-            // 건드리지 않는다.
-            try? await Task.sleep(nanoseconds: 2_000_000_000)
-            guard pendingOutcome == .caught else { return }
-            pendingOutcome = nil
-            displayedEncounter = nil
+            // 잡았을 때도 자동으로 안 넘어간다 — 도망·시간초과와 똑같이 "계속" 버튼을 눌러야
+            // 걷기 화면으로 돌아간다.
         }
     }
 
@@ -281,17 +276,25 @@ struct SafariEncounterView: View {
     }
 
     /// 로그는 고정 높이 안에서만 스크롤한다(`BattleField.swift` 의 82pt 채팅창과 같은 규칙) —
-    /// `NestedScrollGuardTests` 가 높이 안 묶인 중첩 스크롤을 막는다.
+    /// `NestedScrollGuardTests` 가 높이 안 묶인 중첩 스크롤을 막는다. 줄이 늘어날 때마다 마지막
+    /// 줄로 자동 스크롤해 최신 내용이 항상 보이게 한다.
     private var log: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 2) {
-                ForEach(Array(currentEncounterLog.enumerated()), id: \.offset) { _, entry in
-                    Text(logLine(entry)).font(.caption2).foregroundStyle(.secondary)
+        ScrollViewReader { proxy in
+            ScrollView {
+                VStack(alignment: .leading, spacing: 2) {
+                    ForEach(Array(currentEncounterLog.enumerated()), id: \.offset) { index, entry in
+                        Text(logLine(entry)).font(.caption2).foregroundStyle(.secondary)
+                            .id(index)
+                    }
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(height: 100)
+            .onChange(of: currentEncounterLog.count) {
+                guard let lastIndex = currentEncounterLog.indices.last else { return }
+                withAnimation { proxy.scrollTo(lastIndex, anchor: .bottom) }
+            }
         }
-        .frame(height: 60)
     }
 
     private func logLine(_ entry: SafariLogEntry) -> String {
