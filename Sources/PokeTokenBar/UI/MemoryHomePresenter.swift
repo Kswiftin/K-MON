@@ -56,6 +56,10 @@ final class MemoryHomePresenter: NSObject, NSWindowDelegate {
                               backing: .buffered, defer: false)
         window.title = "Poké Home"
         window.minSize = NSSize(width: 900, height: 640)
+        // 배경 블러(`PokedoroTheme.pageBackground`)가 실제로 비치려면 창 자체가 불투명하면 안 된다
+        // — 불투명한 창은 배경을 먼저 칠해 `.behindWindow` 블렌딩을 가린다.
+        window.isOpaque = false
+        window.backgroundColor = .clear
         window.setFrameAutosaveName("MemoryHomeWindow")
         window.isReleasedWhenClosed = false
         window.delegate = self
