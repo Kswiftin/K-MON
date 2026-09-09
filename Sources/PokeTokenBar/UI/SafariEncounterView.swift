@@ -93,6 +93,9 @@ struct SafariEncounterView: View {
                     Text(gender.symbol).font(.caption.bold())
                         .foregroundStyle(gender == .male ? .blue : .pink)
                 }
+                if store.isSpeciesAlreadyOwned(encounter.speciesID) {
+                    ownedBadge
+                }
             }
             HStack(spacing: 4) {
                 ForEach(types, id: \.self) { TypeBadge(type: $0) }
@@ -115,6 +118,18 @@ struct SafariEncounterView: View {
                 mutate { $0.setCurrentEncounterGender(gender) }
             }
         }
+    }
+
+    /// 이미 도감에 등록한 종이면 이름 옆에 붙는 몬스터볼 표식 — 던지는 볼과 같은 스프라이트를
+    /// 재사용한다(새 이미지 파이프라인을 만들지 않는다).
+    private var ownedBadge: some View {
+        Group {
+            if let cgImage = SafariActionPixelArt.ball.cgImage(palette: SafariActionPixelArt.ballPalette) {
+                Image(decorative: cgImage, scale: 1).interpolation(.none)
+                    .resizable().frame(width: 12, height: 12)
+            }
+        }
+        .help("이미 도감에 등록된 포켓몬입니다")
     }
 
     private func thrownItemImage(_ action: SafariAction) -> some View {

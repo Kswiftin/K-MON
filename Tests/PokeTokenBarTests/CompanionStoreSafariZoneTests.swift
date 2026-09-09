@@ -70,6 +70,15 @@ final class CompanionStoreSafariZoneTests: XCTestCase {
         XCTAssertEqual(store.state.active?.gender, .female, "미리 굴려 보여준 성별을 그대로 써야 한다")
     }
 
+    /// 조우 화면이 몬스터볼 배지로 보여주는 판정 — 아직 안 잡았으면 거짓, 잡은 뒤(동행이든
+    /// 박스든)에는 참이어야 한다.
+    func testIsSpeciesAlreadyOwnedReflectsWhatIsActuallyCaught() async {
+        let store = stubStore(TestClock(), tag: "safari-owned-badge")
+        XCTAssertFalse(store.isSpeciesAlreadyOwned(20), "아직 잡은 적 없으면 거짓이어야 한다")
+        await store.hatch(baseID: 20)
+        XCTAssertTrue(store.isSpeciesAlreadyOwned(20), "동행으로 있으면 참이어야 한다")
+    }
+
     /// 하루 포획 상한을 다 쓰면 더 이상 잡을 수 없다 — 볼·걸음이 남아 있어도 `MonState` 를
     /// 안 만든다. §입장·일일 제한이 지키려는 바로 그 상한이다.
     func testCatchInSafariZoneRejectsAfterDailyCatchCapIsReached() async {

@@ -2953,6 +2953,13 @@ final class CompanionStore {
         return PokemonGender.from(genderRate: line.genderRate, roll: rng.next())
     }
 
+    /// 조우한 종을(같은 진화 체인의 다른 단계라도) 이미 도감에 등록한 적이 있는가 — 조우 화면이
+    /// 몬스터볼 배지로 보여준다. `dexEntries` 는 졸업 기록 + 지금 키우는 중인 개체까지 이미
+    /// 합쳐 두므로(§958 주석) 그대로 훑는다.
+    func isSpeciesAlreadyOwned(_ speciesID: Int) -> Bool {
+        dexEntries.contains { $0.chainOrder.contains(speciesID) }
+    }
+
     /// `catchRaidBoss`/`catchInSafariZone` 이 공유하는 커밋 경로.
     ///
     /// **잡은 자리에서 시작하는 경로로 세운다.** 레이드 세 티어 풀은 전부 최종 진화체라 그 경로는
