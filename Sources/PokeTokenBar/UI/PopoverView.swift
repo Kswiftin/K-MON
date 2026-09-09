@@ -87,6 +87,7 @@ final class PopoverNavigation {
     /// 주간 회고 오버레이(PRD 마일스톤 4). 위 오버레이들과 같은 층이다 — 집중 카드에서 열지만
     /// 뜨는 자리는 팝오버 전체라, 접는 규칙도 형제들과 같아야 한다.
     var showFocusRecap = false
+    var showAuction = false
     /// 대화 오버레이. 다른 오버레이와 달리 **어느 개체의** 대화인지까지 들어야 한다 —
     /// 대화는 활성 개체뿐 아니라 박스 개체로도 열린다(`PokemonRosterView`).
     /// `nil` 이 곧 닫힘이라 플래그를 따로 두지 않는다.
@@ -103,6 +104,7 @@ final class PopoverNavigation {
         showRaid = false
         showOutfit = false
         showFocusRecap = false
+        showAuction = false
         chatCompanionID = nil
     }
 
@@ -128,10 +130,12 @@ final class PopoverNavigation {
     /// 알림을 눌러 앱을 연 사용자가 정작 다음 세션을 시작할 수 없다.
     ///
     /// 판정이 순수한 이유는 `didReceive` 가 `@main` 안이라 테스트가 닿지 않기 때문이다.
-    enum NotificationDestination: Equatable, Sendable { case focusTimer, battle }
+    enum NotificationDestination: Equatable, Sendable { case focusTimer, battle, auction }
 
     static func destination(forNotificationID id: String) -> NotificationDestination {
-        id.hasPrefix(FocusChainRules.notificationIDPrefix) ? .focusTimer : .battle
+        if id.hasPrefix(FocusChainRules.notificationIDPrefix) { return .focusTimer }
+        if id.hasPrefix(AuctionNotification.identifierPrefix) { return .auction }
+        return .battle
     }
 
     /// 배틀 신청이 오면 그 화면으로 데려간다 — 덮여 있던 오버레이는 접는다.
@@ -146,6 +150,12 @@ final class PopoverNavigation {
     func goToFocusTimer() {
         closeOverlays()
         tab = .home
+    }
+
+    func goToAuction() {
+        closeOverlays()
+        showAuction = true
+        tab = .challenge
     }
 
     /// 체육관은 혼자 도전하는 콘텐츠다. 전투 엔진은 친구 대전과 같아도, 시작한 문맥까지 친구 탭으로

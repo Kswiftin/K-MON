@@ -1,6 +1,11 @@
 import Foundation
 import Network
 import Observation
+import UserNotifications
+
+enum AuctionNotification {
+    static let identifierPrefix = "auction-offer"
+}
 
 struct AuctionListing: Identifiable, Equatable {
     let id: UUID
@@ -353,6 +358,7 @@ final class PokemonAuctionCenter {
             connectionOfferIDs[connectionID] = offerID
             offers.append(AuctionOffer(id: offerID, listingID: listingID, trainerName: safeName,
                                        value: value, status: .pending))
+            postOfferNotification(offerID: offerID)
         case .accepted(let offerID, let pokemon):
             // 프레임은 **연결과 제안 ID 가 둘 다** 맞는 제안에만 닿는다. 제안이 여럿이라
             // 연결만 보면 남의 제안 국면을 움직인다.
@@ -476,6 +482,19 @@ final class PokemonAuctionCenter {
                 refundStardustIfNeeded(offerID)
             }
         }
+    }
+
+    /// 제안 내용은 잠금 화면에 노출하지 않고, 유효한 새 신청을 장부에 넣은 직후 한 번만 알린다.
+    private func postOfferNotification(offerID: UUID) {
+        guard !(UserDefaults.standard.object(forKey: "doNotDisturb") as? Bool ?? false),
+              AppEnv.isBundledApp else { return }
+        let content = UNMutableNotificationContent()
+        content.title = "메시지가 왔습니다"
+        content.body = "새로운 경매 제안이 있습니다. 눌러서 확인하세요."
+        content.sound = .default
+        UNUserNotificationCenter.current().add(
+            UNNotificationRequest(identifier: "\(AuctionNotification.identifierPrefix)-\(offerID.uuidString)",
+                                  content: content, trigger: nil))
     }
 
     /// 내가 건 제안 하나를 **열어 고친다.** 첨자를 밖으로 내보내지 않는 것이 요점이다(#229):

@@ -19,6 +19,11 @@ final class PopoverNavigationTests: XCTestCase {
                        .focusTimer)
     }
 
+    func testAuctionOfferNotificationOpensTheAuction() {
+        XCTAssertEqual(PopoverNavigation.destination(
+            forNotificationID: "\(AuctionNotification.identifierPrefix)-offer"), .auction)
+    }
+
     /// 나머지는 지금까지 하던 대로 대전 화면이다 — 이 변경으로 배틀 신청 흐름이 바뀌면 안 된다.
     func testOtherNotificationsStillOpenTheBattleTab() {
         for id in ["raid-room-abc", "raid-hatch-2", "gym-battle-\(UUID().uuidString)",

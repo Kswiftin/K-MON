@@ -18,14 +18,13 @@ struct ChallengeView: View {
     let store: CompanionStore
     @Environment(BattleCenter.self) private var battleCenter
     @Environment(PopoverNavigation.self) private var nav
-    @State private var showsAuction = false
 
     private var l: L { store.l }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            if showsAuction {
-                PokemonAuctionView(store: store, center: battleCenter.auction) { showsAuction = false }
+            if nav.showAuction {
+                PokemonAuctionView(store: store, center: battleCenter.auction) { nav.showAuction = false }
             } else {
             // 친구 탭의 토너먼트·배틀·공유 체육관도 같은 LAN 센터를 쓴다. 활동 종류를 보지 않고
             // `PokeathlonView` 를 그리면 도전 탭까지 "토너먼트 진행 중" 화면과 나가기 버튼을 공유해
@@ -71,7 +70,7 @@ struct ChallengeView: View {
                           subtitle: "무작위로 이어지는 웨이브를 오르는 로그라이크 런.") { nav.showDungeon = true }
             challengeCard(title: "포켓몬 경매 시장",
                           systemImage: "storefront.fill", tint: .orange,
-                          subtitle: "한 마리를 올리고 여러 교환 제안을 받아보세요.") { showsAuction = true }
+                          subtitle: "한 마리를 올리고 여러 교환 제안을 받아보세요.") { nav.showAuction = true }
         }
     }
 
