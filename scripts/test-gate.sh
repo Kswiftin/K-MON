@@ -58,6 +58,13 @@ LOGIC_CORE=(
   # 파일 수치는 낮지만, 배열 밖에 두면 그 순수 함수들이 커버리지에서 통째로 빠진다 —
   # `if !homes.isEmpty { lastError = nil }` 같은 새 분기를 아무도 못 본 이유가 이것이었다.
   "Sources/PokeTokenBar/Core/MemoryHomeVisitCenter.swift"
+  # 마을 지형 격자·타입→지형 표·주민 위치 파생·신뢰경계 정규화가 사는 곳. 배열 밖에 두면 그 표
+  # 전체가 커버리지에서 통째로 빠진다 — PeerAdvertisement·MemoryHomeVisitCenter 를 넣은 이유와
+  # 같다. 아이소메트릭 기하(`PokopiaTownIso.swift`)도 대상이다: 도트 판의 문자 격자는 라인
+  # 커버리지가 뜻이 없어 배열 밖에 뒀지만, 지금 그 파일은 좌표 변환·탭 판정·높이 표라 순수
+  # 함수이고 무테스트 분기가 곧 "안 누른 칸이 바뀐다" 가 된다.
+  "Sources/PokeTokenBar/Core/PokopiaTown.swift"
+  "Sources/PokeTokenBar/Core/PokopiaTownIso.swift"
   "Sources/PokeTokenBar/Core/DexGoals.swift"
   # 업데이트 뒤 릴리스 노트를 띄울지 정하는 판정. 배열 밖에 두면 "신규 설치엔 안 띄운다"·
   # "버전당 한 번" 분기가 커버리지에서 통째로 빠진다.

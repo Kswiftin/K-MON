@@ -43,6 +43,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, UNU
     private var playerGym: PlayerGymCoordinator!
     private var memoryHomeVisits: MemoryHomeVisitCenter!
     private var memoryHomePresenter: MemoryHomePresenter!
+    /// 포코피아 마을 창. Memory Home 과 **다른 창**이다 — 싸이월드 미니홈피와 축이 다르다.
+    private var pokopiaPresenter: PokopiaTownPresenter!
     private let focusTimer = FocusTimer()
     private var floatingPet: FloatingPetController!
     private let navigation = PopoverNavigation()
@@ -81,6 +83,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, UNU
             self.notifyFocusChain(
                 "집중 세션 완료!",
                 "\(rest)분 휴식이 시작됐어요.")
+            // 마을 이사 — 세션이 부르는 **사건**이다. 비동기 조회 셋을 타므로 `Task` 로 뺀다:
+            // 여기서 `await` 하면 세션 정산이 네트워크를 기다린다.
+            //
+            // **맨 끝에 둔다.** 이 훅의 순서가 계약이라(아래 주석) 앞에 끼우면 원장·휴식 계산
+            // 사이에 비동기 경계가 생긴다.
+            //
+            // 아무도 안 와도 조용히 넘어간다 — 매 세션 "아무도 안 왔어요" 를 띄우면 잔소리가 된다.
+            Task { @MainActor [weak self] in
+                guard let self, let resident = await self.companion.rollTownImmigration() else { return }
+                self.notifyFocusChain("🏡 \(resident.name) 이사 왔어요!",
+                                      "마을이 마음에 든 모양이에요. 마을을 열어 확인해 보세요.")
+            }
         }
         // 체인 배선 둘. **순서가 계약이다** — 위 훅이 원장에 적은 뒤에 아래가 그 집계를 읽는다
         // (`FocusTimer.tick`). 뒤집히면 긴 휴식이 한 세션씩 밀린다.
@@ -100,6 +114,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, UNU
         playerGym.refresh()
         memoryHomeVisits = MemoryHomeVisitCenter(companion: companion, peerID: settings.memoryHomeLANPeerID)
         memoryHomePresenter = MemoryHomePresenter(settings: settings, store: companion, visits: memoryHomeVisits)
+        pokopiaPresenter = PokopiaTownPresenter(settings: settings, store: companion)
         if settings.memoryHomeEnabled { memoryHomeVisits.startHostingIfEligible() }
         // 팝오버가 닫혀 있어도 배틀 신청을 받아 알림을 쏠 수 있게 상시 수신. 다만 리스너를 올리는
         // 순간 macOS 가 로컬 네트워크 권한을 묻기 때문에, 배틀을 끈 사용자에게는 시작하지 않는다.
@@ -748,7 +763,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, UNU
         popover.contentViewController = NSHostingController(
             rootView: PopoverView()
                 .environment(settings).environment(companion).environment(updater).environment(navigation)
-                .environment(battleCenter).environment(memoryHomeVisits).environment(memoryHomePresenter).environment(focusTimer).environment(chatPresenter)
+                .environment(battleCenter).environment(memoryHomeVisits).environment(memoryHomePresenter).environment(pokopiaPresenter).environment(focusTimer).environment(chatPresenter)
                 .environment(playerGym))
     }
 

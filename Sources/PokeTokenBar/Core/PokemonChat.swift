@@ -457,6 +457,19 @@ struct MemoryHomeAccessSettings: Codable, Sendable, Equatable {
     var roomStyle: MemoryHomeRoomStyle = .campus
     var placedDecor: [MemoryHomePlacedDecor] = []
     var featuredPhotoID: UUID?
+    /// 포코피아 마을. 세 축(지형·변신·주민)이 **이 한 키**에 들어간다 — 축마다 키를 만들면
+    /// 세이브 이전이 세 배가 되고, 되돌리기가 삭제 세 번이 된다.
+    ///
+    /// 이 홈의 원칙은 "새 저장 필드를 만들지 않는다"(파생으로 만든다)인데
+    /// (`docs/reference/memory-home-plan.md`), 지형 편집·변신·이사는 사용자 의도와 사건이라
+    /// 시계에서 파생할 수 없다. 원칙을 깨는 대가를 최소로 줄인 형태가 이 한 키다 —
+    /// 필드가 셋뿐이고(`terrain`·`dittoForm`·`residents`), **주민 자리·아바타 자리·화면 문구는
+    /// 전부 파생**이며(`PokopiaTown.residentSpot`·`PokopiaTownLife`), 되돌리기는 이 키를
+    /// 지우는 것 하나다.
+    ///
+    /// 주민은 **소유 개체가 아니다** — 파티·박스와 무관한 마을 인구라, 종 번호·이름·타입만
+    /// 들고 있고 이 기기의 개체를 가리키지 않는다.
+    var town = PokopiaTownState()
     /// Local-only passport stamps, keyed by Bonjour display ID. No visitor history is sent back.
     var visitedHomeStamps: [String: Date] = [:]
 
@@ -474,7 +487,8 @@ struct MemoryHomeAccessSettings: Codable, Sendable, Equatable {
              visitTotal, visitDayKey, visitTodayPeerIDs, visitThresholdDates,
              profileMessage, sharesProfileMessage, moodByDayKey, guestbookEntries,
              peerAliases, roommateIDs, roomLayout, furniturePositions, companionPositions, photos, visitedHomeStamps,
-             unlockedRoomStyles, roomStyle, placedDecor, featuredPhotoID
+             unlockedRoomStyles, roomStyle, placedDecor, featuredPhotoID,
+             town
     }
     init(publicNickname: String? = nil, visibility: MemoryHomeVisibility = .open,
          sharedPinnedMemoryID: UUID? = nil, recentRequesters: [MemoryHomeRecentRequester] = [],
@@ -513,6 +527,10 @@ struct MemoryHomeAccessSettings: Codable, Sendable, Equatable {
         roomStyle = try c.decodeIfPresent(MemoryHomeRoomStyle.self, forKey: .roomStyle) ?? .campus
         placedDecor = try c.decodeIfPresent([MemoryHomePlacedDecor].self, forKey: .placedDecor) ?? []
         featuredPhotoID = try c.decodeIfPresent(UUID.self, forKey: .featuredPhotoID)
+        // 마을 키. `decodeIfPresent … ?? .init()` 이라 이 키가 없던 세이브가 그대로 열린다 —
+        // 위 R4 주석과 같은 함정이다: 비옵셔널 `decode` 를 쓰면 기존 사용자 전원의 앨범이
+        // `.corrupt` 로 밀려난다.
+        town = try c.decodeIfPresent(PokopiaTownState.self, forKey: .town) ?? PokopiaTownState()
     }
 }
 
@@ -655,6 +673,16 @@ final class PokemonMemoryAlbum {
     }
     private var roomUndoStack: [RoomEditSnapshot] = []
     private var roomRedoStack: [RoomEditSnapshot] = []
+    /// 마을 되돌리기는 **자기 스택**이다. 방 스택에 섞으면 가구 undo 가 지형까지 되돌린다.
+    ///
+    /// **주민이 없다.** 이사는 편집이 아니라 사건이라, 지형을 되돌릴 때 찾아온 포켓몬이
+    /// 사라지면 그건 되돌리기가 아니라 상실이다. 주민을 줄이는 길은 내보내기 하나뿐이다.
+    private struct TownEditSnapshot {
+        let terrain: [TownTerrain]
+        let dittoForm: Int?
+    }
+    private var townUndoStack: [TownEditSnapshot] = []
+    private var townRedoStack: [TownEditSnapshot] = []
     private let fileURL: URL
     /// 이 앨범이 **파일을 쓸 수 있는가.** 터미널은 세이브를 읽기 전용으로 여는데, 그동안
     /// `CompanionStore.isReadOnly` 가 지킨 것은 **자기 파일 하나**였다 — 그 스토어가 만든 앨범과
@@ -997,6 +1025,88 @@ final class PokemonMemoryAlbum {
               memoryHomeAccess.placedDecor.filter({ $0.item == item && $0.id != excluding }).count < ownedItems[item.rawValue, default: 0] else { return false }
         return !memoryHomeAccess.placedDecor.contains { $0.id != excluding && Self.gridPoint($0.position) == point }
     }
+
+    // MARK: - 포코피아 마을
+
+    var town: PokopiaTownState { memoryHomeAccess.town }
+
+    /// 지형 밀기. **비용이 없다** — 제약은 "변신했는가" 하나이고 그 판정은 호출부가 한다
+    /// (`PokopiaTown.brush`). 여기서 다시 판정하면 표가 둘이 되고, 앨범이 도감을 알아야 한다.
+    ///
+    /// 같은 지형으로 다시 미는 것은 no-op 이다 — undo 스택에 빈 항목을 쌓지 않는다.
+    @discardableResult
+    func shapeTownTile(col: Int, row: Int, to terrain: TownTerrain) -> Bool {
+        guard let index = PokopiaTown.index(col: col, row: row),
+              memoryHomeAccess.town.terrain.indices.contains(index),
+              memoryHomeAccess.town.terrain[index] != terrain else { return false }
+        beginTownEdit(); memoryHomeAccess.town.terrain[index] = terrain; save()
+        return true
+    }
+
+    /// 변신. `nil` 은 항상 허용(해제)이고, 값은 **도감에 등록된 종만** 받는다 — 세이브·전송이
+    /// 못 믿을 값이므로 쓰기 자리에서 막는다.
+    ///
+    /// 해제를 막지 않는 이유: 도감에서 사라진 종으로 변신한 사용자가 트레이너로 못 돌아온다.
+    @discardableResult
+    func setDittoForm(_ speciesID: Int?, registeredSpecies: Set<Int>) -> Bool {
+        if let speciesID, !registeredSpecies.contains(speciesID) { return false }
+        guard memoryHomeAccess.town.dittoForm != speciesID else { return false }
+        beginTownEdit(); memoryHomeAccess.town.dittoForm = speciesID; save()
+        return true
+    }
+
+    /// 이사 온 포켓몬을 받는다. **받는 경로가 하나여야** 인구 상한과 종 중복이 한 곳에서만 걸린다.
+    ///
+    /// `beginTownEdit()` 을 부르지 **않는다.** 이사는 편집이 아니라 사건이다 — undo 스택에
+    /// 넣으면 지형 되돌리기 한 번이 방금 찾아온 포켓몬을 지운다. 그건 되돌리기가 아니라 상실이다.
+    ///
+    /// **같은 종을 두 번 받지 않는 것이 이사의 멱등이다.** 이사는 비동기 조회 뒤에 결정되므로
+    /// `recordCompletedFocusSession` 의 동기 가드에 태울 수 없다 — 대신 종 중복 거절이
+    /// 구조적으로 같은 일을 한다(두 번 굴려도 인구가 두 배가 되지 않는다).
+    @discardableResult
+    func admitTownResident(_ resident: TownResident) -> Bool {
+        // 주민 하나의 유효성은 `normalized` 와 **같은 술어**다. 여기에 조건을 따로 적으면
+        // 둘이 갈리고, 갈린 쪽으로 들어온 주민은 다음 실행에서 소리 없이 사라진다.
+        guard PokopiaTown.isAdmissible(resident),
+              memoryHomeAccess.town.residents.count < PokopiaTown.populationLimit,
+              !memoryHomeAccess.town.residents.contains(where: { $0.speciesID == resident.speciesID })
+        else { return false }
+        memoryHomeAccess.town.residents.append(resident); save()
+        return true
+    }
+
+    /// 내보내기 — 주민을 손으로 줄이는 **유일한** 길이다(자동 퇴거는 없다). 인구가 꽉 찼을 때
+    /// 자리를 비우는 용도이므로, 화면이 확인 대화를 앞에 둔다.
+    @discardableResult
+    func evictTownResident(speciesID: Int) -> Bool {
+        guard memoryHomeAccess.town.residents.contains(where: { $0.speciesID == speciesID })
+        else { return false }
+        memoryHomeAccess.town.residents.removeAll { $0.speciesID == speciesID }; save()
+        return true
+    }
+
+    var canUndoTownEdit: Bool { !townUndoStack.isEmpty }
+    var canRedoTownEdit: Bool { !townRedoStack.isEmpty }
+    func undoTownEdit() {
+        guard let previous = townUndoStack.popLast() else { return }
+        townRedoStack.append(townEditSnapshot()); applyTownEdit(previous); save()
+    }
+    func redoTownEdit() {
+        guard let next = townRedoStack.popLast() else { return }
+        townUndoStack.append(townEditSnapshot()); applyTownEdit(next); save()
+    }
+    private func beginTownEdit() {
+        townUndoStack.append(townEditSnapshot())
+        if townUndoStack.count > PokopiaTown.undoDepth { townUndoStack.removeFirst() }
+        townRedoStack.removeAll()
+    }
+    private func townEditSnapshot() -> TownEditSnapshot {
+        .init(terrain: memoryHomeAccess.town.terrain, dittoForm: memoryHomeAccess.town.dittoForm)
+    }
+    private func applyTownEdit(_ snapshot: TownEditSnapshot) {
+        memoryHomeAccess.town.terrain = snapshot.terrain
+        memoryHomeAccess.town.dittoForm = snapshot.dittoForm
+    }
     /// 반환값은 **앨범이 실제로 받았는가** 다. `Void` 로 두면 부르는 쪽이 거절(빈 본문·180자 초과·
     /// 이벤트 중복)을 알 수 없어 "기억해 둘게" 라고 말하고 앨범엔 아무것도 없는 상태가 된다.
     @discardableResult
@@ -1025,6 +1135,10 @@ final class PokemonMemoryAlbum {
     }
     /// `sessionID` is the persisted AdventureRun UUID.  Keeping it makes recovery/retry harmless
     /// while ensuring only sessions settled after this version began contribute to the counter.
+    ///
+    /// 마을은 이 함수를 지나지 **않는다.** 세션이 부르는 이사는 비동기 조회 두 번을 타므로
+    /// 이 동기 가드 안에서 끝낼 수 없고, 멱등은 종 중복 거절이 구조적으로 맡는다
+    /// (`admitTownResident`). 이사를 여기 태우면 조회를 기다리는 동안 세션 기록이 멈춘다.
     func recordCompletedFocusSession(companionID: UUID, sessionID: String, completedAt: Date) {
         guard !sessionID.isEmpty else { return }
         var state = milestoneStates[companionID] ?? PokemonMemoryMilestoneState()
@@ -1083,6 +1197,8 @@ final class PokemonMemoryAlbum {
         roomThemes = roomThemes.filter { validCompanionIDs.contains($0.key) }
         memoryHomeAccess.roommateIDs = memoryHomeAccess.roommateIDs.filter { validCompanionIDs.contains($0) }
         memoryHomeAccess.companionPositions = memoryHomeAccess.companionPositions.filter { validCompanionIDs.contains($0.key) }
+        // 마을은 소유 개체를 참조하지 않는다(주민은 마을 인구다) — 개체가 사라져도 지울 것이
+        // 없으므로 여기서 따로 거르지 않는다. 구조 검사는 아래 `normalizeMemoryHomeAccess` 가 한다.
         if let ownedItems {
             // legacy 슬롯은 `normalizeMemoryHomeAccess` 의 이전에서 이미 비워졌다 — 가방 대조는
             // 이전된 `placedDecor` 한 곳에서만 한다.
@@ -1113,6 +1229,9 @@ final class PokemonMemoryAlbum {
         memoryHomeAccess.blockedPeerIDs = localNetworkSettings.1
         memoryHomeAccess.peerAliases = localNetworkSettings.2
         memoryHomeAccess.publicNickname = localNetworkSettings.3
+        // 마을 주민은 **이 기기의 개체를 가리키지 않는다**(마을 인구다). 전송된 앨범의 주민은
+        // 종 번호·이름·타입이라 그대로 살아도 뜻이 통한다 — 남의 마을 인구를 물려받는 셈이다.
+        // 못 믿을 값(길이·중복·이름 빈 주민·그릴 수 없는 종)은 아래 정규화가 잘라낸다.
         normalizePins(); normalizeMemoryHomeAccess()
         if let ownedItems {
             // legacy 슬롯은 `normalizeMemoryHomeAccess` 의 이전에서 이미 비워졌다 — 가방 대조는
@@ -1478,6 +1597,10 @@ final class PokemonMemoryAlbum {
             memoryHomeAccess.featuredPhotoID = nil
         }
         memoryHomeAccess.visitedHomeStamps = memoryHomeAccess.visitedHomeStamps.filter { !$0.key.isEmpty }
+        // 마을. 주민이 소유 개체가 아니게 되면서 **외부 지식이 필요 없어졌다** — 길이·중복·
+        // 이름·그릴 수 있는 종·인구 상한이 전부 마을 안에서 판정된다. 그래서 부르는 세 자리
+        // (파일 열기·`prune`·`replace`)가 이 한 줄 하나로 모인다.
+        memoryHomeAccess.town = PokopiaTown.normalized(memoryHomeAccess.town)
     }
     /// This is called at the store save boundary, covering every active-companion transition.
     func clearSharedPinnedMemory(unlessPinnedFor activeCompanionID: UUID?) {

@@ -222,6 +222,7 @@ struct PopoverView: View {
     @Environment(MemoryHomeVisitCenter.self) private var memoryHomeVisits
     @Environment(FocusTimer.self) private var focusTimer
     @Environment(MemoryHomePresenter.self) private var memoryHomePresenter
+    @Environment(PokopiaTownPresenter.self) private var pokopiaPresenter
     @Environment(PokemonChatPresenter.self) private var chatPresenter
 
     private var l: L { companion.l }
@@ -437,6 +438,18 @@ struct PopoverView: View {
                         CompanionHeader(store: companion)
                         if settings.memoryHomeEnabled {
                             MemoryHomeQuickCard(store: companion) { memoryHomePresenter.open() }
+                        }
+                        // 미니홈피 게이트 **밖**이고 스타터 게이트 **안**이다. 마을은 LAN 에
+                        // 나가지 않으므로 `memoryHomeEnabled` 로 가리면 그 설정을 끈 사용자가
+                        // 마을에 못 들어간다. 반대로 스타터가 없으면 도감이 비어 변신할 종이
+                        // 없고, 변신 없이는 아무것도 못 미는 화면이 열린다 — 위 미션보드와 같은
+                        // 판단으로 첫 한 시간은 대상이 아니다.
+                        if showsGameChrome {
+                            Button { pokopiaPresenter.open() } label: {
+                                Label("포코피아 열기", systemImage: "tree.fill")
+                            }
+                            .buttonStyle(.bordered).controlSize(.small)
+                            .accessibilityHint("포코피아 마을 창을 엽니다.")
                         }
                     }
                     Spacer(minLength: 0)
