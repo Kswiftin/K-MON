@@ -21,12 +21,15 @@ struct SafariEncounterView: View {
         VStack(alignment: .leading, spacing: 6) {
             if let encounter {
                 header(encounter)
+                Divider()
                 stageGauges(encounter)
+                Divider()
                 if let pendingOutcome {
                     banner(pendingOutcome)
                 } else {
                     actionButtons
                 }
+                Divider()
                 log
             }
         }
@@ -79,6 +82,13 @@ struct SafariEncounterView: View {
 
     private func perform(_ action: SafariAction) {
         guard let outcome = mutate({ $0.act(action) }), outcome != .continuing else { return }
+        // 도망은 사용자가 직접 조우를 그만두는 선택이다 — 결과가 뻔하므로(항상 놓아줌) 배너로
+        // 한 번 더 확인시키지 않고 바로 걷기 화면으로 돌아간다.
+        if action == .run {
+            pendingOutcome = nil
+            displayedEncounter = nil
+            return
+        }
         pendingOutcome = outcome
         guard outcome == .caught, let speciesID = displayedEncounter?.speciesID ?? encounter?.speciesID
         else { return }
@@ -92,6 +102,13 @@ struct SafariEncounterView: View {
                 mutate { $0.revertUncommittedCatch() }
             }
             isCommitting = false
+            // 커밋까지 끝난 뒤 2초 더 배너를 보여주고 자동으로 걷기 화면으로 넘어간다. 그 사이
+            // 사용자가 이미 "계속"을 직접 눌렀으면(pendingOutcome이 다른 값으로 바뀌었으면) 다시
+            // 건드리지 않는다.
+            try? await Task.sleep(nanoseconds: 2_000_000_000)
+            guard pendingOutcome == .caught else { return }
+            pendingOutcome = nil
+            displayedEncounter = nil
         }
     }
 
@@ -116,13 +133,21 @@ struct SafariEncounterView: View {
         }
     }
 
+    /// 이번 조우에서 있었던 줄만 — 방문 전체 로그(`visitLog`)는 곁파일에 그대로 쌓이지만, 화면은
+    /// 마지막 "조우 시작" 줄(`action == nil`) 이후만 보여준다. 안 그러면 새 조우가 뜰 때마다 이전
+    /// 조우의 로그가 섞여 남아 어떤 줄이 지금 조우의 것인지 구별이 안 된다.
+    private var currentEncounterLog: [SafariLogEntry] {
+        let all = store.safariVisit?.visitLog ?? []
+        guard let startIndex = all.lastIndex(where: { $0.action == nil }) else { return all }
+        return Array(all[startIndex...])
+    }
+
     /// 로그는 고정 높이 안에서만 스크롤한다(`BattleField.swift` 의 82pt 채팅창과 같은 규칙) —
     /// `NestedScrollGuardTests` 가 높이 안 묶인 중첩 스크롤을 막는다.
     private var log: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 2) {
-                ForEach(Array((store.safariVisit?.visitLog ?? []).suffix(6).enumerated()),
-                       id: \.offset) { _, entry in
+                ForEach(Array(currentEncounterLog.enumerated()), id: \.offset) { _, entry in
                     Text(logLine(entry)).font(.caption2).foregroundStyle(.secondary)
                 }
             }
@@ -135,7 +160,7 @@ struct SafariEncounterView: View {
         guard let action = entry.action, let outcome = entry.outcome else {
             return l.safariLogEncounterStarted
         }
-        return l.safariLogLine(action: action, outcome: outcome)
+        return l.safariLogLine(action: action, outcome: outcome, sideEffectTriggered: entry.sideEffectTriggered)
     }
 
     @discardableResult

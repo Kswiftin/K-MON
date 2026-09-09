@@ -1398,20 +1398,29 @@ struct L {
     var safariContinue: String { "계속" }
 
     var safariLogEncounterStarted: String { "야생 포켓몬이 나타났다!" }
-    func safariLogLine(action: SafariAction, outcome: SafariOutcome) -> String {
-        let actionText: String
+    /// `sideEffectTriggered` — 미끼/진흙의 90% 부작용이 실제로 일어났는지(다른 액션은 nil).
+    /// 실제 효과(포획·도망 확률이 어떻게 바뀌었는지)를 그대로 문구에 반영해 "성공/실패"를
+    /// 애매하게 뭉개지 않는다.
+    func safariLogLine(action: SafariAction, outcome: SafariOutcome, sideEffectTriggered: Bool?) -> String {
+        let effectText: String
         switch action {
-        case .bait: actionText = "미끼를 던졌다"
-        case .mud: actionText = "진흙을 던졌다"
-        case .ball: actionText = "볼을 던졌다"
-        case .run: actionText = "도망쳤다"
+        case .bait:
+            effectText = sideEffectTriggered == true
+                ? "미끼를 던졌다 — 포획 확률 상승, 도망 확률도 상승"
+                : "미끼를 던졌다 — 포획 확률 상승"
+        case .mud:
+            effectText = sideEffectTriggered == true
+                ? "진흙을 뿌렸다 — 도망 확률 하락, 포획 확률도 하락"
+                : "진흙을 뿌렸다 — 도망 확률 하락"
+        case .ball: effectText = "볼을 던졌다"
+        case .run: effectText = "포켓몬이 도망쳤다"
         }
         switch outcome {
-        case .caught: return "\(actionText) — 잡았다!"
-        case .fled: return "\(actionText) — 상대가 도망쳤다"
-        case .ranAway: return actionText
-        case .timedOut: return "\(actionText) — 상대가 떠났다"
-        case .continuing: return actionText
+        case .caught: return "볼을 던졌다 — 잡았다!"
+        case .fled: return "\(effectText) — 포켓몬이 도망쳤다"
+        case .ranAway: return effectText
+        case .timedOut: return "\(effectText) — 포켓몬이 지쳐서 떠났다"
+        case .continuing: return effectText
         }
     }
     /// 결과창 — 내가 뽑혔을 때. 잡힌 개체가 어디로 갔는지 말해 준다(박스를 안 열면 안 보인다).

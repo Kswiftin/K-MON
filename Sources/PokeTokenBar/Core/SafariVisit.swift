@@ -6,6 +6,17 @@ struct SafariLogEntry: Sendable, Codable, Equatable {
     let speciesID: Int
     let action: SafariAction?
     let outcome: SafariOutcome?
+    /// 미끼/진흙의 90% 부작용이 이 줄에서 실제로 일어났는지 — 다른 액션은 `nil`.
+    /// 옵셔널이라 기존 곁파일(이 필드가 없던 시절 저장분)도 그대로 디코딩된다(`decodeIfPresent`).
+    /// 기본값을 둬 조우 시작 로그(`action`/`outcome` 도 nil인 줄) 생성부는 그대로 컴파일된다.
+    let sideEffectTriggered: Bool?
+
+    init(speciesID: Int, action: SafariAction?, outcome: SafariOutcome?, sideEffectTriggered: Bool? = nil) {
+        self.speciesID = speciesID
+        self.action = action
+        self.outcome = outcome
+        self.sideEffectTriggered = sideEffectTriggered
+    }
 }
 
 /// 사파리존 방문 하나 — 걷기 상태(`SafariWalker`)와 조우 상태(`SafariEncounter`)를 아우르고,
@@ -72,7 +83,8 @@ struct SafariVisit: Sendable {
         guard action != .ball || balls > 0 else { return .continuing }
         if action == .ball { balls -= 1 }
         let outcome = encounter.act(action, rng: &rng)
-        visitLog.append(SafariLogEntry(speciesID: encounter.speciesID, action: action, outcome: outcome))
+        visitLog.append(SafariLogEntry(speciesID: encounter.speciesID, action: action, outcome: outcome,
+                                       sideEffectTriggered: encounter.lastSideEffect))
         switch outcome {
         case .caught:
             catchesThisVisit += 1
