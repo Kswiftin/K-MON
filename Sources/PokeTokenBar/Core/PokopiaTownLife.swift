@@ -8,7 +8,8 @@ import Foundation
 ///
 /// **좁은 조건이 먼저 이긴다**: 갓 온 주민 → 자리를 잃은 주민 → 서식 만족 주민 → 터만 닦인
 /// 마을 → 텅 빈 마을. 좁은 것이 먼저라는 규칙은 방과 같다 — 넓은 문장은 모든 마을이 공유하고,
-/// 좁은 문장은 이 마을에만 있는 사실이다.
+/// 좁은 문장은 이 마을에만 있는 사실이다. 서식 만족 주민의 문장은 시각으로 갈린다 — **아침은 특기**
+/// (`specialtyLine`), 낮·밤은 정착 지형(`settledLine`)이다.
 ///
 /// `season`·`timeOfDay`·`now` 를 **인자로 받는다.** 함수 안에서 시계를 읽으면 테스트가 실행
 /// 시각에 따라 다른 가지를 밟아, 밤에 돌린 CI 만 빨개진다.
@@ -40,8 +41,14 @@ enum PokopiaTownLife {
         }
         // ③ 서식이 만족된 주민. **정착시킨 지형**이 문장을 정한다 — 첫 타입 지형이 아니다. 2타입
         // 종이 두 번째 타입으로 정착했으면 첫 타입 지형은 0칸일 수 있고, 그 문장은 없는 물가를 말한다.
+        // 아침은 특기가 맡는다 — 일하는 시간이다. 정착한 주민은 타입이 있으므로(`isSettled` 가 `homeTerrains` 를
+        // 본다) `specialty(of:)` 는 여기서 비지 않는다. 이 분기는 ③ **안**이다: 앞에 두면 ③ 이 아침에 안 밟히고,
+        // 뒤에 두면 영영 안 밟힌다.
         if let settled = residents.first,
            let home = PokopiaTown.settledTerrain(settled, terrain: terrain) {
+            if timeOfDay == .morning, let specialty = PokopiaTown.specialty(of: settled) {
+                return specialtyLine(settled.name, specialty: specialty)
+            }
             return settledLine(settled.name, terrain: home, timeOfDay: timeOfDay)
         }
         // ④ 주민은 없는데 부르는 환경은 됐다.
@@ -55,8 +62,8 @@ enum PokopiaTownLife {
     /// 지형별 문장. 여덟 지형 전부에 답이 있어야 한다(전수 `switch`) — 빠진 지형은 그 위에 사는
     /// 주민의 마을이 영영 다른 문장을 갖는다.
     ///
-    /// 시각으로 갈리는 것은 낮과 밤뿐이다. 여덟 지형 × 세 시각을 다 쓰면 24문장이 되고, 그중
-    /// 대부분은 아침과 낮을 구별하지 못한 채 늘어난다.
+    /// 이 함수는 낮과 밤만 가른다 — **아침은 `specialtyLine` 이 맡는다**(4단계). 그 전엔 아침과 낮을 구별할 내용이
+    /// 없어 한 문장을 썼고, 여덟 지형 × 세 시각 24문장은 그 이유로 만들지 않았다. 지금은 8×2 + 특기 18 이다.
     private static func settledLine(_ name: String, terrain: TownTerrain,
                                     timeOfDay: MemoryHomeTimeOfDay) -> String {
         let isNight = timeOfDay == .night
@@ -86,6 +93,37 @@ enum PokopiaTownLife {
             return isNight ? "\(name) 길 끝을 한참 바라보고 있어요."
                            : "\(name) 길을 따라 마을을 둘러봐요."
         }
+    }
+
+    /// 특기 문장 — 아침의 주민은 자기 특기로 마을을 돌본다. 열여덟 특기 전부에 답이 있어야 한다(전수 `switch`) —
+    /// 빠진 특기는 그 주민의 아침이 영영 다른 특기의 문장이 된다. 앞머리 "N 특기로" 는 `TownSpecialty.name` 을
+    /// **보간**한다 — 주민 줄의 "특기 급수" 와 같은 글자여야 사용자가 잇는데, 리터럴로 적으면 같은 이름이 두 곳에 산다.
+    ///
+    /// **특정 지형을 말하지 않는다.** `settledLine` 이 물가·꽃밭을 말할 수 있는 것은 인자가 정착시킨 지형이라 마을에
+    /// 실제로 있기 때문이다. 여기는 지형 인자가 없다 — "꽃밭에 물을 준다" 는 꽃밭 0칸 마을에서 거짓이다(1단계가 고친
+    /// "없는 물가" 부류). 원작의 설비(용광로·발전기)도 말하지 않는다 — 앱에 없는 것을 약속한다.
+    private static func specialtyLine(_ name: String, specialty: TownSpecialty) -> String {
+        let doing: String = switch specialty {
+        case .ignition:        "아침 불씨를 피워 마을을 데우고 있어요."
+        case .watering:        "마을 곳곳에 물을 뿌리고 있어요."
+        case .farming:         "새싹을 돌보며 아침을 시작해요."
+        case .generating:      "마을에 아침 활기를 돌리고 있어요."
+        case .leveling:        "마을 바닥을 평평하게 다지고 있어요."
+        case .flight:          "마을 위를 한 바퀴 돌아봤어요."
+        case .teleporting:     "마을 이쪽저쪽에 나타나요."
+        case .honeyGathering:  "아침 꿀을 모으러 나섰어요."
+        case .recycling:       "마을을 깨끗하게 치우고 있어요."
+        case .cutting:         "웃자란 것들을 다듬고 있어요."
+        case .polishing:       "돌을 매끈하게 갈고 있어요."
+        case .crushing:        "굴러온 돌을 부수고 있어요."
+        case .messing:         "아침부터 마을을 헤집어 놨어요."
+        case .exploring:       "마을 구석구석을 살피고 있어요."
+        case .sorting:         "흩어진 것을 가지런히 모으고 있어요."
+        case .moodMaking:      "아침 마을을 환하게 만들고 있어요."
+        case .rareHunting:     "반짝이는 것을 찾아다녀요."
+        case .yawning:         "아직 느긋하게 아침을 보내요."
+        }
+        return "\(name) \(specialty.name) 특기로 \(doing)"
     }
 
     /// 텅 빈 마을. 계절로 갈리되 **무엇을 하면 되는지**를 문장마다 담는다.

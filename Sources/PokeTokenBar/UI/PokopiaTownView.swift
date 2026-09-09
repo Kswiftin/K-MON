@@ -166,6 +166,15 @@ struct PokopiaTownView: View {
             ForEach(habitats) { habitat in
                 habitatRow(habitat)
             }
+            // 복합 서식지. 판정은 `PokopiaTown.compositeHabitats` 가 한다 — 여기서 맞닿음을 다시 세면 표가 둘이 된다.
+            Text("복합 서식지")
+                .font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                .padding(.top, 4)
+            Text("문턱을 넘은 두 지형이 상하좌우로 맞닿으면 두 타입을 함께 가진 포켓몬이 먼저 찾아와요")
+                .font(.caption2).foregroundStyle(.secondary)
+            ForEach(PokopiaTown.compositeHabitats(town.terrain)) { composite in
+                compositeRow(composite)
+            }
         }
         .padding(.horizontal, 10).padding(.vertical, 8)
         .frame(maxWidth: 512, alignment: .leading)
@@ -215,6 +224,40 @@ struct PokopiaTownView: View {
         }
     }
 
+    /// 복합 서식지 한 줄. 견본 둘(조합의 두 지형) · 이름 · 상태 문장.
+    private func compositeRow(_ composite: PokopiaTown.CompositeStatus) -> some View {
+        HStack(spacing: 7) {
+            HStack(spacing: 2) {
+                PokopiaTerrainSwatch(terrain: composite.recipe.first, side: 16)
+                PokopiaTerrainSwatch(terrain: composite.recipe.second, side: 16)
+            }
+            Text(composite.recipe.name)
+                .font(.caption.weight(.medium))
+                .frame(width: 88, alignment: .leading)
+            Text(compositeLine(composite))
+                .font(.caption2)
+                .foregroundStyle(composite.isFormed ? PokedoroTheme.mint : .secondary)
+                .lineLimit(1)
+            Spacer()
+        }
+    }
+
+    /// 복합 줄의 문장. 좁은 조건이 먼저 이긴다 — **성립 → 문턱 미달 → 떨어져 있음**(`nextArrivalLine` 과 같은 순서 규칙).
+    private func compositeLine(_ composite: PokopiaTown.CompositeStatus) -> String {
+        let recipe = composite.recipe
+        if composite.isFormed {
+            let first = PokopiaTown.typesMaking(recipe.first).map(\.name).joined(separator: "·")
+            let second = PokopiaTown.typesMaking(recipe.second).map(\.name).joined(separator: "·")
+            // "…타입을" — 타입 이름 뒤에 조사를 직접 붙이지 않는다(서식 줄과 같은 처방).
+            return "성립 — \(first) × \(second) 두 타입을 함께 가진 포켓몬이 먼저 와요"
+        }
+        if !composite.bothWelcoming {
+            // "…지형을" — 지형 이름(모래·나무·바위는 받침이 없다) 뒤에도 조사를 직접 붙이지 않는다(`shape` 의 처방).
+            return "\(recipe.first.name)·\(recipe.second.name) 지형을 각각 \(PokopiaTown.habitatThreshold)칸 이상 만들면 열려요"
+        }
+        return "두 지형이 다 있어요 — 상하좌우로 맞닿게 이어 보세요"
+    }
+
     /// 브러시 배너의 둘째 줄. 지금 밀고 있는 지형이 문턱에 얼마나 가까운지를 조작 옆에 둔다.
     private func brushHint(_ brush: TownTerrain) -> String {
         let status = PokopiaTown.habitats(town.terrain).first { $0.terrain == brush }
@@ -256,7 +299,11 @@ struct PokopiaTownView: View {
             PokopiaResidentView(speciesID: resident.speciesID, isShiny: false, side: 26)
             VStack(alignment: .leading, spacing: 1) {
                 Text(resident.name).font(.caption.weight(.medium)).lineLimit(1)
-                Text(home.map { "\($0.name)에 살아요" } ?? "살던 자리를 찾는 중이에요")
+                // 특기는 타입 파생이다(`PokopiaTown.specialty(of:)`) — 화면이 표를 갖지 않는다. 타입 없는 주민(정규화가 막는다)은
+                // 뒤 토막이 빠져 앞 문장만 남는다. 보간이 토막의 끝이라 조사가 붙지 않는다.
+                Text([home.map { "\($0.name)에 살아요" } ?? "살던 자리를 찾는 중이에요",
+                      PokopiaTown.specialty(of: resident).map { "특기 \($0.name)" }]
+                     .compactMap { $0 }.joined(separator: " · "))
                     .font(.caption2)
                     .foregroundStyle(settled ? .secondary : PokedoroTheme.red)
             }

@@ -297,6 +297,45 @@ final class PokopiaImmigrationTests: XCTestCase {
         XCTAssertNil(refused, "스프라이트 없는 종이 이사 왔다 — 마을에 빈 자리가 그려진다")
     }
 
+    // MARK: 복합 서식지 (맞닿은 두 서식이 손님의 순서를 바꾼다)
+
+    /// **이 단계의 보상이 실제로 도는지 세는 가드.** 물 6칸(0행)과 나무 6칸(1행)이 맞닿은 마을은 어느 시드로 굴려도
+    /// 물·비행 종이 먼저 온다. 같은 지형을 떨어뜨린(나무 4행) 마을은 시드에 따라 다른 종이 먼저 온다 — 앞부분만 세면
+    /// "늘 278 을 뽑는" 구현과 구별되지 않는다(`testDifferentSeedsCanPickDifferentSpecies` 와 같은 이유). 복합 손님이 다 온
+    /// 뒤에는 단일 후보가 그대로 온다 — 복합이 단일 경로를 막지 않는다.
+    func testAFormedCompositeCallsTheTwoTypeSpeciesFirst() async {
+        let pool = [7, 149, 278]
+        let types: [Int: [PokemonType]] = [7: [.water], 149: [.dragon], 278: [.water, .flying]]
+        func shape(_ store: CompanionStore, treeRow: Int) {
+            for col in 0..<PokopiaTown.habitatThreshold {
+                XCTAssertTrue(store.memoryAlbum.shapeTownTile(col: col, row: 0, to: .water))
+                XCTAssertTrue(store.memoryAlbum.shapeTownTile(col: col, row: treeRow, to: .tree))
+            }
+        }
+        var touchingFirsts = Set<Int>()
+        var apartFirsts = Set<Int>()
+        for seed in UInt64(1)...UInt64(12) {
+            let touching = makeStore(seed: seed, tag: "pokopia-composite-touch-\(seed)", pool: pool, types: types)
+            shape(touching, treeRow: 1)
+            XCTAssertTrue(PokopiaTown.compositeHabitats(touching.memoryAlbum.town.terrain)
+                              .contains { $0.recipe.name == "물가 나무" && $0.isFormed }, "전제: 물가 나무가 성립해야 한다")
+            touchingFirsts.insert(await touching.rollTownImmigration()?.speciesID ?? -1)
+
+            let apart = makeStore(seed: seed, tag: "pokopia-composite-apart-\(seed)", pool: pool, types: types)
+            shape(apart, treeRow: 4)
+            apartFirsts.insert(await apart.rollTownImmigration()?.speciesID ?? -1)
+        }
+        XCTAssertEqual(touchingFirsts, [278], "맞닿은 마을인데 복합 손님이 먼저 오지 않았다: \(touchingFirsts.sorted())")
+        XCTAssertGreaterThan(apartFirsts.count, 1, "떨어진 마을에서도 늘 같은 종이 먼저 온다 — 맞닿음이 판정을 가르지 않는다")
+        XCTAssertFalse(apartFirsts.contains(-1), "떨어진 마을에서 아무도 안 왔다 — 전제가 깨졌다")
+
+        let store = makeStore(seed: 3, tag: "pokopia-composite-then-single", pool: pool, types: types)
+        shape(store, treeRow: 1)
+        for _ in pool.indices { _ = await store.rollTownImmigration() }
+        XCTAssertEqual(store.memoryAlbum.town.residents.map(\.speciesID).first, 278, "첫 손님이 복합 손님이 아니다")
+        XCTAssertEqual(Set(store.memoryAlbum.town.residents.map(\.speciesID)), Set(pool), "복합 뒤에 단일 후보가 오지 않았다")
+    }
+
     // MARK: 서식이 화면에 보인다
 
     /// 찾아온 주민은 **자기를 부른 지형 위에** 선다. 이것이 "내가 만들어서 왔다" 의 시각적 증거다.

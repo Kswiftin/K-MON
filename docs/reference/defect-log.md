@@ -1571,6 +1571,14 @@ read_when:
   결정적으로 단위 테스트 가능한지가 기준이고, 넣은 뒤 TOTAL 이 임계값 위인지 확인한다
   (`GymLeague.swift` 는 라인 80.77%, 추가 후 TOTAL 85.10% → 85.07%).
   (`scripts/test-gate.sh`, 2026-08-21.)
+- **재발(2026-09-09)**: `PokopiaTownLife.swift`(#314, 마을 한 줄 문구의 파생)가 같은 상태였다 — 같은 원칙의
+  `MemoryHomeRoomLife.swift` 는 배열에 있었는데 새 파일은 빠졌고, 특기 18분기를 더하는 코드 리뷰에서야 드러났다.
+  넣은 시점의 파일 라인 커버리지는 100%(Pokopia 필터 실행 기준). 같은 날 스윕 — `Tests/` 에 이름 짝
+  (`<Name>Tests.swift`)이 있는데 배열에 없는 Core 파일이 11개 더 있다. `GlobalHotKey`·`MemoryHomePixelArt`·
+  `UpdateChecker` 는 AppKit·URLSession 을 import 하고, `BattleChat`·`BattleWindowPresentationPolicy`·`MenuBarStatus`·
+  `PlayerGym`·`PokemonNameSearch`·`PokemonOXQuiz`·`PokemonTournament`·`SaveTransfer` 는 그 import 가 없다(grep 기준 —
+  순수 로직이라는 판정은 아니다). 파일마다 열어 판단해야 해서 여기 적고 넘긴다. 한 번 더 재발하면 "Tests 짝이 있으면
+  배열에 있어야 한다" 를 `test-gate.sh` 검사로 올린다.
 
 ## 기능을 되살릴 때 삭제가 건드린 자리를 전수로 되짚지 않는 부류
 

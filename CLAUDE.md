@@ -12,7 +12,7 @@
 | `docs/reference/wave-run-design.md` | 웨이브 런(오늘의 던전) 난이도·보상 균형을 바꿀 때, 상대 종 추첨·종족값 티어를 손볼 때, 웨이브를 넘어 무엇이 이월되는지 판단할 때 |
 | `docs/reference/room-walk-dungeon-design.md` | 트레이너 꾸미기 아이템을 더할 때, 친구 광고의 `outfit` 키를 바꿀 때 (던전 부분은 웨이브 런으로 대체됐다 — 지난 설계의 기록으로만 본다) |
 | `docs/reference/memory-home-plan.md` | Memory Home 에 기획서(《PokéWorld : My Mini Home》) 기능을 붙일 때, 미니룸 반응 문구·추억 카드·주크박스 해금을 손댈 때, 홈 기능이 "코드엔 있는데 화면엔 없다" 를 의심할 때 |
-| `docs/reference/pokopia-town-design.md` | 포코피아 마을(자기 창 — `PokopiaTownPresenter`)의 타입→지형 표·서식 문턱·인구 상한을 바꿀 때, 환경 레벨(Lv.1~10) 산식을 손댈 때, 변신 게이트(변신이 유일한 도구)를 손대려 할 때, 이사 판정·후보 풀·굴림 소비를 조정할 때, 주민을 되돌리기·자동 퇴거 대상으로 만들려 할 때, 마을을 LAN·터미널에 실으려 할 때, 마을 창을 Memory Home 에 다시 합치려 할 때 |
+| `docs/reference/pokopia-town-design.md` | 포코피아 마을(자기 창 — `PokopiaTownPresenter`)의 타입→지형 표·서식 문턱·인구 상한을 바꿀 때, 환경 레벨(Lv.1~10) 산식을 손댈 때, 복합 서식지 조합표·맞닿음 규칙을 손볼 때, 특기 표(타입→특기)나 아침 문장을 손볼 때, 변신 게이트(변신이 유일한 도구)를 손대려 할 때, 이사 판정·후보 풀·굴림 소비를 조정할 때, 주민을 되돌리기·자동 퇴거 대상으로 만들려 할 때, 마을을 LAN·터미널에 실으려 할 때, 마을 창을 Memory Home 에 다시 합치려 할 때 |
 | `docs/reference/lan-raid-design.md` | LAN 협동 레이드(#80)의 티어 HP·보스 추첨·보스 교체 알림·정산식을 조정할 때, 게스트의 오늘자 보스 검증을 손볼 때, 호스트 마이그레이션을 실제로 붙일 때 |
 | `docs/reference/safari-zone-design.md` | 사파리존(#80 후속)의 단계 배율·기저 포획률·조우 턴 상한을 손볼 때, 방문당·하루 포획 상한이나 방문 횟수를 조정할 때, 걷기 화면(격자 이동·키 입력)이나 존 큐레이션·등급 가중치를 손볼 때 |
 | `docs/reference/defect-log.md` | 결함·회귀를 고치는 중(부류 스윕 근거), 동시성·캐시·외부 로그 포맷·상시 애니메이션·세이브 이전을 건드릴 때 |

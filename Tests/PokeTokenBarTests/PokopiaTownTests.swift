@@ -83,6 +83,33 @@ final class PokopiaTownTests: XCTestCase {
                        PokemonType.allCases.count, "타입이 두 지형에 걸쳐 있다")
     }
 
+    // MARK: 타입 ↔ 특기 (표는 하나다 · 문구 전용)
+
+    /// **양방향**을 본다. 정방향은 전수 `switch` 가 지키지만, 어느 타입도 주지 않는 특기는 화면에 영영 안 나오고 그
+    /// 문장 분기는 호출부가 없어 커버리지에 안 잡힌다. 지형 표(8 ← 18)와 달리 18 ← 18 이라 **정확히 하나**다 — 두 타입이
+    /// 같은 특기를 주면 다른 특기 하나가 빈다.
+    func testEverySpecialtyComesFromExactlyOneType() {
+        let given = PokemonType.allCases.map(PokopiaTown.specialty(for:))
+        XCTAssertEqual(Set(given), Set(TownSpecialty.allCases), "어떤 타입도 주지 않는 특기가 있다")
+        XCTAssertEqual(Set(given).count, given.count, "두 타입이 같은 특기를 준다")
+        XCTAssertEqual(TownSpecialty.allCases.count, PokemonType.allCases.count, "특기는 타입마다 하나다")
+    }
+
+    /// 이름 18개가 비지 않고 서로 다르다 — 겹치면 주민 줄에 다른 특기가 같은 글자로 보인다.
+    func testSpecialtyNamesAreDistinct() {
+        let names = TownSpecialty.allCases.map(\.name)
+        XCTAssertFalse(names.contains { $0.isEmpty })
+        XCTAssertEqual(Set(names).count, names.count)
+    }
+
+    /// 주민의 특기는 **첫 타입**의 것이다 — 두 번째 타입으로 정착한 주민도 특기는 바뀌지 않는다(특기는 마을 상태가 아니라
+    /// 종의 정체다). 타입 순서를 뒤집으면 특기가 바뀐다는 것이 "첫 타입" 의 증거다. 타입 없는 주민은 nil.
+    func testResidentSpecialtyFollowsTheFirstTypeOnly() {
+        XCTAssertEqual(PokopiaTown.specialty(of: resident(278, [.water, .flying])), PokopiaTown.specialty(for: .water))
+        XCTAssertEqual(PokopiaTown.specialty(of: resident(278, [.flying, .water])), PokopiaTown.specialty(for: .flying))
+        XCTAssertNil(PokopiaTown.specialty(of: resident(1, [])))
+    }
+
     // MARK: 서식
 
     /// 문턱 경계. 5칸은 안 부르고 6칸은 부른다 — 실수로 두 칸 민 것이 이사를 부르면
@@ -373,6 +400,143 @@ final class PokopiaTownTests: XCTestCase {
         XCTAssertGreaterThan(PokopiaTown.habitatThreshold, 1)
         XCTAssertLessThan(PokopiaTown.habitatThreshold, PokopiaTown.columns,
                           "문턱이 한 줄보다 크면 사용자가 한 줄을 다 밀어도 아무 일이 없다")
+    }
+
+    // MARK: 복합 서식지 (두 서식이 맞닿으면 2타입 종을 먼저 부른다)
+
+    /// 표의 성질 넷 — 이름 유일(id 가 이름이다) · 같은 지형 둘이 아님 · 같은 쌍이 두 번 없음 · **여덟 지형이 전부 든다**.
+    /// 빠진 지형은 어떤 조합에도 못 끼는 채 남고, 그 사실은 표를 눈으로 봐도 잘 안 보인다(`testEveryTerrainIsReachableFromSomeType`
+    /// 이 타입→지형 표에 같은 일을 한다).
+    func testCompositeRecipesAreWellFormed() {
+        let recipes = PokopiaTown.compositeRecipes
+        XCTAssertEqual(Set(recipes.map(\.name)).count, recipes.count, "조합 이름이 겹친다 — 현황표 두 줄이 하나로 접힌다")
+        XCTAssertFalse(recipes.contains { $0.name.isEmpty })
+        XCTAssertFalse(recipes.contains { $0.first == $0.second }, "같은 지형 둘은 조합이 아니다")
+        let pairs = recipes.map { Set([$0.first, $0.second]) }
+        XCTAssertEqual(Set(pairs).count, pairs.count, "같은 쌍이 두 번 들었다")
+        XCTAssertEqual(Set(recipes.flatMap { [$0.first, $0.second] }), Set(TownTerrain.allCases),
+                       "어떤 조합에도 끼지 못하는 지형이 있다")
+    }
+
+    /// **가장자리를 감싸지 않는다.** 평탄 배열에서 15번과 16번은 이웃 첨자지만 화면에서는 반대편 끝이다 — 첨자 산술로 이웃을
+    /// 세면 오른쪽 끝의 물과 다음 줄 왼쪽 끝의 나무가 "맞닿은" 것으로 읽힌다. 이웃은 상하좌우 넷뿐이다(대각선 아님).
+    /// 인자 순서는 답을 바꾸지 않는다 — `(b, a)` 분기는 이 호출이 없으면 `^0` 으로 남는다.
+    func testTouchesNeedsAnOrthogonalNeighborAndNeverWrapsTheEdge() throws {
+        let last = PokopiaTown.columns - 1
+        var wrap = [TownTerrain](repeating: .grass, count: PokopiaTown.tileCount)
+        wrap[try XCTUnwrap(PokopiaTown.index(col: last, row: 2))] = .water
+        wrap[try XCTUnwrap(PokopiaTown.index(col: 0, row: 3))] = .tree            // 첨자로는 바로 다음 칸
+        XCTAssertFalse(PokopiaTown.touches(.water, .tree, in: wrap), "가장자리가 감쌌다")
+
+        var diagonal = wrap
+        diagonal[try XCTUnwrap(PokopiaTown.index(col: 0, row: 3))] = .grass
+        diagonal[try XCTUnwrap(PokopiaTown.index(col: last - 1, row: 3))] = .tree   // 대각선 아래
+        XCTAssertFalse(PokopiaTown.touches(.water, .tree, in: diagonal), "대각선을 맞닿음으로 읽었다")
+
+        var vertical = wrap
+        vertical[try XCTUnwrap(PokopiaTown.index(col: 0, row: 3))] = .grass
+        vertical[try XCTUnwrap(PokopiaTown.index(col: last, row: 3))] = .tree     // 가장자리 열에서 위아래
+        XCTAssertTrue(PokopiaTown.touches(.water, .tree, in: vertical))
+        XCTAssertTrue(PokopiaTown.touches(.tree, .water, in: vertical), "인자 순서가 답을 바꿨다")
+
+        var horizontal = wrap
+        horizontal[try XCTUnwrap(PokopiaTown.index(col: 0, row: 3))] = .grass
+        horizontal[try XCTUnwrap(PokopiaTown.index(col: last - 1, row: 2))] = .tree   // 같은 줄 왼쪽
+        XCTAssertTrue(PokopiaTown.touches(.water, .tree, in: horizontal))
+
+        XCTAssertFalse(PokopiaTown.touches(.water, .tree, in: [.water, .tree]), "잘린 지형은 격자가 아니다 — 맞닿음도 없다")
+    }
+
+    /// 성립은 **두 조건**이다. 셋을 가른다: 맞닿았지만 한쪽 문턱 미달 · 둘 다 문턱이지만 떨어져 있음 · 둘 다 + 맞닿음.
+    /// 앞 둘 없이 셋째만 세면 "문턱 하나만 보는" 구현도, "맞닿음만 보는" 구현도 통과한다.
+    func testACompositeNeedsBothThresholdsAndContact() throws {
+        let water = town(.water, count: PokopiaTown.habitatThreshold)              // 0행 0~5 물, 나머지 길
+        func status(_ terrain: [TownTerrain]) throws -> PokopiaTown.CompositeStatus {
+            try XCTUnwrap(PokopiaTown.compositeHabitats(terrain).first { $0.recipe.first == .water && $0.recipe.second == .tree })
+        }
+        var oneShort = water
+        for col in 0..<(PokopiaTown.habitatThreshold - 1) {                         // 나무 5칸, 물과 맞닿음
+            oneShort[try XCTUnwrap(PokopiaTown.index(col: col, row: 1))] = .tree
+        }
+        let short = try status(oneShort)
+        XCTAssertTrue(short.touching)
+        XCTAssertFalse(short.bothWelcoming)
+        XCTAssertFalse(short.isFormed, "문턱 미달인데 성립했다")
+
+        var apart = water
+        for col in 0..<PokopiaTown.habitatThreshold {                               // 나무 6칸, 4행 — 떨어져 있음
+            apart[try XCTUnwrap(PokopiaTown.index(col: col, row: 4))] = .tree
+        }
+        let far = try status(apart)
+        XCTAssertTrue(far.bothWelcoming)
+        XCTAssertFalse(far.touching)
+        XCTAssertFalse(far.isFormed, "떨어져 있는데 성립했다")
+
+        var formed = water
+        for col in 0..<PokopiaTown.habitatThreshold {                               // 나무 6칸, 1행 — 맞닿음
+            formed[try XCTUnwrap(PokopiaTown.index(col: col, row: 1))] = .tree
+        }
+        XCTAssertTrue(try status(formed).isFormed)
+    }
+
+    /// 조합 여덟이 한 줄씩, 성립한 것이 위로, 나머지는 표 순서. 기본 마을은 아무 조합도 성립시키지 않는다(길가 바위는 바위 0칸) —
+    /// 1일차 이사가 전과 같다는 근거다.
+    func testCompositeHabitatsListEveryRecipeFormedFirst() throws {
+        let none = PokopiaTown.compositeHabitats(PokopiaTown.defaultTerrain)
+        XCTAssertEqual(none.count, PokopiaTown.compositeRecipes.count)
+        XCTAssertEqual(Set(none.map(\.id)).count, none.count, "현황 줄 id 가 겹친다")
+        XCTAssertFalse(none.contains(where: \.isFormed), "기본 마을에서 조합이 성립했다 — 1일차 이사 순서가 바뀐다")
+        XCTAssertEqual(none.map(\.recipe), PokopiaTown.compositeRecipes, "성립이 없으면 표 순서 그대로다")
+
+        var terrain = town(.water, count: PokopiaTown.habitatThreshold)
+        for col in 0..<PokopiaTown.habitatThreshold {
+            terrain[try XCTUnwrap(PokopiaTown.index(col: col, row: 1))] = .tree
+        }
+        let some = PokopiaTown.compositeHabitats(terrain)
+        let formedPrefix = some.prefix { $0.isFormed }
+        XCTAssertEqual(formedPrefix.count, some.filter(\.isFormed).count, "성립한 줄이 안 한 줄 아래로 섞였다")
+        XCTAssertTrue(formedPrefix.contains { $0.recipe.name == "물가 나무" })
+    }
+
+    /// **복합이 성립하면 두 지형을 다 만드는 종을 먼저 뽑는다.** 굴림 0..<30 을 전부 훑어 답이 하나인지 본다 — 한 굴림만
+    /// 보면 후보 셋 중 우연히 그 종일 확률이 1/3 이다. 그 종이 이미 살면 **단일 후보로 떨어진다**(복합 성립 시에도 단일
+    /// 후보가 남는다 — 로드맵의 필수 회귀). 같은 지형을 떨어뜨리면 우선이 사라진다 — 맞닿음이 판정을 가르는 것을 대조군으로
+    /// 확인한다(`defect-log.md` "판정 하나가 두 축을 보게 되면" 부류의 처방).
+    func testImmigrantDrawsCompositeMatchesFirstThenFallsBackToSingles() throws {
+        let typeIndex: [Int: [PokemonType]] = [7: [.water], 149: [.dragon], 278: [.water, .flying]]   // 278 = 물·비행
+        let pool = [7, 149, 278]
+        func draws(_ terrain: [TownTerrain], residents: [TownResident]) -> Set<Int?> {
+            Set((0..<30).map { PokopiaTown.immigrant(terrain: terrain, pool: pool, typeIndex: typeIndex,
+                                                      residents: residents, roll: UInt64($0)) })
+        }
+        var touching = town(.water, count: PokopiaTown.habitatThreshold)
+        for col in 0..<PokopiaTown.habitatThreshold {
+            touching[try XCTUnwrap(PokopiaTown.index(col: col, row: 1))] = .tree
+        }
+        XCTAssertEqual(draws(touching, residents: []), [278], "맞닿았는데 물·비행 종이 먼저 오지 않았다")
+        XCTAssertEqual(draws(touching, residents: [resident(278, [.water, .flying])]), [7, 149],
+                       "복합 손님이 다 왔는데 단일 후보로 떨어지지 않았다")
+
+        var apart = town(.water, count: PokopiaTown.habitatThreshold)
+        for col in 0..<PokopiaTown.habitatThreshold {
+            apart[try XCTUnwrap(PokopiaTown.index(col: col, row: 4))] = .tree
+        }
+        XCTAssertEqual(draws(apart, residents: []), [7, 149, 278], "떨어진 마을에서 우선이 남아 있다 — 맞닿음이 판정을 안 가른다")
+    }
+
+    /// 복합은 **후보를 더하지 않는다.** 두 지형을 다 만드는 종이라도 단일 경로를 통과하지 못하면(살고 있음) 오지 않고,
+    /// 부르는 타입이 없는 종은 복합이 성립해도 오지 않는다 — 복합 후보는 단일 후보의 부분집합이다.
+    func testCompositePreferenceNeverAddsACandidateOutsideTheSinglePath() throws {
+        var touching = town(.water, count: PokopiaTown.habitatThreshold)
+        for col in 0..<PokopiaTown.habitatThreshold {
+            touching[try XCTUnwrap(PokopiaTown.index(col: col, row: 1))] = .tree
+        }
+        // 불꽃(모래 0칸)만 있는 풀 — 복합이 성립해도 아무도 안 온다.
+        XCTAssertNil(PokopiaTown.immigrant(terrain: touching, pool: [4], typeIndex: [4: [.fire]],
+                                           residents: [], roll: 0))
+        // 복합 일치 종이 유일한 후보인데 이미 산다 — nil 이다(정원이 남아 있어도).
+        XCTAssertNil(PokopiaTown.immigrant(terrain: touching, pool: [278], typeIndex: [278: [.water, .flying]],
+                                           residents: [resident(278, [.water, .flying])], roll: 0))
     }
 
     // MARK: 서식 현황 (화면의 목표)
