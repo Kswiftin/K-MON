@@ -67,7 +67,7 @@ struct MonOfferPicker: View {
     }
 
     private func label(_ mon: MonState) -> String {
-        let name = mon.nickname ?? mon.names?[mon.currentID]?["ko"] ?? "#\(mon.currentID)"
+        let name = mon.nickname ?? mon.formQualifiedName(mon.names?[mon.currentID]?["ko"] ?? "#\(mon.currentID)")
         return "\(name) · Lv.\(mon.level)"
     }
 }

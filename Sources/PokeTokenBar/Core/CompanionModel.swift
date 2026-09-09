@@ -210,7 +210,7 @@ enum EvolutionItemRule: Sendable, Equatable {
 /// 진화 아이템 40여 종을 한 case 로 접는다: 갈래가 갈리는 것은 **어느 진화 규칙인가**뿐이고
 /// 그 질문은 `EvolutionItemRule` 이 이미 답한다. 나머지는 하나씩 다르게 다뤄야 하는 것들이다.
 enum BagUse: Sendable, Equatable, CaseIterable {
-    case candy, mint, heartScale, teraShard
+    case candy, mint, heartScale, teraShard, abilityCapsule, abilityPatch
     /// 동행에게 **지니게 하는** 물건(생명의구슬·기합의띠·먹다남은음식) — 쓰는 것이 아니라 붙는다.
     /// 셋을 한 case 로 접는 이유는 진화 아이템과 같다: 갈래가 갈리는 것은 **어느 배틀 효과인가**
     /// 뿐이고 그 질문은 `ItemKind.heldBattleEffect` 가 답한다.
@@ -226,6 +226,7 @@ enum BagUse: Sendable, Equatable, CaseIterable {
 enum ItemKind: String, Codable, Sendable, CaseIterable {
     case rareCandy
     case mint
+    case abilityCapsule, abilityPatch
     case shinyCharm
     case linkingCord, fireStone, waterStone, thunderStone, leafStone, iceStone, moonStone, sunStone
     // 4세대 추가분 — 없으면 로즈레이드·눈여아·무레인 등 8종이 진화할 방법이 아예 없다.
@@ -406,7 +407,7 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
     /// 이 아이템이 여는 진화 조건. nil = 진화 아이템이 아님(사탕·민트·부적).
     var evolutionRule: EvolutionItemRule? {
         switch self {
-        case .rareCandy, .mint, .shinyCharm, .heartScale, .teraShard,
+        case .rareCandy, .mint, .abilityCapsule, .abilityPatch, .shinyCharm, .heartScale, .teraShard,
              .lifeOrb, .focusSash, .leftovers, .choiceBand, .choiceSpecs, .choiceScarf,
              .flameOrb, .toxicOrb, .assaultVest,
              .silverPowder, .softSand, .hardStone, .miracleSeed, .blackGlasses, .blackBelt,
@@ -501,6 +502,8 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
         switch self {
         case .rareCandy:  return .candy
         case .mint:       return .mint
+        case .abilityCapsule: return .abilityCapsule
+        case .abilityPatch: return .abilityPatch
         case .heartScale: return .heartScale
         case .teraShard:  return .teraShard
         case .lifeOrb, .focusSash, .leftovers, .choiceBand, .choiceSpecs, .choiceScarf,
@@ -786,6 +789,8 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
         switch self {
         case .rareCandy: return "rare-candy"
         case .mint: return nil   // PokéAPI 에 민트 스프라이트 없음(8세대 아이템) → 이모지 폴백
+        case .abilityCapsule: return "ability-capsule"
+        case .abilityPatch: return "ability-patch"
         case .shinyCharm: return "shiny-charm"
         case .heartScale: return "heart-scale"
         case .teraShard: return nil   // PokéAPI 에 테라피스 스프라이트 없음(9세대) → 이모지 폴백
@@ -861,6 +866,8 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
         switch self {
         case .rareCandy: return "🍬"
         case .mint: return "🌿"
+        case .abilityCapsule: return "💊"
+        case .abilityPatch: return "🩹"
         case .shinyCharm: return "✨"
         case .linkingCord: return "🔗"
         case .fireStone: return "🔥"; case .waterStone: return "💧"; case .thunderStone: return "⚡"
@@ -978,6 +985,8 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
         switch self {
         case .rareCandy: return RareCandy.price
         case .mint: return Mint.price
+        case .abilityCapsule: return AbilityItemBalance.capsulePrice
+        case .abilityPatch: return AbilityItemBalance.patchPrice
         case .shinyCharm: return nil
         case .heartScale: return MoveRelearn.price
         case .teraShard: return TeraShard.price
@@ -1116,6 +1125,12 @@ enum Mint {
     /// 사탕(5,000)의 1/5로 싸게 둬서 성격을 마음에 들 때까지 굴려보는 가벼운 재미. 성장을 안 줘서
     /// 이중계산 이슈도 없음(가격 = 순수 소비). 2026-08-14 재책정(#19), 비율은 유지.
     static let price = 1_000
+}
+
+/// 특성 변경은 배틀 성능을 영구적으로 바꾸는 소모품이라 일반 도구보다 비싸게 둔다.
+enum AbilityItemBalance {
+    static let capsulePrice = 50_000
+    static let patchPrice = 150_000
 }
 
 /// 지닌물건이 배틀에서 하는 일 — `ItemKind.heldBattleEffect` 가 답한다.
@@ -2002,6 +2017,10 @@ enum PokemonAssets {
     /// 도감 격자·부화 풀·야생 풀이 함께 쓰는 획득 가능 종(번호 오름차순).
     static let obtainableSpeciesIDs: [Int] = speciesRange.filter { !spriteGaps.contains($0) }
 
+    static var regionalPresentationIDs: Set<Int> {
+        Set(PokemonRegionalForm.allCases.flatMap { $0.pokemonIDs.values })
+    }
+
     static func hasAnimatedSprite(speciesID: Int) -> Bool {
         speciesRange.contains(speciesID) && !spriteGaps.contains(speciesID)
     }
@@ -2015,10 +2034,50 @@ enum PokemonAssets {
     ///
     /// 구멍이 오는 경우는 이 앱이 아닌 상대뿐이다 — 여기서 만든 개체는 애초에 구멍을 갖지 않는다.
     static func clampedID(_ speciesID: Int) -> Int {
+        if regionalPresentationIDs.contains(speciesID) { return speciesID }
         var bounded = min(speciesRange.upperBound, max(speciesRange.lowerBound, speciesID))
         while bounded > speciesRange.lowerBound && spriteGaps.contains(bounded) { bounded -= 1 }
         return bounded
     }
+}
+
+/// PokéAPI의 지역 변종은 종(species) 번호를 공유하고 Pokémon ID만 10000대로 다르다.
+/// 소유·도감은 전국도감 종을 유지하고, 이 값이 스프라이트·타입·종족값·특성·기술의
+/// 실제 Pokémon ID를 고른다. 그래야 기존 세이브와 도감 정렬을 깨지 않는다.
+enum PokemonRegionalForm: String, Codable, Sendable, CaseIterable {
+    case alola, galar, hisui, paldea
+
+    var koreanName: String {
+        switch self { case .alola: "알로라"; case .galar: "가라르"; case .hisui: "히스이"; case .paldea: "팔데아" }
+    }
+
+    /// 전국도감 종 ID → PokéAPI Pokémon ID. 진화 전·후가 모두 지역형이면 같은 맵에 둔다.
+    var pokemonIDs: [Int: Int] {
+        switch self {
+        case .alola: [19:10091,20:10092,26:10093,27:10094,28:10095,37:10096,38:10097,
+                      50:10098,51:10099,52:10100,53:10101,74:10102,75:10103,76:10104,
+                      88:10105,89:10106,103:10107,105:10108]
+        case .galar: [52:10161,77:10162,78:10163,79:10164,80:10165,83:10166,110:10167,
+                      122:10168,144:10169,145:10170,146:10171,199:10172,222:10173,
+                      263:10174,264:10175,554:10176,555:10177,562:10179,618:10180]
+        case .hisui: [58:10229,59:10230,100:10231,101:10232,157:10233,211:10234,
+                      215:10235,503:10236,549:10237,570:10238,571:10239,628:10240,
+                      705:10241,706:10242,713:10243,724:10244]
+        case .paldea: [128:10250,194:10253]
+        }
+    }
+
+    /// 이 진화 라인이 지역형으로 시작할 수 있는 base 종.
+    static let hatchableByBase: [Int: [PokemonRegionalForm]] = [
+        19:[.alola],27:[.alola],37:[.alola],50:[.alola],52:[.alola,.galar],74:[.alola],
+        88:[.alola],102:[.alola],104:[.alola],77:[.galar],79:[.galar],83:[.galar],
+        109:[.galar],122:[.galar],222:[.galar],263:[.galar],554:[.galar],562:[.galar],618:[.galar],
+        58:[.hisui],100:[.hisui],155:[.hisui],211:[.hisui],215:[.hisui],501:[.hisui],
+        548:[.hisui],570:[.hisui],627:[.hisui],704:[.hisui],712:[.hisui],722:[.hisui],
+        128:[.paldea],194:[.paldea]
+    ]
+
+    func presentationID(for speciesID: Int) -> Int? { pokemonIDs[speciesID] }
 }
 
 /// PokéAPI evolution-chain 을 파싱한 트리. 분기(evolves_to 다수)를 children 으로.
@@ -2260,6 +2319,10 @@ struct MonState: Codable, Sendable, Identifiable {
     var levelExperience = 0
     var learnedMoves: [MoveSpec] = []
     var rotomForm: RotomForm? = nil
+    var regionalForm: PokemonRegionalForm? = nil
+    /// 개체에 확정된 특성. nil인 구버전 개체는 종의 첫 일반 특성을 사용한다.
+    var abilitySlug: String? = nil
+    var abilityIsHidden = false
     /// 테라스탈했을 때 되는 타입 — **테라피스(`ItemKind.teraShard`)로 바꿨을 때만** 값이 있다.
     /// `nil` 이면 대전 스냅샷이 첫 번째 타입에서 파생한다(`BattleSnapshot.teraType`).
     /// 진화해도 유지한다(이로치·성격과 같은 개체 값이다).
@@ -2294,7 +2357,14 @@ struct MonState: Codable, Sendable, Identifiable {
     }
     // pathIDs 가 비면(손상된 상태 파일) baseID 로 폴백 — 렌더마다 읽히므로 out-of-bounds 크래시 방지.
     var currentID: Int { pathIDs.isEmpty ? baseID : pathIDs[min(stageIndex, pathIDs.count - 1)] }
-    var presentationID: Int { currentID == 479 ? (rotomForm ?? .normal).pokemonID : currentID }
+    var presentationID: Int {
+        if currentID == 479 { return (rotomForm ?? .normal).pokemonID }
+        return regionalForm?.presentationID(for: currentID) ?? currentID
+    }
+    func formQualifiedName(_ baseName: String) -> String {
+        guard let regionalForm, regionalForm.presentationID(for: currentID) != nil else { return baseName }
+        return "\(regionalForm.koreanName) \(baseName)"
+    }
 
     init(baseID: Int, pathIDs: [Int], plannedPathIDs: [Int]? = nil, stageIndex: Int, usedAtStage: Int,
          rarity: Rarity, totalForms: Int, isShiny: Bool = false, nature: PokemonNature? = nil,
@@ -2303,7 +2373,8 @@ struct MonState: Codable, Sendable, Identifiable {
          nickname: String? = nil, dittoDisguise: Int? = nil, dittoRevealed: Bool = false,
          names: [Int: [String: String]]? = nil, isGraduated: Bool = false, firstMetAt: Date? = nil,
          isNewlyHatched: Bool = false, teraType: PokemonType? = nil,
-         heldItem: ItemKind? = nil) {
+         heldItem: ItemKind? = nil, abilitySlug: String? = nil, abilityIsHidden: Bool = false,
+         regionalForm: PokemonRegionalForm? = nil) {
         self.baseID = baseID
         self.pathIDs = pathIDs
         if let plannedPathIDs, !plannedPathIDs.isEmpty {
@@ -2328,6 +2399,9 @@ struct MonState: Codable, Sendable, Identifiable {
         self.isNewlyHatched = isNewlyHatched
         self.teraType = teraType
         self.heldItem = heldItem
+        self.abilitySlug = abilitySlug
+        self.abilityIsHidden = abilityIsHidden
+        self.regionalForm = regionalForm
     }
 
     // 하위호환 디코딩: shiny/nature 는 구버전 저장에 없음 → 기본값.
@@ -2362,6 +2436,9 @@ struct MonState: Codable, Sendable, Identifiable {
         levelExperience = try c.decodeIfPresent(Int.self, forKey: .levelExperience) ?? 0
         learnedMoves = try c.decodeIfPresent([MoveSpec].self, forKey: .learnedMoves) ?? []
         rotomForm = try c.decodeIfPresent(RotomForm.self, forKey: .rotomForm)
+        regionalForm = try c.decodeIfPresent(PokemonRegionalForm.self, forKey: .regionalForm)
+        abilitySlug = try c.decodeIfPresent(String.self, forKey: .abilitySlug)
+        abilityIsHidden = try c.decodeIfPresent(Bool.self, forKey: .abilityIsHidden) ?? false
         names = try c.decodeIfPresent([Int: [String: String]].self, forKey: .names)
         isGraduated = try c.decodeIfPresent(Bool.self, forKey: .isGraduated) ?? false
         teraType = try c.decodeIfPresent(PokemonType.self, forKey: .teraType)
@@ -2561,6 +2638,8 @@ struct CompanionState: Codable, Sendable {
     /// 받은 `MonState` 를 통째로 심는다). 개체에 달면 받은 포켓몬이 **상대가 걸어둔 즐겨찾기를
     /// 그대로 달고** 도착한다. 이건 내 박스에 대한 내 표시라 세이브 쪽에 둔다.
     var favoriteMonIDs: Set<UUID> = []
+    /// 경매장에 게시한 개체. 리스너 UUID는 기동마다 새로 만들고, 세이브에는 소유 개체 UUID만 남긴다.
+    var auctionListingMonIDs: [UUID] = []
     // 도감
     var dex: [DexEntry] = []
     // 소유한 (base,final) 쌍 — 분기 다양성용
@@ -2688,6 +2767,7 @@ struct CompanionState: Codable, Sendable {
         boxedMons          = c.lenient([Lossy<MonState>].self, forKey: .boxedMons, default: []).compactMap(\.value)
         homePartyIDs       = c.lenient([UUID].self, forKey: .homePartyIDs, default: [])
         favoriteMonIDs     = c.lenient(Set<UUID>.self, forKey: .favoriteMonIDs, default: [])
+        auctionListingMonIDs = c.lenient([UUID].self, forKey: .auctionListingMonIDs, default: [])
         // 도감은 항목별 격리 — 손상 항목 하나가 도감 전체를 날리지 않게.
         dex                = c.lenient([Lossy<DexEntry>].self, forKey: .dex, default: []).compactMap(\.value)
         collectedFinals    = c.lenient(Set<String>.self, forKey: .collectedFinals, default: [])

@@ -214,6 +214,8 @@ private struct ItemCard: View {
         switch kind.bagUse {
         case .candy:          return store.canUseRareCandy
         case .mint:           return store.canUseMint
+        case .abilityCapsule: return store.canUseAbilityCapsule
+        case .abilityPatch:   return store.canUseAbilityPatch
         case .teraShard:      return store.canUseTeraShard
         case .heartScale:     return store.canUseHeartScale
         case .heldItem:       return store.canGiveHeldItem(kind)
@@ -227,6 +229,8 @@ private struct ItemCard: View {
         switch kind.bagUse {
         case .candy:      return "+\(GameNumberFormatter.compact(RareCandy.xp)) XP"
         case .mint:       return l.mintEffectHint
+        case .abilityCapsule: return "일반 특성 변경"
+        case .abilityPatch: return "숨은 특성으로 변경"
         case .teraShard:  return l.teraShardEffectHint
         case .heartScale: return l.heartScaleEffectHint
         case .heldItem:   return l.heldItemEffectHint(kind)
@@ -240,6 +244,8 @@ private struct ItemCard: View {
         switch kind.bagUse {
         case .candy:      _ = store.useRareCandy()
         case .mint:       _ = store.useMint()
+        case .abilityCapsule, .abilityPatch:
+            Task { _ = await store.useAbilityItem(kind) }
         case .teraShard:  _ = store.useTeraShard()
         case .heartScale: store.useHeartScale()
         case .heldItem:   store.giveHeldItem(kind)

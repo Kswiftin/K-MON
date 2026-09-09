@@ -553,6 +553,17 @@ final class CompanionStore {
 
     func isFavorite(_ id: UUID) -> Bool { state.favoriteMonIDs.contains(id) }
 
+    var persistedAuctionMons: [MonState] {
+        let owned = Dictionary(uniqueKeysWithValues: ownedMons.map { ($0.id, $0) })
+        return state.auctionListingMonIDs.compactMap { owned[$0] }
+    }
+
+    func setAuctionListed(_ monID: UUID, listed: Bool) {
+        state.auctionListingMonIDs.removeAll { $0 == monID }
+        if listed, ownedMons.contains(where: { $0.id == monID }) { state.auctionListingMonIDs.append(monID) }
+        save()
+    }
+
     /// 즐겨찾기 토글 — 소유한 개체만. 잠금과 해제가 같은 버튼이라, 놓아주려면 먼저 별을 끄면 된다.
     @discardableResult
     func toggleFavorite(_ id: UUID) -> Bool {
@@ -656,6 +667,10 @@ final class CompanionStore {
 
     func battleSnapshot(for mon: MonState, level: Int = 50) async -> BattleSnapshot? {
         guard let profile = try? await provider.battleProfile(speciesID: mon.presentationID) else { return nil }
+        let availableAbilities = try? await provider.abilityOptions(pokemonID: mon.presentationID)
+        let selectedAbility = mon.abilitySlug.flatMap { saved in
+            availableAbilities?.contains(where: { $0.slug == saved }) == true ? saved : nil
+        } ?? profile.abilitySlug
         let name = mon.currentID == 479
             ? (mon.rotomForm ?? .normal).name
             : await resolveSpeciesName(mon.currentID)
@@ -668,10 +683,10 @@ final class CompanionStore {
         // 지나므로 여기서 실어 보낸다(종 번호로 만드는 야생·CPU 스냅샷은 물건을 쥐지 않는다).
         let canStillEvolve = await evolutionLine(speciesID: mon.presentationID)?
             .canEvolveFurther(from: mon.presentationID)
-        return BattleSnapshot(speciesID: mon.presentationID, name: mon.nickname ?? name, trainer: trainerName,
+        return BattleSnapshot(speciesID: mon.presentationID, name: mon.nickname ?? mon.formQualifiedName(name), trainer: trainerName,
                               level: level, nature: mon.nature, isShiny: mon.isShiny,
                               types: profile.types, base: profile.stats, moves: moves,
-                              ability: profile.abilitySlug, storedTeraType: mon.teraType,
+                              ability: selectedAbility, storedTeraType: mon.teraType,
                               heldItem: mon.heldItem,
                               weightHectograms: profile.weightHectograms,
                               canStillEvolve: canStillEvolve)
@@ -741,13 +756,13 @@ final class CompanionStore {
         guard let a = state.active, let line = currentLine else { return "Token Egg" }
         if let nick = a.nickname, !nick.trimmingCharacters(in: .whitespaces).isEmpty { return nick }
         if a.currentID == 479, let form = a.rotomForm { return form.name }
-        return line.localizedName(a.currentID)
+        return a.formQualifiedName(line.localizedName(a.currentID))
     }
     /// 종 이름(별명 무시) — 별명 입력 플레이스홀더·리셋 기준값.
     var speciesName: String {
         guard let a = state.active, let line = currentLine else { return "" }
         if a.currentID == 479, let form = a.rotomForm { return form.name }
-        return line.localizedName(a.currentID)
+        return a.formQualifiedName(line.localizedName(a.currentID))
     }
     var currentNickname: String? { state.active?.nickname }
     /// AI 대화는 종이 아니라 개체 UUID를 키로 삼는다. 같은 개체가 진화해도 이 스냅샷만 새 형태로 갱신한다.
@@ -3546,6 +3561,33 @@ final class CompanionStore {
         return new
     }
 
+    var canUseAbilityCapsule: Bool { hasActive && itemCount(.abilityCapsule) > 0 }
+    var canUseAbilityPatch: Bool { hasActive && itemCount(.abilityPatch) > 0 }
+
+    /// 특성캡슐은 숨은 특성을 제외한 다른 일반 특성으로, 특성패치는 숨은 특성으로 바꾼다.
+    /// 바꿀 후보가 없으면 아이템을 소모하지 않는다.
+    @discardableResult
+    func useAbilityItem(_ kind: ItemKind) async -> String? {
+        guard kind == .abilityCapsule || kind == .abilityPatch,
+              itemCount(kind) > 0, var mon = state.active,
+              let options = try? await provider.abilityOptions(pokemonID: mon.presentationID) else { return nil }
+        let target: PokemonAbilityOption?
+        if kind == .abilityPatch {
+            target = options.first(where: { $0.isHidden && $0.slug != mon.abilitySlug })
+        } else {
+            let normal = options.filter { !$0.isHidden }
+            let current = mon.abilitySlug ?? normal.first?.slug
+            target = normal.first(where: { $0.slug != current })
+        }
+        guard let target else { return nil }
+        mon.abilitySlug = target.slug
+        mon.abilityIsHidden = target.isHidden
+        state.active = mon
+        state.inventory[kind.rawValue] = itemCount(kind) - 1
+        save()
+        return target.slug
+    }
+
     // MARK: 테라피스 (테라 타입 랜덤 재설정 — #3)
 
     /// 사용 가능 — 활성 포켓몬 + 재고>0. `currentLine` 은 보지 않는다(민트와 같은 이유: 테라
@@ -4207,6 +4249,11 @@ final class CompanionStore {
         // 앱 업데이트만으로 달라져 기존 결정론과 재현 가능한 테스트가 깨진다.
         let gender = PokemonGender.from(genderRate: line.genderRate, roll: rng.next())
         let statRelation = Int(rng.next() % 3) - 1
+        // 해당 라인의 알은 1/8 확률로 지역형이다. 후보가 없으면 RNG를 소비하지 않는다.
+        let regionalForm: PokemonRegionalForm? = {
+            guard let forms = PokemonRegionalForm.hatchableByBase[line.baseID], rng.next() % 8 == 0 else { return nil }
+            return forms[Int(rng.next() % UInt64(forms.count))]
+        }()
         let evolutionPlan = makeEvolutionPlan(from: line.tree, baseID: line.baseID, gender: gender)
         // 위장 중엔 이로치를 숨긴다 — 부화 알림·연출도 일반체로(정체는 리빌 때 공개).
         let showShiny = isShiny && dittoDisguise == nil
@@ -4215,7 +4262,8 @@ final class CompanionStore {
                                 stageIndex: 0, usedAtStage: 0, rarity: line.rarity, totalForms: evolutionPlan.count,
                                 isShiny: isShiny, nature: nature, gender: gender,
                                 evolutionStatRelation: statRelation, dittoDisguise: dittoDisguise,
-                                names: line.names, firstMetAt: clock(), isNewlyHatched: true)   // 박스로 들어가도 도감이 이름을 여기서 들고 가야 한다
+                                names: line.names, firstMetAt: clock(), isNewlyHatched: true,
+                                regionalForm: regionalForm)   // 박스로 들어가도 도감이 이름을 여기서 들고 가야 한다
         let hatchedID = state.active!.id
         memoryAlbum.recordFirstMeeting(companionID: hatchedID, at: state.active!.firstMetAt!)
         AppLog.write("hatch: base=\(line.baseID) rarity=\(line.rarity) shiny=\(isShiny) forms=\(evolutionPlan.count) ditto=\(dittoDisguise != nil)")

@@ -52,6 +52,9 @@ enum CompanionAction {
         case .mint:
             guard let nature = companion.useMint() else { return .unavailable }
             return .mint(nature)
+        case .abilityCapsule, .abilityPatch:
+            // 특성 목록 조회가 async라 동기 터미널 아이템 실행에서는 사용하지 않는다.
+            return .notUsedThisWay
         case .teraShard:
             guard let type = companion.useTeraShard() else { return .unavailable }
             return .teraShard(type)

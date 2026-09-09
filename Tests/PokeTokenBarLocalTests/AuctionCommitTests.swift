@@ -36,13 +36,13 @@ private struct AuctionStubProvider: PokeProviding {
 enum AuctionFixtures {
     static let now = Date(timeIntervalSince1970: 1_700_000_000)
 
-    @MainActor static func makeStore(_ label: String) -> CompanionStore {
-        let directory = storeFixtureDirectory(label)
+    @MainActor static func makeStore(_ label: String, fileURL: URL? = nil) -> CompanionStore {
+        let target = fileURL ?? storeFixtureDirectory(label).appendingPathComponent("state.json")
         let line = EvoLine(baseID: 1, tree: EvoNode(speciesID: 1, children: []), rarity: .common,
                            names: [1: ["ko": "포1", "en": "P1", "ja": "ポ1"]])
         let store = CompanionStore(provider: AuctionStubProvider(value: line),
                                    clock: { AuctionFixtures.now },
-                                   fileURL: directory.appendingPathComponent("state.json"),
+                                   fileURL: target,
                                    rng: AuctionSeededRNG(seed: 1))
         return store
     }

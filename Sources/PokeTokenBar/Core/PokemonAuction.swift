@@ -1,6 +1,11 @@
 import Foundation
 import Network
 import Observation
+import UserNotifications
+
+enum AuctionNotification {
+    static let identifierPrefix = "auction-offer"
+}
 
 struct AuctionListing: Identifiable, Equatable {
     let id: UUID
@@ -131,9 +136,19 @@ final class PokemonAuctionCenter {
         let fallback = NSFullUserName().isEmpty ? (Host.current().localizedName ?? "Trainer") : NSFullUserName()
         trainerName = configured.isEmpty ? fallback : configured
         serviceName = LANServiceName.make(base: trainerName, suffix: "#\(String(UUID().uuidString.prefix(6)))")
+        // 앱 교체·업데이트로 프로세스가 재시작돼도 출품을 복구한다.
+        // 네트워크 리스너 ID는 새로 발급해 예전 세션의 연결을 재사용하지 않는다.
+        for mon in companion.persistedAuctionMons {
+            let id = UUID()
+            localListings[id] = TradePokemonSnapshot(mon: mon, displayName: displayName(mon))
+        }
     }
 
-    func start() { startBrowser() }
+    func start() { startBrowser(); restorePublishedListings() }
+
+    func restorePublishedListings() {
+        for id in localListings.keys where listeners[id] == nil { startListener(for: id) }
+    }
 
     func publish(_ mon: MonState?) {
         guard let mon else { return }
@@ -142,13 +157,15 @@ final class PokemonAuctionCenter {
               !companion.isFavorite(mon.id), !isCommitted(mon.id) else { return }
         let id = UUID()
         localListings[id] = TradePokemonSnapshot(mon: mon, displayName: displayName(mon))
+        companion.setAuctionListed(mon.id, listed: true)
         startListener(for: id)
     }
 
     /// 게시를 내린다. **내가 남에게 건 제안은 건드리지 않는다** — 그 연결은 상대 게시물의
     /// 것이라, 여기서 같이 끊으면 진행 중인 내 교환이 이유 없이 끊긴다.
     func cancelListing(_ listingID: UUID) {
-        guard localListings.removeValue(forKey: listingID) != nil else { return }
+        guard let removed = localListings.removeValue(forKey: listingID) else { return }
+        companion.setAuctionListed(removed.mon.id, listed: false)
         listeners[listingID]?.cancel(); listeners[listingID] = nil
         for offer in offers where offer.listingID == listingID && offer.status == .pending { reject(offer.id) }
         offers.removeAll { $0.listingID == listingID }
@@ -341,6 +358,7 @@ final class PokemonAuctionCenter {
             connectionOfferIDs[connectionID] = offerID
             offers.append(AuctionOffer(id: offerID, listingID: listingID, trainerName: safeName,
                                        value: value, status: .pending))
+            postOfferNotification(offerID: offerID)
         case .accepted(let offerID, let pokemon):
             // 프레임은 **연결과 제안 ID 가 둘 다** 맞는 제안에만 닿는다. 제안이 여럿이라
             // 연결만 보면 남의 제안 국면을 움직인다.
@@ -416,6 +434,7 @@ final class PokemonAuctionCenter {
             setStatus(.completed, for: offerID)
             let listingID = offer.listingID
             localListings[listingID] = nil
+            companion.setAuctionListed(listing.mon.id, listed: false)
             listeners[listingID]?.cancel(); listeners[listingID] = nil
             send(.completed(offerID: offerID, memories: outgoingMemories),
                  on: connection, id: connectionID)
@@ -463,6 +482,19 @@ final class PokemonAuctionCenter {
                 refundStardustIfNeeded(offerID)
             }
         }
+    }
+
+    /// 제안 내용은 잠금 화면에 노출하지 않고, 유효한 새 신청을 장부에 넣은 직후 한 번만 알린다.
+    private func postOfferNotification(offerID: UUID) {
+        guard !(UserDefaults.standard.object(forKey: "doNotDisturb") as? Bool ?? false),
+              AppEnv.isBundledApp else { return }
+        let content = UNMutableNotificationContent()
+        content.title = "메시지가 왔습니다"
+        content.body = "새로운 경매 제안이 있습니다. 눌러서 확인하세요."
+        content.sound = .default
+        UNUserNotificationCenter.current().add(
+            UNNotificationRequest(identifier: "\(AuctionNotification.identifierPrefix)-\(offerID.uuidString)",
+                                  content: content, trigger: nil))
     }
 
     /// 내가 건 제안 하나를 **열어 고친다.** 첨자를 밖으로 내보내지 않는 것이 요점이다(#229):
@@ -547,7 +579,7 @@ final class PokemonAuctionCenter {
 
     private func displayName(_ mon: MonState) -> String {
         if let nickname = mon.nickname, !nickname.isEmpty { return nickname }
-        return mon.names?[mon.currentID]?["ko"] ?? "#\(mon.currentID)"
+        return mon.formQualifiedName(mon.names?[mon.currentID]?["ko"] ?? "#\(mon.currentID)")
     }
 
     private func startListener(for listingID: UUID) {

@@ -651,6 +651,8 @@ final class SaveTransferTests: XCTestCase {
                                      // 즐겨찾기는 그 개체에 건 잠금이다 — 개체가 따라가는데 잠금만
                                      // 두고 오면 옮긴 기기에서 아끼던 포켓몬이 그냥 놓아줄 수 있게 된다.
                                      "favoriteMonIDs",
+                                     // 경매 전시 목록은 포켓몬과 함께 옮겨야 새 기기에서도 유지된다.
+                                     "auctionListingMonIDs",
                                      "battleRank", "trainer", "missions", "achievements", "seasons", "battleHistory",
                                      // 진행 중인 랭크전 에스크로 — 이미 지갑에서 빠져나간 돈이다.
                                      // 기기를 옮길 때 안 따라가면 배틀 중에 이전해서 판돈을 챙길 수 있다.

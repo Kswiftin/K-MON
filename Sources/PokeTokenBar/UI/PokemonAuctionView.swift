@@ -229,8 +229,8 @@ struct PokemonAuctionView: View {
     }
 
     private func displayName(_ mon: MonState) -> String {
-        mon.nickname.flatMap { $0.isEmpty ? nil : $0 }
-            ?? mon.names?[mon.currentID]?["ko"] ?? "#\(mon.currentID)"
+        if let nickname = mon.nickname, !nickname.isEmpty { return nickname }
+        return mon.formQualifiedName(mon.names?[mon.currentID]?["ko"] ?? "#\(mon.currentID)")
     }
 
     private func statusText(_ status: AuctionOffer.Status) -> String {

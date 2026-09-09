@@ -187,6 +187,7 @@ struct L {
         case .sleep:     return "\(name)은(는) 잠들어 버렸다!"
         case .freeze:    return "\(name)은(는) 얼어붙었다!"
         case .confusion: return "\(name)은(는) 혼란에 빠졌다!"
+        case .infatuation: return "\(name)은(는) 사랑에 빠졌다!"
         case .flinch:    return "\(name)은(는) 풀죽었다!"
         }
     }
@@ -199,6 +200,7 @@ struct L {
         case .sleep:           return "\(name)은(는) 잠에서 깨어났다!"
         case .freeze:          return "\(name)의 얼음이 녹았다!"
         case .confusion:       return "\(name)의 혼란이 풀렸다!"
+        case .infatuation:     return "\(name)은(는) 더 이상 헤롱헤롱하지 않는다!"
         // 풀죽음은 주 상태가 아니라 `.cureStatus` 가 나올 일이 없다. 그래도 빈 문자열은 안 둔다 —
         // 빈 줄이 로그로 나가는 걸 막으려고 이 switch 를 다 채운다(위 주석).
         case .flinch:          return "\(name)의 풀죽음이 풀렸다!"
@@ -213,6 +215,7 @@ struct L {
         case .sleep:     return "\(name)은(는) 쿨쿨 잠들어 있다."
         case .freeze:    return "\(name)은(는) 얼어붙어서 움직일 수 없다!"
         case .confusion: return "\(name)은(는) 혼란에 빠져 자신을 공격했다!"
+        case .infatuation: return "\(name)은(는) 헤롱헤롱해서 움직일 수 없다!"
         case .flinch:    return "\(name)은(는) 풀죽어서 움직일 수 없다!"
         case .burn, .poison, .toxic:
             return "\(name)은(는) 움직일 수 없다!"
@@ -1571,6 +1574,8 @@ struct L {
         switch kind {
         case .rareCandy: return "이상한 사탕"
         case .mint:      return "민트"
+        case .abilityCapsule: return "특성캡슐"
+        case .abilityPatch: return "특성패치"
         case .teraShard: return "테라피스"
         case .lifeOrb: return "생명의구슬"
         case .focusSash: return "기합의띠"
@@ -1831,6 +1836,10 @@ struct L {
             return "현재 포켓몬의 경험치를 \(xp) 올려줘요."
         case .mint:
             return "현재 포켓몬의 성격을 랜덤으로 바꿔줘요."
+        case .abilityCapsule:
+            return "현재 포켓몬의 일반 특성을 다른 일반 특성으로 바꿔줘요."
+        case .abilityPatch:
+            return "현재 포켓몬의 특성을 숨은 특성으로 바꿔줘요."
         case .heartScale:
             return "지금까지 배울 수 있었던 기술 하나를 다시 떠올려요. 기술이 4개면 하나를 잊어요."
         case .teraShard:

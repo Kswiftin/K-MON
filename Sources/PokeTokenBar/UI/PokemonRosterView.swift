@@ -410,11 +410,15 @@ private struct PokemonDetailCard: View {
             }
         }
         .padding(14).frame(width: 330)
-        .task(id: "\(mon.presentationID)-ko") {
+        .task(id: "\(mon.presentationID)-\(mon.abilitySlug ?? "default")-ko") {
             profile = try? await PokeAPIClient.shared.battleProfile(speciesID: mon.presentationID)
             line = try? await PokeAPIClient.shared.line(baseSpeciesID: mon.baseID)
-            abilityText = await PokeAPIClient.shared
-                .chatSpeciesIdentity(speciesID: mon.presentationID).ability
+            if let slug = mon.abilitySlug ?? profile?.abilitySlug {
+                abilityText = await PokeAPIClient.shared.localizedAbilityName(slug: slug)
+                    + (mon.abilityIsHidden ? " (숨은 특성)" : "")
+            } else {
+                abilityText = nil
+            }
         }
     }
 

@@ -348,6 +348,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, UNU
             switch PopoverNavigation.destination(forNotificationID: id) {
             case .focusTimer: self.navigation.goToFocusTimer()
             case .battle: self.navigation.goToBattle()
+            case .auction: self.navigation.goToAuction()
             }
         }
         completionHandler()

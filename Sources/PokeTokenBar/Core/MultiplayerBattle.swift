@@ -443,7 +443,8 @@ enum MultiplayerWireMessage: Codable, Sendable, Equatable {
     //     그리고 치명적인 히트마다 난수를 한 번씩 더 굴려 구버전과 소비 횟수가 갈린다.
     // 33: 진화의휘석 — 스냅샷에 `canStillEvolve` 가 늘었다. 구버전 피어는 안 보내므로 휘석이
     //     한쪽에서만 일해 같은 판의 데미지가 갈린다.
-    static let protocolVersion = 33
+    // 34: 1~5세대 특성의 배틀 판정을 적용해 데미지·행동 순서·rng 소비가 달라진다.
+    static let protocolVersion = 34
     case join(version: Int, participant: LobbyParticipant, snapshot: BattleSnapshot)
     case lobby(MultiplayerLobby)
     case ready(participantID: UUID, ready: Bool)
