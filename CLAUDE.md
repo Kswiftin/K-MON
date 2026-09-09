@@ -13,6 +13,7 @@
 | `docs/reference/room-walk-dungeon-design.md` | 트레이너 꾸미기 아이템을 더할 때, 친구 광고의 `outfit` 키를 바꿀 때 (던전 부분은 웨이브 런으로 대체됐다 — 지난 설계의 기록으로만 본다) |
 | `docs/reference/memory-home-plan.md` | Memory Home 에 기획서(《PokéWorld : My Mini Home》) 기능을 붙일 때, 미니룸 반응 문구·추억 카드·주크박스 해금을 손댈 때, 홈 기능이 "코드엔 있는데 화면엔 없다" 를 의심할 때 |
 | `docs/reference/lan-raid-design.md` | LAN 협동 레이드(#80)의 티어 HP·보스 추첨·보스 교체 알림·정산식을 조정할 때, 게스트의 오늘자 보스 검증을 손볼 때, 호스트 마이그레이션을 실제로 붙일 때 |
+| `docs/reference/safari-zone-design.md` | 사파리존(#80 후속)의 단계 배율·기저 포획률·조우 턴 상한을 손볼 때, 방문당·하루 포획 상한이나 방문 횟수를 조정할 때, 걷기 화면(격자 이동·키 입력)이나 존 큐레이션·등급 가중치를 손볼 때 |
 | `docs/reference/defect-log.md` | 결함·회귀를 고치는 중(부류 스윕 근거), 동시성·캐시·외부 로그 포맷·상시 애니메이션·세이브 이전을 건드릴 때 |
 | `docs/reference/chat-tool-sandbox.md` | 포켓몬 대화가 실행할 수 있는 일을 늘리거나 줄일 때, `[[tool:...]]` 마커·인자 클램프·승인 구분을 손댈 때, 액션 칩(`PokemonChatAction`·`availableActions`·`isReady`)을 더하거나 뺄 때 |
 | `docs/reference/terminal-frontend.md` | `pokedoro` 터미널 명령을 더하거나 바꿀 때, 터미널이 세이브를 바꾸는 일을 늘리려 할 때(직접 쓰기는 여전히 막혀 있고 이유가 있다 — 앱에 요청을 보낸다), 요청 우편함의 나이·id 가드를 손볼 때, 터미널 출력의 폭·키 입력이 한글에서 어긋날 때, 라이브 기능(웨이브 런·PvP·레이드)을 터미널에 붙일 때 |
