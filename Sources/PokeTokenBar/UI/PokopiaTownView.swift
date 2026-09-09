@@ -299,7 +299,11 @@ struct PokopiaTownView: View {
             PokopiaResidentView(speciesID: resident.speciesID, isShiny: false, side: 26)
             VStack(alignment: .leading, spacing: 1) {
                 Text(resident.name).font(.caption.weight(.medium)).lineLimit(1)
-                Text(home.map { "\($0.name)에 살아요" } ?? "살던 자리를 찾는 중이에요")
+                // 특기는 타입 파생이다(`PokopiaTown.specialty(of:)`) — 화면이 표를 갖지 않는다. 타입 없는 주민(정규화가 막는다)은
+                // 뒤 토막이 빠져 앞 문장만 남는다. 보간이 토막의 끝이라 조사가 붙지 않는다.
+                Text([home.map { "\($0.name)에 살아요" } ?? "살던 자리를 찾는 중이에요",
+                      PokopiaTown.specialty(of: resident).map { "특기 \($0.name)" }]
+                     .compactMap { $0 }.joined(separator: " · "))
                     .font(.caption2)
                     .foregroundStyle(settled ? .secondary : PokedoroTheme.red)
             }

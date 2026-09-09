@@ -22,6 +22,40 @@ enum TownTerrain: String, Codable, Sendable, CaseIterable {
     }
 }
 
+/// 주민의 특기. 원작 32종 중 **타입에 붙일 근거가 있는 18종**만 옮겼다 — 타입마다 하나(`PokopiaTown.specialty(for:)`).
+/// **문구 전용**이다: 주민 줄과 아침 문장만 읽고, 보상·정원·레벨·이사 판정은 읽지 않는다.
+///
+/// 저장하지 않는다(타입에서 파생). 그래서 `TownTerrain` 과 달리 `rawValue`·`Codable` 이 없다 — 세이브에 안 들어가는
+/// 식별자를 동결할 이유가 없다. 옮기지 않은 14종과 이유는 `docs/reference/pokopia-town-design.md` 의 특기 절에 있다.
+enum TownSpecialty: CaseIterable, Sendable {
+    case ignition, watering, farming, generating, leveling, flight, teleporting, honeyGathering,
+         recycling, cutting, polishing, crushing, messing, exploring, sorting, moodMaking, rareHunting, yawning
+
+    /// 화면에 쓰는 이름. 원작 표기 그대로다 — 주민 줄과 아침 문장이 같은 값을 읽는다.
+    var name: String {
+        switch self {
+        case .ignition:        "점화"
+        case .watering:        "급수"
+        case .farming:         "재배"
+        case .generating:      "발전"
+        case .leveling:        "땅고르기"
+        case .flight:          "공중날기"
+        case .teleporting:     "순간이동"
+        case .honeyGathering:  "꿀모으기"
+        case .recycling:       "리사이클"
+        case .cutting:         "절삭"
+        case .polishing:       "연마"
+        case .crushing:        "분쇄"
+        case .messing:         "어지르기"
+        case .exploring:       "탐색"
+        case .sorting:         "분류"
+        case .moodMaking:      "분위기메이킹"
+        case .rareHunting:     "레어수집"
+        case .yawning:         "하품"
+        }
+    }
+}
+
 /// 마을에 사는 포켓몬 하나. **소유 개체가 아니다** — 파티·박스와 무관하고 잡히지 않는다.
 ///
 /// 이름과 타입을 **도착할 때 저장한다.** 도감에 없는 종이라 나중에 조회할 근거가 없고
@@ -116,6 +150,40 @@ enum PokopiaTown {
         case .fire, .poison:              .sand
         case .fighting, .dark:            .rock
         case .normal, .electric, .ghost:  .path
+        }
+    }
+
+    // MARK: - 타입 ↔ 특기 (표는 하나다 · 문구 전용)
+
+    /// **타입이 특기다.** 18 타입 전부가 답을 가지며(전수 `switch` — `default:` 금지, 이유는 `terrain(for:)` 와 같다)
+    /// 18 특기 전부가 **정확히 한** 타입에서 온다 — `testEverySpecialtyComesFromExactlyOneType` 이 양방향을 센다.
+    /// 지형 표는 8 ← 18 이라 "최소 하나" 였지만 여기는 18 ← 18 이라 겹치면 어느 특기 하나가 화면에서 영영 사라진다.
+    ///
+    /// 배정 근거는 원작이 아니라 직관이다(불꽃이 점화, 물이 급수). 다음 사람이 다시 판단해도 된다 — 지킬 것은 전수와
+    /// 유일 둘뿐이다. 가장 약한 배정은 얼음→하품이다(느긋하다는 인상 하나).
+    ///
+    /// 특기는 **문구에만** 쓴다. 세션 보상에 연결하면 지갑이 `starPieces` 하나라 보상은 그 배율이 되고, 그 순간 마을이
+    /// 파밍 대상이 된다 — 티켓 경제가 방향만 바꿔 돌아온다(로드맵 4b 보류).
+    static func specialty(for type: PokemonType) -> TownSpecialty {
+        switch type {
+        case .fire:     .ignition
+        case .water:    .watering
+        case .grass:    .farming
+        case .electric: .generating
+        case .ground:   .leveling
+        case .flying:   .flight
+        case .psychic:  .teleporting
+        case .bug:      .honeyGathering
+        case .poison:   .recycling
+        case .steel:    .cutting
+        case .rock:     .polishing
+        case .fighting: .crushing
+        case .dark:     .messing
+        case .ghost:    .exploring
+        case .normal:   .sorting
+        case .fairy:    .moodMaking
+        case .dragon:   .rareHunting
+        case .ice:      .yawning
         }
     }
 
@@ -417,6 +485,13 @@ enum PokopiaTown {
 
     /// 주민의 타입들이 만드는 지형. `homeTerrains(of:)` 를 주민의 타입으로 부른다.
     static func homeTerrains(_ resident: TownResident) -> [TownTerrain] { homeTerrains(of: resident.types) }
+
+    /// 주민의 특기 — **첫 타입**의 것이다. 지형(`settledTerrain`)은 "그 지형이 마을에 있는가" 라 두 타입을 다 봐야 했지만,
+    /// 특기는 마을 상태가 아니라 종의 정체라 주 타입 하나가 답이다(물·비행 갈모매의 특기는 급수다). 타입이 없는 주민은
+    /// `nil` — `normalized` 가 막지만 순수 함수는 어떤 입력에도 안전해야 한다(`residentSpot` 이 같은 입력을 받는다).
+    static func specialty(of resident: TownResident) -> TownSpecialty? {
+        resident.types.first.map(specialty(for:))
+    }
 
     /// 주민을 **정착시킨 지형** — 자기 지형 중 문턱을 넘은 첫 것. `nil` 이면 자리를 잃은 주민이다.
     /// 자리(`residentSpot`)·정착(`isSettled`)·문구(`PokopiaTownLife`)·주민 줄(`residentRow`)이

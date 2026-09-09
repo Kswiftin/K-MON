@@ -83,6 +83,33 @@ final class PokopiaTownTests: XCTestCase {
                        PokemonType.allCases.count, "타입이 두 지형에 걸쳐 있다")
     }
 
+    // MARK: 타입 ↔ 특기 (표는 하나다 · 문구 전용)
+
+    /// **양방향**을 본다. 정방향은 전수 `switch` 가 지키지만, 어느 타입도 주지 않는 특기는 화면에 영영 안 나오고 그
+    /// 문장 분기는 호출부가 없어 커버리지에 안 잡힌다. 지형 표(8 ← 18)와 달리 18 ← 18 이라 **정확히 하나**다 — 두 타입이
+    /// 같은 특기를 주면 다른 특기 하나가 빈다.
+    func testEverySpecialtyComesFromExactlyOneType() {
+        let given = PokemonType.allCases.map(PokopiaTown.specialty(for:))
+        XCTAssertEqual(Set(given), Set(TownSpecialty.allCases), "어떤 타입도 주지 않는 특기가 있다")
+        XCTAssertEqual(Set(given).count, given.count, "두 타입이 같은 특기를 준다")
+        XCTAssertEqual(TownSpecialty.allCases.count, PokemonType.allCases.count, "특기는 타입마다 하나다")
+    }
+
+    /// 이름 18개가 비지 않고 서로 다르다 — 겹치면 주민 줄에 다른 특기가 같은 글자로 보인다.
+    func testSpecialtyNamesAreDistinct() {
+        let names = TownSpecialty.allCases.map(\.name)
+        XCTAssertFalse(names.contains { $0.isEmpty })
+        XCTAssertEqual(Set(names).count, names.count)
+    }
+
+    /// 주민의 특기는 **첫 타입**의 것이다 — 두 번째 타입으로 정착한 주민도 특기는 바뀌지 않는다(특기는 마을 상태가 아니라
+    /// 종의 정체다). 타입 순서를 뒤집으면 특기가 바뀐다는 것이 "첫 타입" 의 증거다. 타입 없는 주민은 nil.
+    func testResidentSpecialtyFollowsTheFirstTypeOnly() {
+        XCTAssertEqual(PokopiaTown.specialty(of: resident(278, [.water, .flying])), PokopiaTown.specialty(for: .water))
+        XCTAssertEqual(PokopiaTown.specialty(of: resident(278, [.flying, .water])), PokopiaTown.specialty(for: .flying))
+        XCTAssertNil(PokopiaTown.specialty(of: resident(1, [])))
+    }
+
     // MARK: 서식
 
     /// 문턱 경계. 5칸은 안 부르고 6칸은 부른다 — 실수로 두 칸 민 것이 이사를 부르면

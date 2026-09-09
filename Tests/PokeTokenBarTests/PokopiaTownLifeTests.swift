@@ -131,6 +131,50 @@ final class PokopiaTownLifeTests: XCTestCase {
         }
     }
 
+    /// ③ 아침은 특기가 맡는다 — 정착한 주민의 아침 문장에 특기 이름이 들어가고, 낮·밤 문장에는 없다. 이름은 리터럴이 아니라
+    /// `TownSpecialty.name` 에서 온다(표의 값이라 단계 이름·조합 이름과 같은 예외). 문장 본문은 여전히 박지 않는다.
+    func testMorningSpeaksOfTheSpecialtyAndDayOfTheTerrain() throws {
+        let settled = resident(7, "꼬부기", [.water], arrivedAgo: 60 * 60 * 24)
+        let specialty = try XCTUnwrap(PokopiaTown.specialty(of: settled))
+        let morning = line([settled], town(.water), timeOfDay: .morning)
+        XCTAssertTrue(morning.contains("꼬부기"), morning)
+        XCTAssertTrue(morning.contains(specialty.name), "아침 문장에 특기가 없다: \(morning)")
+        XCTAssertFalse(line([settled], town(.water), timeOfDay: .day).contains(specialty.name), "낮 문장이 특기를 말한다")
+        XCTAssertFalse(line([settled], town(.water), timeOfDay: .night).contains(specialty.name), "밤 문장이 특기를 말한다")
+    }
+
+    /// 아침에도 ①·② 가 ③ 을 이긴다 — 갓 온 주민과 자리 잃은 주민은 특기보다 먼저다. 이 줄이 없으면 아침 분기를 ③ 앞으로
+    /// 옮긴 구현이 조용히 통과한다.
+    func testMorningStillLetsArrivalsAndLostResidentsWin() throws {
+        let fresh = resident(7, "꼬부기", [.water], arrivedAgo: 60)
+        XCTAssertTrue(line([fresh], town(.water), timeOfDay: .morning).contains("방금"))
+        let lost = resident(7, "꼬부기", [.water], arrivedAgo: 60 * 60 * 24)
+        let specialty = try XCTUnwrap(PokopiaTown.specialty(of: lost))
+        let text = line([lost], PokopiaTown.defaultTerrain, timeOfDay: .morning)   // 물이 없다
+        XCTAssertTrue(text.contains("찾는"), text)
+        XCTAssertFalse(text.contains(specialty.name), "자리 잃은 주민이 특기를 뽐낸다: \(text)")
+    }
+
+    /// 열여덟 특기 전부가 서로 다른 아침 문장을 내고, 각 문장에 자기 특기 이름이 든다. 빠진 특기는 다른 특기의 문장을
+    /// 물려받는다 — `testEveryTerrainHasItsOwnSettledSentence` 와 같은 가드. **18 case 전부를 밟는다** — 하나만 돌리면
+    /// 나머지 열일곱은 커버리지에 `^0` 으로 남는다(밤 문장 테스트가 같은 이유로 여덟을 다 돈다).
+    func testEverySpecialtyHasItsOwnMorningSentence() {
+        var sentences: [String: TownSpecialty] = [:]
+        for type in PokemonType.allCases {
+            let specialty = PokopiaTown.specialty(for: type)
+            // 그 타입이 정착할 지형을 표에서 뽑아 깐다 — 손으로 적으면 어긋난다.
+            let text = line([resident(7, "주민", [type], arrivedAgo: 60 * 60 * 24)],
+                            town(PokopiaTown.terrain(for: type), count: PokopiaTown.habitatThreshold + 4),
+                            timeOfDay: .morning)
+            XCTAssertTrue(text.contains(specialty.name), "\(type): 아침 문장에 \(specialty.name) 이 없다: \(text)")
+            // 이름을 뺀 나머지로 겹침을 본다 — 이름은 보간이라 문장 전체는 저절로 다르고, 복붙으로 같아지는 것은 뒷말이다.
+            let doing = text.replacingOccurrences(of: specialty.name, with: "")
+            if let twin = sentences[doing] { XCTFail("\(specialty) 와 \(twin) 이 같은 문장을 쓴다: \(text)") }
+            sentences[doing] = specialty
+        }
+        XCTAssertEqual(sentences.count, TownSpecialty.allCases.count)
+    }
+
     /// ④ 주민은 없는데 부르는 환경은 됐다 — 다음에 무슨 일이 생길지 말한다.
     func testAWelcomingButEmptyTownSaysSomebodyMightCome() {
         let text = line([], town(.water))
