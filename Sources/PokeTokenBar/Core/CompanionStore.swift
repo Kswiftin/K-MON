@@ -961,6 +961,69 @@ final class CompanionStore {
         state.dex + livingDexEntries
     }
 
+    /// 변신 대상이 될 수 있는 종. 마을 변신 시트와 `setDittoForm` 의 신뢰경계가 **같은 집합**을
+    /// 읽어야 목록에 뜨는데 못 고르는 종이 생기지 않는다(`ShopCatalog` 가 목록과 구매를 한 값으로
+    /// 묶는 이유와 같다).
+    ///
+    /// `finalID` 만 담는다 — 변신은 최종체가 자연스럽고, 체인 전체를 넣으면 도감 한 칸이
+    /// 후보 세 개로 불어난다.
+    var townTransformCandidates: Set<Int> { Set(dexEntries.map(\.finalID)) }
+
+    /// 지금 밀 수 있는 지형. **변신하지 않으면 nil** — 판정표는 `PokopiaTown.brush` 하나이고
+    /// 여기서는 입력만 모은다(조립이 화면에 흩어지면 표가 하나여도 사본이 생긴다).
+    ///
+    /// 알려진 한계: 변신 중인데 그 종의 `DexEntry.types` 가 아직 백필되지 않았으면(구버전·
+    /// 오프라인 졸업) `nil` 이 되어 아무것도 못 민다. 다음 도감 열람이 타입을 채우면 풀린다.
+    var townBrush: TownTerrain? {
+        PokopiaTown.brush(dittoFormTypes: memoryAlbum.town.dittoForm.flatMap { form in
+            dexEntries.first { $0.finalID == form }?.types
+        })
+    }
+
+    /// 집중 세션 하나가 부르는 이사. 찾아온 주민을 돌려준다(알림 문구를 만드는 쪽이 쓴다).
+    ///
+    /// **판정은 `PokopiaTown.immigrant` 순수 함수**이고 여기서는 입력을 모아 넘긴다 —
+    /// 알림 부류 규칙("판정은 부수효과와 분리한 순수 함수로 테스트한다")을 따른다.
+    ///
+    /// **`rng` 는 후보가 없어도 굴린다.** 조건부로 굴리면 같은 시드가 마을 상태에 따라 다른
+    /// 미래를 낸다 — 이 파일이 이미 "rng 는 확정이든 아니든 항상 굴린다" 를 규칙으로 적어 두었다.
+    /// 그래서 `let roll` 이 **첫 줄**이다.
+    ///
+    /// 이사 오는 것은 **기본형(base species)** 이다. 이유는 이름이다: 도감 밖 종이라
+    /// `DexEntry.names` 가 없고, 종 번호로 이름을 주는 인덱스가 `PokeProviding` 에 없다.
+    /// `line(baseSpeciesID:)` 은 그 체인의 이름을 주므로 기본형이면 자기 이름을 얻는다.
+    ///
+    /// 이름·타입을 못 얻으면 **받지 않는다** — 이름 없는 주민은 결함처럼 보이는 줄이다.
+    /// 다음 세션이 다시 굴린다(`WaveRunLoader.startRun` 이 상대를 못 만들면 판을 안 여는 것과
+    /// 같은 판단). 실패를 화면에 띄우지 않는 것도 의도다: 매 세션 "아무도 안 왔어요" 는 잔소리다.
+    @discardableResult
+    func rollTownImmigration() async -> TownResident? {
+        let roll = rng.next()
+        guard let index = try? await provider.baseSpeciesIndex(),
+              let typeIndex = try? await provider.speciesTypeIndex() else { return nil }
+        // `hatchable` 은 스프라이트 없는 종을 걷어낸다. **정렬한다** — 인덱스가 순서를
+        // 보장하지 않으므로 정렬 없이는 같은 시드가 다른 종을 뽑는다.
+        let pool = BaseSpecies.hatchable(index).map(\.id).sorted()
+        guard let speciesID = PokopiaTown.immigrant(terrain: memoryAlbum.town.terrain,
+                                                    pool: pool, typeIndex: typeIndex,
+                                                    residents: memoryAlbum.town.residents,
+                                                    roll: roll),
+              let line = try? await provider.line(baseSpeciesID: speciesID),
+              let name = line.names[speciesID].flatMap(PokemonNaming.name),
+              let types = typeIndex[speciesID], !types.isEmpty else { return nil }
+        let resident = TownResident(speciesID: speciesID, name: name, types: types,
+                                    arrivedAt: clock())
+        // **이 거절 분기는 실전에서 안 밟힌다** — `PokopiaTown.immigrant` 가 이미 인구 상한과
+        // 종 중복을 걸렀고, 이름·타입은 위 `guard` 가 채웠다. 커버리지에 `^0` 으로 남는 것이
+        // 정상이다(`defect-log.md` "가드가 중복이라 하나를 지워도 아무 테스트가 안 깨지는 부류").
+        //
+        // 그래도 남겨 둔다: `admitTownResident` 는 앨범의 **신뢰경계**라 나중에 터미널·전송이
+        // 부를 수 있고, 그때 거절을 성공으로 읽으면 화면이 오지 않은 주민을 알린다.
+        // `_ =` 로 버리면 그 갈라짐을 아무도 못 본다.
+        guard memoryAlbum.admitTownResident(resident) else { return nil }
+        return resident
+    }
+
     private var livingDexEntries: [DexEntry] {
         // 졸업분은 state.dex 의 영구 기록이 이미 담당한다 — 여기서 또 만들면 같은 개체가 두 번 잡힌다.
         (activeDexEntry.map { [$0] } ?? [])

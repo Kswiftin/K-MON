@@ -17,10 +17,24 @@ import Testing
     /// 팝오버 스크롤 **밖에** 그려지는 화면. 자기 스크롤을 가져야 맞다.
     /// - `PopoverView` 자신이 바깥 `ScrollView` 의 주인이다.
     /// - 별도 창·시트로 뜨는 화면은 팝오버 높이에 갇히지 않는다.
+    ///
+    /// 포코피아 두 파일이 여기 있는 이유: 마을은 **자기 창**에서만 그려진다.
+    /// `PokopiaTownPresenter.installContent(in:)` 이 `NSHostingController` 로 얹고,
+    /// `PokopiaTransformSheet` 는 그 화면의 `.sheet` 에서만 뜬다 — 둘 다 팝오버 높이에
+    /// 갇히지 않는다.
+    ///
+    /// 지금 이 두 항목은 **훑기에 아예 닿지 않아** 실제로는 아무것도 면제하지 않는다:
+    /// 훑기는 `struct X: View` 선언을 따라가는데 `PokopiaTownPresenter.swift` 에는 View
+    /// 선언이 없다(창을 소유하는 클래스 하나뿐이다). 그런데도 지우지 않는 이유는 아래
+    /// `thePokopiaTownIsDrawnOnlyFromItsOwnWindow` 가 호출부를 세기 때문이다 — 팝오버 쪽에
+    /// 마을을 그리는 줄이 생기면 **그 테스트가 먼저** 빨개지고, 그때 이 두 줄을 지운다.
+    /// (마을이 Memory Home 의 `TOWN` 탭이던 시절엔 훑기가 그 창 파일을 거쳐 전이적으로 닿았다.
+    ///  창을 가르면서 그 경로가 사라졌다.)
     private static let ownsItsOwnScroll: Set<String> = [
         "PopoverView.swift", "SettingsView.swift", "MemoryHomePresenter.swift",
         "PokemonChatView.swift", "RogueRunView.swift", "RaidView.swift",
         "SafariZoneView.swift",
+        "PokopiaTownView.swift", "PokopiaTransformSheet.swift",
     ]
 
     private static var uiDirectory: URL {
@@ -45,6 +59,24 @@ import Testing
             if !uses.isEmpty { offenders[name] = uses }
         }
         #expect(offenders.isEmpty, "팝오버 안쪽에서 자기 ScrollView 를 갖는 화면: \(offenders)")
+    }
+
+    /// 면제가 스스로를 검증하게 한다. 포코피아 마을을 면제한 근거는 "자기 창에서만 그려진다" 는
+    /// **사실**인데, 그 사실이 조용히 바뀌면 면제만 남아 중첩 결함이 무검사로 나간다.
+    ///
+    /// 그래서 호출부가 `PokopiaTownPresenter.swift`(창 콘텐츠) 하나임을 직접 센다. 팝오버 쪽에
+    /// 마을 화면을 그리는 줄이 생기면 여기가 빨개지고, 그때 할 일은 면제를 지우고 마을에서
+    /// `ScrollView` 를 걷어내는 것이다.
+    ///
+    /// 기대값이 `MemoryHomePresenter.swift` 이던 판은 마을이 그 창의 `TOWN` 탭이던 시절의
+    /// 것이다. 창을 가르면서 이 테스트가 먼저 빨개졌고, 그게 이 가드가 일한다는 증거다.
+    @Test func thePokopiaTownIsDrawnOnlyFromItsOwnWindow() throws {
+        let sources = try Self.uiSources()
+        let callers = sources.filter { file, text in
+            file != "PokopiaTownView.swift" && text.contains("PokopiaTownView(")
+        }.keys.sorted()
+        #expect(callers == ["PokopiaTownPresenter.swift"],
+                "마을 화면의 호출부가 창 하나가 아니다 — 면제 근거가 깨졌다: \(callers)")
     }
 
     // MARK: 훑기
