@@ -217,16 +217,23 @@ final class CompanionStoreSafariZoneTests: XCTestCase {
     /// 배포일에 로드하면 방문·포획 원장이 비워지고 다시는 안 받도록 표시된다. 재시작해도
     /// (같은 파일을 다시 읽는 새 스토어) 이미 받은 보너스가 카운터를 또 지우지 않는다 — 재설치
     /// 마다 반복 지급되면 안 된다는 요구사항이다.
+    ///
+    /// `stubStore(_:tag:)` 는 못 쓴다 — `storeDirectory` 가 같은 태그를 줘도 매번 새 UUID 임시
+    /// 디렉토리를 만들어, 두 번 불러도 실제로는 다른 파일이 된다(재시작이 아니라 신규 설치가
+    /// 된다). 재시작을 검증하려면 `fileURL` 을 직접 잡아 두 스토어가 같은 파일을 열게 해야 한다.
     func testSafariZoneUpdateBonusResetsLedgersOnceOnReleaseDayAndNeverAgain() {
         let clock = TestClock(Self.releaseDay)
-        let store1 = stubStore(clock, tag: "safari-bonus-once")
+        let url = storeStateURL("safari-bonus-once")
+        let store1 = CompanionStore(provider: StubProvider(value: stubMaxLevelLine), clock: clock.closure,
+                                    fileURL: url, rng: SeededRNG(seed: 7))
         XCTAssertTrue(store1.state.safariZoneUpdateBonusClaimed, "배포일 첫 로드에서 즉시 받아야 한다")
         XCTAssertTrue(store1.beginSafariZoneVisit(zone: .grassland))
         XCTAssertEqual(store1.state.safariZoneVisitsToday, 1)
 
         // 재시작 시뮬레이션 — 같은 파일을 새 스토어로 다시 연다. 여전히 배포일이지만 이미 받았으므로
         // 방금 쓴 방문 횟수가 다시 비워지면 안 된다.
-        let store2 = stubStore(clock, tag: "safari-bonus-once")
+        let store2 = CompanionStore(provider: StubProvider(value: stubMaxLevelLine), clock: clock.closure,
+                                    fileURL: url, rng: SeededRNG(seed: 7))
         XCTAssertTrue(store2.state.safariZoneUpdateBonusClaimed)
         XCTAssertEqual(store2.state.safariZoneVisitsToday, 1, "이미 받은 보너스가 방문 횟수를 또 지우면 안 된다")
     }
