@@ -185,6 +185,10 @@ LOGIC_CORE=(
   # `PokedoroSessionGate` 를 넣은 그 이유가 그대로 적용된다 — 한 프런트엔드만 통과하는
   # 거절 분기(`notUsedThisWay`·`conditionsNoLongerMet`)가 게이트 밖이면 무테스트로 나간다.
   "Sources/PokeTokenBar/Core/CompanionActionOutcome.swift"
+  # 사파리존(그레이트 마쉬식 스테이지 포획)의 순수 코어 — 단계 배율·포획/도망률·조우 진행
+  # (`SafariEncounter.act`)·등급 가중 추첨이 여기 있다. `act` 가 미끼/진흙/볼/도망 네 입력의
+  # 유일한 게이트라 게이트 밖에 두면 그 단일 진입점 자체가 무테스트로 남는다.
+  "Sources/PokeTokenBar/Core/SafariZone.swift"
 )
 
 # 기능이 **박제된 두 번째 화면**에 남는 부류를 막는다. `eee5c86` 이 팝오버 홈을 창으로 옮기며
