@@ -144,18 +144,20 @@ struct SafariEncounterView: View {
 
     private var actionButtons: some View {
         HStack(spacing: 6) {
-            actionButton(l.safariBaitAction, action: .bait)
-            actionButton(l.safariMudAction, action: .mud)
-            actionButton(l.safariBallAction, action: .ball,
+            actionButton("\(l.safariBaitAction) 1", action: .bait, shortcut: "1")
+            actionButton("\(l.safariMudAction) 2", action: .mud, shortcut: "2")
+            actionButton("\(l.safariBallAction) 3", action: .ball, shortcut: "3",
                         disabled: (store.safariVisit?.balls ?? 0) <= 0)
-            actionButton(l.safariRunAction, action: .run)
+            actionButton("\(l.safariRunAction) 4", action: .run, shortcut: "4")
         }
     }
 
-    private func actionButton(_ title: String, action: SafariAction, disabled: Bool = false) -> some View {
+    private func actionButton(_ title: String, action: SafariAction, shortcut: KeyEquivalent,
+                              disabled: Bool = false) -> some View {
         Button(title) { perform(action) }
             .buttonStyle(.bordered).controlSize(.small)
             .disabled(disabled || isCommitting || isAnimating)
+            .keyboardShortcut(shortcut, modifiers: [])
     }
 
     /// **던지기 → 결과 확정(`act` 호출) → 반응**, 이 순서를 지킨다. `act()` 를 던지기 애니메이션
