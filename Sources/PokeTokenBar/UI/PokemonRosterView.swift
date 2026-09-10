@@ -21,16 +21,20 @@ struct PokemonRosterView: View {
     @State private var duplicatesOnly = false
     /// 졸업·교환 등으로 영구 도감에 아직 기록되지 않은 현재 모습만 보기.
     @State private var unregisteredOnly = false
+    /// 최종 진화형에 닿아 졸업 버튼을 누를 수 있는 개체만 보기.
+    @State private var graduateReadyOnly = false
     /// 종별로 한 번만 해석해 두는 표시값. 카드마다 따로 받아오면 정렬 키(이름·타입)를 화면과
     /// 맞출 수 없다 — 정렬·필터는 박스 전체를 봐야 하는데 행은 자기 것만 알기 때문이다.
-    @State private var names: [Int: String] = [:]
-    @State private var types: [Int: [PokemonType]] = [:]
+    /// `store.rosterDisplayNameCache` 등으로 초기값을 미리 채운다(아래 `init`) — 탭을 나갔다
+    /// 들어와도 이름·타입이 한 틱 비어 보이지 않게 하기 위해서다(`CompanionStore` 의 캐시 주석 참고).
+    @State private var names: [Int: String]
+    @State private var types: [Int: [PokemonType]]
     /// baseID → 진화 트리. 카드가 "졸업 가능" 배지를 달려면 그 개체가 최종형인지 알아야 하는데,
     /// 최종형 여부는 트리를 봐야만 안다(`CompanionStore.canGraduate(_:in:)` 와 같은 판정).
     /// 박스 개체는 활성화 전까지 `stageIndex`/`totalForms` 가 정규화되지 않을 수 있어
     /// (defect-log) 저장된 필드 대신 이 트리로 직접 판정한다. base 단위라 같은 계보를 여럿
     /// 가져도 조회는 한 번이다(`PokeAPIClient` 가 메모리 캐시를 둔다).
-    @State private var evoLines: [Int: EvoLine] = [:]
+    @State private var evoLines: [Int: EvoLine]
     /// 타입 해석이 한 바퀴 돌았는지. 돌기 전엔 필터 메뉴를 열지 않는다 — 절반만 해석된 표로
     /// 거르면 "왜 얘가 안 보이지"가 로딩 순서에 따라 달라진다.
     @State private var didResolveTypes = false
@@ -39,6 +43,16 @@ struct PokemonRosterView: View {
     @State private var infoTarget: MonState?
     @State private var searchText = ""
     @Environment(PokemonChatPresenter.self) private var chatPresenter
+
+    /// 이름·타입·진화 트리를 `store` 의 캐시로 미리 채운다 — 탭을 나갔다 들어와 이 뷰가 통째로
+    /// 다시 만들어져도(`PopoverView` 의 `switch nav.tab`), 지난번에 이미 풀어 둔 값이라면 빈
+    /// 상태로 한 틱 그려지지 않는다.
+    init(store: CompanionStore) {
+        self.store = store
+        _names = State(initialValue: store.rosterDisplayNameCache)
+        _types = State(initialValue: store.rosterTypeCache)
+        _evoLines = State(initialValue: store.rosterEvoLineCache)
+    }
 
     /// 도감·상점·가방과 같은 520. 탭을 넘나들어도 팝오버가 리사이즈되지 않는다.
     ///
@@ -65,12 +79,18 @@ struct PokemonRosterView: View {
         let registeredSpecies = Set(store.state.dex.flatMap(\.chainOrder))
         let unregisteredIDs = Set(RosterOrdering.unregistered(
             owned, registeredSpeciesIDs: registeredSpecies).map(\.id))
+        // 진화 트리를 아직 못 푼 개체는 졸업 가능 여부를 모른다 — `evoLines[mon.baseID]` 가 없으면
+        // false 로 접는다(카드의 `graduateReady` 배지와 같은 기준, `grid(_:)` 참고).
+        let graduateReadyIDs = Set(owned.filter { mon in
+            evoLines[mon.baseID].map { store.canGraduate(mon, in: $0) } ?? false
+        }.map(\.id))
         let searched = owned.filter {
             PokemonNameSearch.matches(searchText, names: PokemonNameSearch.names(
                 for: $0, resolvedSpeciesName: names[$0.presentationID]))
             && (!favoritesOnly || store.isFavorite($0.id))
             && (!duplicatesOnly || duplicateFamilies.contains($0.baseID))
             && (!unregisteredOnly || unregisteredIDs.contains($0.id))
+            && (!graduateReadyOnly || graduateReadyIDs.contains($0.id))
         }
         let arranged = RosterOrdering.arrange(searched, sort: settings.rosterSort,
                                               ascending: settings.rosterSortAscending,
@@ -86,7 +106,7 @@ struct PokemonRosterView: View {
                          types: types, didResolveTypes: didResolveTypes,
                          typeFilter: $typeFilter, favoritesOnly: $favoritesOnly,
                          duplicatesOnly: $duplicatesOnly, unregisteredOnly: $unregisteredOnly,
-                         page: $page)
+                         graduateReadyOnly: $graduateReadyOnly, page: $page)
                 .zIndex(1)
             // 검색칸과 페이저가 한 줄이다 — 페이저는 격자 **위**에 있어야 한다. 아래에 두었을 때는
             // 탭 콘텐츠(520)가 팝오버 뷰포트보다 높아 스크롤 밖으로 밀려, 11페이지를 가진 사용자가
@@ -141,20 +161,26 @@ struct PokemonRosterView: View {
 
     /// 박스 전체의 이름·타입을 한 번 해석한다. 이름은 개체에 저장된 다국어 이름으로 대부분 끝나고
     /// (`MonState.names`), 없는 것만 조회한다. 타입은 `battleProfile` 이 캐시하므로 두 번째부터 공짜다.
+    /// 세 값 모두 푼 뒤 `store` 의 캐시에도 써 둔다 — 다음에 이 탭을 열 때(뷰가 다시 만들어져도)
+    /// `init` 이 그 캐시로 시작해 이 루프가 거의 다 건너뛴다.
     private func resolveDisplayValues(for owned: [MonState]) async {
         for mon in owned {
             let id = mon.presentationID
             if names[id] == nil {
                 let local = RosterOrdering.displayName(mon)
-                names[id] = local.hasPrefix("#") ? await store.resolveSpeciesName(id) : local
+                let resolved = local.hasPrefix("#") ? await store.resolveSpeciesName(id) : local
+                names[id] = resolved
+                store.rosterDisplayNameCache[id] = resolved
             }
             if types[id] == nil,
                let profile = try? await PokeAPIClient.shared.battleProfile(speciesID: id) {
                 types[id] = profile.types
+                store.rosterTypeCache[id] = profile.types
             }
             if evoLines[mon.baseID] == nil,
                let line = try? await PokeAPIClient.shared.line(baseSpeciesID: mon.baseID) {
                 evoLines[mon.baseID] = line
+                store.rosterEvoLineCache[mon.baseID] = line
             }
         }
         didResolveTypes = true

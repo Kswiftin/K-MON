@@ -20,14 +20,15 @@ struct RosterHeader: View {
     @Binding var favoritesOnly: Bool
     @Binding var duplicatesOnly: Bool
     @Binding var unregisteredOnly: Bool
+    @Binding var graduateReadyOnly: Bool
     /// 필터를 건드리면 보이는 마릿수가 줄어 지금 페이지가 사라질 수 있다 — 항상 첫 장으로 되돌린다.
     @Binding var page: Int
     @Environment(AppSettings.self) private var settings
 
-    /// 세 필터 버튼(즐겨찾기·중복·미등록)이 공유하는 호버 설명 상태. `.help()` 는 팝오버 안에서
+    /// 필터 버튼(즐겨찾기·중복·미등록·졸업가능)이 공유하는 호버 설명 상태. `.help()` 는 팝오버 안에서
     /// 믿을 수 있는 표시 경로가 아니다(defect-log "`.help()` 는 NSPopover 안에서는 아무것도 안 뜬다")
     /// — `.onHover` 로 잡아 직접 그린다.
-    private enum FilterHint: Equatable { case favorites, duplicates, unregistered }
+    private enum FilterHint: Equatable { case favorites, duplicates, unregistered, graduateReady }
     @State private var hoveredHint: FilterHint?
     /// 이탈 시 곧장 지우지 않고 살짝 늦춘다. 주기 갱신이 트래킹 영역을 순간 재설치하면 이탈
     /// 이벤트 직후 같은 자리에 재진입 이벤트가 따라오는데, 그 사이 취소되지 않으면 설명이
@@ -37,6 +38,7 @@ struct RosterHeader: View {
     private static let favoritesHint = "즐겨찾기로 표시한 포켓몬만 표시합니다."
     private static let duplicatesHint = "진화 전후를 포함해 같은 계보가 2마리 이상인 포켓몬만 표시합니다."
     private static let unregisteredHint = "영구 도감에 아직 기록되지 않은 현재 모습만 표시합니다."
+    private static let graduateReadyHint = "최종 진화형에 닿아 졸업할 수 있는 포켓몬만 표시합니다."
 
     var body: some View {
         HStack(spacing: 6) {
@@ -48,6 +50,7 @@ struct RosterHeader: View {
             favoriteFilterButton
             duplicateFilterButton(duplicateCount: duplicateFamilyCount(in: owned))
             unregisteredFilterButton
+            graduateReadyFilterButton
             typeMenu(owned: owned)
             // 필터가 걸렸을 땐 "보이는 수 / 전체 수" — 숫자 하나만 두면 필터가 켜진 걸 놓친다.
             Text(shownCount == ownedCount ? "\(ownedCount)" : "\(shownCount)/\(ownedCount)")
@@ -146,6 +149,24 @@ struct RosterHeader: View {
         .onHover { setHoveredHint(.unregistered, isInside: $0) }
         .overlay(alignment: .bottom) {
             hintBubble(.unregistered, text: Self.unregisteredHint).offset(y: 22)
+        }
+    }
+
+    private var graduateReadyFilterButton: some View {
+        Button {
+            graduateReadyOnly.toggle(); page = 0
+        } label: {
+            Image(systemName: graduateReadyOnly ? "graduationcap.fill" : "graduationcap")
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(graduateReadyOnly ? Color.accentColor : .secondary)
+        }
+        .buttonStyle(.borderless)
+        .accessibilityLabel("졸업 가능만 보기")
+        .accessibilityAddTraits(graduateReadyOnly ? .isSelected : [])
+        .help(Self.graduateReadyHint)
+        .onHover { setHoveredHint(.graduateReady, isInside: $0) }
+        .overlay(alignment: .bottom) {
+            hintBubble(.graduateReady, text: Self.graduateReadyHint).offset(y: 22)
         }
     }
 

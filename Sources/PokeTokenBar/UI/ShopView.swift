@@ -9,6 +9,15 @@ struct ShopView: View {
     @State private var category: ShopCategory = .general
     @State private var machineQuery = ""
     @State private var machineNames: [Int: String] = [:]
+    /// 카드가 조회를 끝내야 채워진다(`TechnicalMachineShopCard.task`) — 검색어(`machineQuery`)가
+    /// `machineNames` 를 쓰는 것과 같은 모양·같은 한계다. 타입/습득 필터를 켠 채 위에서 아래로
+    /// 스크롤하면 아직 안 지난 카드는 필터에 걸리지 않다가, 스크롤이 닿는 순간 나타난다.
+    @State private var machineTypes: [Int: PokemonType] = [:]
+    @State private var machineLearnable: [Int: Bool] = [:]
+    @State private var machineTypeFilter: PokemonType?
+    /// 홈 포켓몬이 지금 배울 수 있는 기술머신만 본다. 홈 포켓몬이 없으면(`store.currentSpeciesID`
+    /// 이 nil) 모든 카드가 "습득 가능 여부 확인 중"조차 못 받으므로 이 필터는 무의미해 끈다.
+    @State private var learnableOnlyFilter = false
 
     private enum ShopCategory: String, CaseIterable, Identifiable {
         case general, battle, evolution, eggs, machines, outfits
@@ -57,13 +66,18 @@ struct ShopView: View {
                 TextField("기술명 또는 TM 번호 검색",
                           text: $machineQuery)
                     .textFieldStyle(.roundedBorder)
+                machineFilterBar
                 if filteredMachines.isEmpty {
                     ContentUnavailableView.search(text: machineQuery)
                 }
                 ForEach(filteredMachines) { machine in
-                    TechnicalMachineShopCard(store: store, machine: machine) { name in
+                    TechnicalMachineShopCard(store: store, machine: machine, onResolveName: { name in
                         machineNames[machine.moveID] = name
-                    }
+                    }, onResolveType: { type in
+                        machineTypes[machine.moveID] = type
+                    }, onResolveLearnable: { learnable in
+                        machineLearnable[machine.moveID] = learnable
+                    })
                 }
             case .outfits:
                 // 상점 판매분만(`shopPrice != nil`) — 업적 보상 의상은 옷장에서 잠금으로 보인다.
@@ -77,12 +91,49 @@ struct ShopView: View {
     private var filteredMachines: [TechnicalMachine] {
         let query = machineQuery.trimmingCharacters(in: .whitespacesAndNewlines)
             .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
-        guard !query.isEmpty else { return TechnicalMachine.catalog }
         return TechnicalMachine.catalog.filter { machine in
-            let fields = [machine.label, machine.slug.replacingOccurrences(of: "-", with: " "),
-                          machineNames[machine.moveID] ?? "", String(machine.number)]
-            return fields.contains { $0.folding(options: [.caseInsensitive, .diacriticInsensitive],
-                                                 locale: .current).contains(query) }
+            let matchesQuery: Bool
+            if query.isEmpty {
+                matchesQuery = true
+            } else {
+                let fields = [machine.label, machine.slug.replacingOccurrences(of: "-", with: " "),
+                              machineNames[machine.moveID] ?? "", String(machine.number)]
+                matchesQuery = fields.contains { $0.folding(options: [.caseInsensitive, .diacriticInsensitive],
+                                                            locale: .current).contains(query) }
+            }
+            let matchesType = machineTypeFilter == nil || machineTypes[machine.moveID] == machineTypeFilter
+            let matchesLearnable = !learnableOnlyFilter || machineLearnable[machine.moveID] == true
+            return matchesQuery && matchesType && matchesLearnable
+        }
+    }
+
+    /// 타입 메뉴 + "배울 수 있는 기술만" 토글. 검색칸 바로 아래 — 셋 다 같은 목록을 좁히는
+    /// 조건이라 한 줄에 모아 둔다.
+    private var machineFilterBar: some View {
+        HStack(spacing: 8) {
+            Menu {
+                Button("전체 타입") { machineTypeFilter = nil }
+                ForEach(PokemonType.allCases, id: \.self) { type in
+                    Button(type.name) { machineTypeFilter = type }
+                }
+            } label: {
+                Label(machineTypeFilter?.name ?? "타입",
+                      systemImage: "line.3.horizontal.decrease.circle")
+                    .font(.system(size: 10, weight: .semibold))
+            }
+            .menuStyle(.borderlessButton).fixedSize()
+            Button {
+                learnableOnlyFilter.toggle()
+            } label: {
+                Label("홈 포켓몬이 배울 수 있는 기술만",
+                      systemImage: learnableOnlyFilter ? "checkmark.circle.fill" : "circle")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(learnableOnlyFilter ? Color.accentColor : .secondary)
+            }
+            .buttonStyle(.borderless)
+            .disabled(store.currentSpeciesID == nil)
+            .accessibilityAddTraits(learnableOnlyFilter ? .isSelected : [])
+            Spacer()
         }
     }
 
@@ -136,6 +187,8 @@ private struct TechnicalMachineShopCard: View {
     let store: CompanionStore
     let machine: TechnicalMachine
     let onResolveName: (String) -> Void
+    let onResolveType: (PokemonType) -> Void
+    let onResolveLearnable: (Bool) -> Void
     @State private var move: MoveSpec?
     @State private var canActiveLearn: Bool?
     @State private var confirming = false
@@ -215,10 +268,14 @@ private struct TechnicalMachineShopCard: View {
         }
         .task(id: "\(store.currentSpeciesID ?? 0)-\(machine.moveID)") {
             move = await PokeAPIClient.shared.moveDetail(id: machine.moveID)
-            if let move { onResolveName(move.name) }
+            if let move {
+                onResolveName(move.name)
+                onResolveType(move.type)
+            }
             if let speciesID = store.currentSpeciesID {
                 canActiveLearn = await PokeAPIClient.shared.canLearnMachine(speciesID: speciesID,
                                                                             moveID: machine.moveID)
+                onResolveLearnable(canActiveLearn ?? false)
             } else {
                 canActiveLearn = nil
             }
