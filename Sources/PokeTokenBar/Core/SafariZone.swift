@@ -65,7 +65,7 @@ enum SafariZone {
 
     /// 사파리존 구역. 존마다 다른 종 풀·지형 팔레트를 쓴다.
     enum ZoneID: String, CaseIterable, Codable, Sendable {
-        case grassland, wetland, cave
+        case grassland, wetland, cave, volcano, highland, ruins
     }
 
     /// 존 하나의 등급별 서브풀. 전설은 없다 — 알(`FreshEgg`)이 "전설 전용 알은 안 판다"는
@@ -76,14 +76,18 @@ enum SafariZone {
         let rare: [Int]
     }
 
-    /// 존 테마에 맞춘 라인업(초원: 벌레·노멀·풀, 습지: 물, 동굴: 바위·땅·독) — 존당 30종
-    /// (일반·고급·희귀 정확히 10종씩), 1~9세대를 고루 담되 6~9세대(오픈한 지 얼마 안 된 세대)
-    /// 비중을 의식적으로 늘렸다. 미진화체를 넣어도 안전하다 — `CompanionStore.commitCaughtMon`
-    /// 은 `pathIDs: [speciesID], totalForms: 1` 로 잡은 개체를 만들지만, 그 개체가 동행으로
-    /// 오르면 `loadCurrentLine()` → `normalizedEvolutionState()` 가 실제 진화 트리를 기준으로
+    /// 존 테마에 맞춘 라인업(초원: 벌레·노멀·풀, 습지: 물, 동굴: 바위·땅·독, 화산지대: 불꽃·용,
+    /// 폭풍고원: 비행·전기·얼음, 폐허: 고스트·에스퍼·악·강철·페어리) — 존당 30종(일반·고급·희귀
+    /// 정확히 10종씩), 1~9세대를 고루 담되 6~9세대(오픈한 지 얼마 안 된 세대) 비중을 의식적으로
+    /// 늘렸다. 미진화체를 넣어도 안전하다 — `CompanionStore.commitCaughtMon` 은 `pathIDs:
+    /// [speciesID], totalForms: 1` 로 잡은 개체를 만들지만, 그 개체가 동행으로 오르면
+    /// `loadCurrentLine()` → `normalizedEvolutionState()` 가 실제 진화 트리를 기준으로
     /// `pathIDs`/`totalForms`/`plannedPathIDs` 를 다시 계산한다(레이드가 체인 중간에서 잡은
     /// 개체·위장 메타몽 리빌을 다루려고 이미 갖고 있던 범용 복구 로직이라, 여기도 같은 경로를
-    /// 그대로 탄다). 레이드 풀(`RaidBoss.swift`)과 겹치지 않게 골랐다.
+    /// 그대로 탄다). 레이드 풀(`RaidBoss.swift`)·다른 존과 겹치지 않게 골랐다
+    /// (`SafariZoneTests.testNoSpeciesAppearsInMoreThanOneZone`·
+    /// `testNewZonesDoNotOverlapAnyRaidPool` 이 이 전제를 지킨다 — 후자는 신규 3존만
+    /// 검사한다, 기존 3존의 사정은 그 테스트 주석 참고).
     ///
     /// **등급은 진화 단계·capture_rate 가 아니라 종족값 총합(BST) 기준으로 매겼다.**
     /// `capture_rate`(`Rarity.captureRateCeiling`, `CompanionModel.swift`)는 본가에서 "그 폼
@@ -91,9 +95,11 @@ enum SafariZone {
     /// 조우 밀도" 개념 자체가 없었다(알은 항상 baseID 로 부화, 레이드는 그날 정해진 특정 개체) —
     /// 그 수치로 니드킹·퍼퓨돈 같은 흔한 최종진화체까지 희귀로 몰렸다. 대신 레이드 티어별 BST 를
     /// 조사하니 레이드에 뽑히는 종은 전부 BST 500 이상이라는 뚜렷한 하한이 있어("이 게임에서
-    /// 특별하게 느껴지는 종" 을 BST 가 훨씬 잘 설명한다), 사파리존 90종을 PokéAPI 로 전수조사해
-    /// BST 오름차순 순위 10번째·20번째를 그대로 등급 경계로 썼다(레이드 500+ 보다 낮은 대역에서
-    /// 사파리존 자체의 상위권을 가른다). 전설(`is_legendary`/`is_mythical`)은 전수조사에서 0종.
+    /// 특별하게 느껴지는 종" 을 BST 가 훨씬 잘 설명한다), 각 존의 후보군을 PokéAPI 로 전수조사해
+    /// BST 오름차순 순위로 그 존 안에서만 10번째·20번째를 등급 경계로 썼다(그 존 자체의 상위권을
+    /// 가르는 경계일 뿐 레이드 하한과 직접 맞물리진 않는다 — 화산지대는 530, 폭풍고원·폐허는
+    /// 600까지 rare 최고값이 올라간다. 그래도 그 등급 안에서 균등 추첨(10종 중 1)이라 실제
+    /// 조우 확률은 여전히 낮다). 전설(`is_legendary`/`is_mythical`)은 전수조사에서 0종.
     private static func gradePools(for zone: ZoneID) -> GradePools {
         switch zone {
         case .grassland:
@@ -111,6 +117,23 @@ enum SafariZone {
                 common: [41, 524, 744, 74, 66, 843, 304, 769, 848, 837],
                 uncommon: [408, 696, 95, 75, 185, 950, 770, 745, 409, 749],
                 rare: [844, 839, 526, 949, 697, 699, 306, 750, 703, 970])
+        case .volcano:
+            return GradePools(
+                common: [37, 218, 371, 390, 498, 653, 704, 782, 813, 935],
+                uncommon: [58, 240, 256, 391, 610, 654, 725, 757, 838, 910],
+                rare: [372, 634, 705, 726, 776, 783, 814, 815, 978, 997])
+        case .highland:
+            return GradePools(
+                common: [872, 172, 921, 714, 821, 403, 278, 938, 602, 661],
+                // 425(드리퍼블룬)는 폐허 존과 겹쳐 520(트랜퀼, BST 358)으로 교체했다 — 둘 다
+                // 리서치 단계에서 나온 후보였지만 한 존에만 둘 수 있다.
+                uncommon: [25, 722, 520, 627, 732, 176, 528, 207, 777, 871],
+                rare: [284, 26, 941, 823, 939, 663, 880, 715, 797, 998])
+        case .ruins:
+            return GradePools(
+                common: [607, 971, 355, 957, 436, 999, 562, 854, 708, 92],
+                uncommon: [679, 570, 425, 302, 93, 198, 886, 200, 510, 359],
+                rare: [707, 778, 867, 765, 959, 781, 981, 700, 1000, 887])
         }
     }
 

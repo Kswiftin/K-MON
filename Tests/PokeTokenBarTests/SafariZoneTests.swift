@@ -170,6 +170,69 @@ final class SafariZoneTests: XCTestCase {
         }
     }
 
+    /// 각 존은 등급별 정확히 10종씩, 총 30종이어야 한다 — `encounterPool`의 등급 가중치
+    /// (`commonWeightPercent`/10 종 등)가 이 전제에 기댄다. 6개 존으로 늘어난 뒤(화산지대·
+    /// 폭풍고원·폐허 추가, 2026-09-10) 손으로 큐레이션한 배열이 실수로 9종·11종이 되지 않았는지
+    /// 코드로 고정한다.
+    func testEveryZoneHasExactlyTenSpeciesPerGrade() {
+        for zone in SafariZone.ZoneID.allCases {
+            let entries = SafariZone.encounterPool(for: zone)
+            for rarity: Rarity in [.common, .uncommon, .rare] {
+                XCTAssertEqual(entries.filter { $0.rarity == rarity }.count, 10,
+                               "\(zone)의 \(rarity) 등급이 10종이 아니다")
+            }
+        }
+    }
+
+    /// 존마다 다른 종을 판다 — 한 종이 두 존에 겹쳐 있으면 그 종의 실제 조우 확률이 두 배로
+    /// 뛴다(설계 의도 밖의 유리함). 손으로 고른 90종(기존)+90종(신규 3존) 큐레이션이 실수로
+    /// 겹치지 않았는지 확인한다.
+    func testNoSpeciesAppearsInMoreThanOneZone() {
+        var seenIn: [Int: SafariZone.ZoneID] = [:]
+        for zone in SafariZone.ZoneID.allCases {
+            for speciesID in SafariZone.speciesPool(for: zone) {
+                if let existing = seenIn[speciesID] {
+                    XCTFail("종 \(speciesID)가 \(existing)와 \(zone) 양쪽에 있다")
+                } else {
+                    seenIn[speciesID] = zone
+                }
+            }
+        }
+    }
+
+    /// 사파리존은 레이드 풀과 완전히 분리된 채널이어야 한다 — 겹치면 걷기만 해도 레이드 전용
+    /// 종을 얻을 수 있어 레이드의 존재 의미가 옅어진다(설계 문서 "레이드 풀과 겹치지 않게
+    /// 골랐다"의 전제를 코드로 고정).
+    ///
+    /// **신규 3존만 검사한다.** 이 테스트를 만들며 기존 3존(초원·습지·동굴)에서 이미 8종
+    /// (99·128·171·185·306·409·526·537)이 레이드 풀과 겹치고 있다는 걸 발견했다 — 설계
+    /// 문서의 "겹치지 않게 골랐다"는 주장과 어긋나는 기존 결함이다(이번 3존 추가와는 무관하게
+    /// 전부터 있었다). 신규 존은 처음부터 이 겹침을 0으로 만들어 검증했지만, 기존 3존까지
+    /// 이 테스트에 포함하면 기존 결함 때문에 곧바로 레드가 된다 — 그 결함은 종을 8개 맞바꾸는
+    /// 별도 작업이라 여기서 같이 고치지 않는다(사용자 확인 필요).
+    func testNewZonesDoNotOverlapAnyRaidPool() {
+        let raidPool = Set(RaidBoss.uncommonSpeciesPool + RaidBoss.rareSpeciesPool
+            + RaidBoss.legendarySpeciesPool + RaidBoss.weeklySpeciesPool)
+        for zone: SafariZone.ZoneID in [.volcano, .highland, .ruins] {
+            for speciesID in SafariZone.speciesPool(for: zone) {
+                XCTAssertFalse(raidPool.contains(speciesID),
+                               "종 \(speciesID)(\(zone))가 레이드 풀과 겹친다")
+            }
+        }
+    }
+
+    /// 애니메이션 스프라이트가 없는 종을 큐레이션에 넣으면 조우·박스 화면에서 그 칸만 멈춘
+    /// 그림으로 보인다(`PokemonAssets.spriteGaps` 주석 참고) — 손으로 고른 id가 그 14종에
+    /// 실수로 걸리지 않았는지 확인한다.
+    func testEveryZoneSpeciesHasAnAnimatedSprite() {
+        for zone in SafariZone.ZoneID.allCases {
+            for speciesID in SafariZone.speciesPool(for: zone) {
+                XCTAssertTrue(PokemonAssets.hasAnimatedSprite(speciesID: speciesID),
+                              "종 \(speciesID)(\(zone))는 애니메이션 스프라이트가 없다")
+            }
+        }
+    }
+
     func testDisplayedEncounterPoolMatchesTheWeightedDrawExactly() {
         for zone in SafariZone.ZoneID.allCases {
             let entries = SafariZone.encounterPool(for: zone)

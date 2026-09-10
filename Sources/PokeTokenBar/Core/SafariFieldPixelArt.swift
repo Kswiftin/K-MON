@@ -21,6 +21,12 @@ enum SafariFieldPixelArt {
             return PixelPalette(colors: [0, 0x2E6E8E, 0x4C97BE, 0x1E4A63])
         case .cave:
             return PixelPalette(colors: [0, 0x6E5A46, 0x8A7359, 0x4A3B2C])
+        case .volcano:
+            return PixelPalette(colors: [0, 0x3A2A22, 0xB8441C, 0x1E1512])
+        case .highland:
+            return PixelPalette(colors: [0, 0x7C93A6, 0xB8CBD9, 0x53687A])
+        case .ruins:
+            return PixelPalette(colors: [0, 0x6B6259, 0x8B7FA8, 0x352F2A])
         }
     }
 
@@ -48,6 +54,27 @@ enum SafariFieldPixelArt {
                 tile(["11111112", "11111122", "11111111", "22111111",
                       "22211111", "11111133", "11122111", "11111111"]),
             ]
+        case .volcano:
+            return [
+                tile(["11111111", "11211112", "11131121", "11111111",
+                      "12111211", "11113111", "11111111", "12311121"]),
+                tile(["13111121", "11111111", "11121311", "11111121",
+                      "21112111", "11311111", "11111121", "11111111"]),
+            ]
+        case .highland:
+            return [
+                tile(["11111111", "11211112", "11121121", "11111111",
+                      "12111211", "11112111", "11111111", "12211121"]),
+                tile(["12111121", "11111111", "11121211", "11111122",
+                      "21112111", "11211111", "11111121", "11111111"]),
+            ]
+        case .ruins:
+            return [
+                tile(["11111111", "11211112", "11121131", "11111111",
+                      "13111211", "11112111", "11111111", "11211121"]),
+                tile(["12111131", "11111111", "11121211", "11111122",
+                      "31112111", "11211111", "11111121", "11111111"]),
+            ]
         }
     }
 
@@ -59,6 +86,9 @@ enum SafariFieldPixelArt {
         case .grassland: return PixelPalette(colors: [0, 0x5A3A26, 0x2A6B2E])       // 줄기, 잎
         case .wetland: return PixelPalette(colors: [0, 0x3B7FA8])                    // 물웅덩이
         case .cave: return PixelPalette(colors: [0, 0x7A7A7A, 0x5A5A5A])             // 바위, 그림자
+        case .volcano: return PixelPalette(colors: [0, 0x1E1512, 0xB8441C])          // 용암암석, 마그마
+        case .highland: return PixelPalette(colors: [0, 0xB8CBD9])                   // 바람에 깎인 돌탑
+        case .ruins: return PixelPalette(colors: [0, 0x5A554D, 0x8B7FA8])            // 부서진 기둥, 이끼
         }
     }
 
@@ -73,6 +103,15 @@ enum SafariFieldPixelArt {
         case .cave:
             return tile(["........", "..1111..", ".112211.", "11222211",
                          "12222221", ".112211.", "........", "........"])
+        case .volcano:
+            return tile(["........", "...11...", "..1221..", ".122221.",
+                         "12222221", ".112211.", "........", "........"])
+        case .highland:
+            return tile(["........", "...11...", "...11...", "..1111..",
+                         "..1111..", ".111111.", ".111111.", "........"])
+        case .ruins:
+            return tile(["........", "..11....", "..21....", ".1111...",
+                         ".1211...", "11111...", "11121...", "........"])
         }
     }
 }

@@ -1375,6 +1375,9 @@ struct L {
         case .grassland: "초원"
         case .wetland: "습지"
         case .cave: "동굴"
+        case .volcano: "화산지대"
+        case .highland: "폭풍고원"
+        case .ruins: "폐허"
         }
     }
     func safariZoneVisitsRemaining(_ remaining: Int, cap: Int) -> String {
