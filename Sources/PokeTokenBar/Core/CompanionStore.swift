@@ -2950,15 +2950,22 @@ final class CompanionStore {
     /// 경로가 여럿일 때).
     ///
     /// **0 이하는 원장을 소모하지 않는다.** 소모하면 진 판이 그날의 지급 기회를 태운다.
+    ///
+    /// **이벤트 창(`LiveEventWindow`) 동안은 원장을 아예 안 본다** — `catchRaidBoss` 와 같은
+    /// 예외다(2026-09-11 사용자 보고 — 포획은 무제한인데 별의조각은 그대로라 어색했다). 원장을
+    /// 안 쓰므로 이벤트가 끝난 뒤에도 그 반나절/하루의 정상 한도가 그대로 살아 있다.
     @discardableResult
     func creditRaidReward(_ amount: Int, tier: RaidTier = .one) -> Int {
-        guard amount > 0, !raidRewardClaimedToday(tier: tier) else { return 0 }
-        if tier == .six {
-            let dayKey = RaidBoss.dailyKey(clock())
-            state.raidRewardCountTierSix = sixStarDailyRewardCount + 1
-            state.raidRewardDateTierSix = dayKey
-        } else {
-            state[keyPath: Self.raidRewardDateKeyPath(tier)] = RaidBoss.periodKey(clock())
+        let eventActive = LiveEventWindow.isActive(clock())
+        guard amount > 0, eventActive || !raidRewardClaimedToday(tier: tier) else { return 0 }
+        if !eventActive {
+            if tier == .six {
+                let dayKey = RaidBoss.dailyKey(clock())
+                state.raidRewardCountTierSix = sixStarDailyRewardCount + 1
+                state.raidRewardDateTierSix = dayKey
+            } else {
+                state[keyPath: Self.raidRewardDateKeyPath(tier)] = RaidBoss.periodKey(clock())
+            }
         }
         state.starPieces += amount
         save()
