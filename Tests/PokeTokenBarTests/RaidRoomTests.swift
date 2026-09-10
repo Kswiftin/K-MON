@@ -388,7 +388,7 @@ final class RaidRoomTests: XCTestCase {
         let runners = ids.map { runner("runner", id: $0) }
         let species = RaidBoss.speciesID(at: Date(), tier: tier)
         for seed in UInt64(0)..<100_000 {
-            let caught = RaidBoss.catchAttempts(runners: runners, speciesID: species, seed: seed,
+            let caught = RaidBoss.catchAttempts(runners: runners, speciesID: species, tier: tier, seed: seed,
                                                 finishedRound: finishedRound).filter(\.succeeded).map(\.id)
             if caught == [target] { return seed }
         }

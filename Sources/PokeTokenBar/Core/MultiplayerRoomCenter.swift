@@ -494,7 +494,8 @@ final class MultiplayerRoomCenter {
         let moves = await PokeAPIClient.shared.moveSet(speciesID: speciesID, level: tier.bossLevel,
                                                        types: profile.types)
         return BattleSnapshot(speciesID: speciesID, name: await companion.resolveSpeciesName(speciesID),
-                              trainer: nil, level: tier.bossLevel, nature: nil, isShiny: false,
+                              trainer: nil, level: tier.bossLevel, nature: nil,
+                              isShiny: RaidBoss.isShinyBoss(tier: tier),
                               types: profile.types, base: profile.stats, moves: moves,
                               ability: profile.abilitySlug, storedTeraType: nil, heldItem: nil,
                               weightHectograms: profile.weightHectograms)
@@ -602,6 +603,7 @@ final class MultiplayerRoomCenter {
         guard let species = combatFighters.first(where: { $0.id == RaidBoss.bossID })?.side.snapshot.speciesID
         else { return }
         let attempts = RaidBoss.catchAttempts(runners: runners.filter { !$0.hasLeft }, speciesID: species,
+                                              tier: tier,
                                               seed: raidSeed, finishedRound: raidFinishedRound)
         raidCatchAttempts = attempts
         raidCatcherID = attempts.first(where: \.succeeded)?.id

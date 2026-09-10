@@ -113,12 +113,11 @@ struct RaidView: View {
     /// 여전히 열려 있다. 세 칸을 하나의 문구로 묶으면 그 사실이 안 보인다.
     private func bossPreview(tier: RaidTier) -> some View {
         let species = center.todaysRaidSpeciesID(tier: tier)
-        let rarity = RaidBoss.rarity(speciesID: species)
         let claimed = store.raidRewardClaimedToday(tier: tier)
         return VStack(spacing: 2) {
-            SpriteView(speciesID: species, size: 40)
+            SpriteView(speciesID: species, size: 40, shiny: RaidBoss.isShinyBoss(tier: tier))
             Text("\(tier.rawValue)★").font(.caption2.bold())
-            Text("\(RaidBoss.catchPercent(for: rarity))%")
+            Text("\(RaidBoss.catchPercent(tier: tier, speciesID: species))%")
                 .font(.caption2).foregroundStyle(.purple)
             HStack(spacing: 2) {
                 Image(systemName: claimed ? "checkmark.circle.fill" : "circle")
@@ -408,7 +407,8 @@ struct RaidView: View {
                     // 방금 겨룬 티어의 확률이다 — 티어마다 종·확률이 다르므로(#270) "오늘의 보스"
                     // 하나로 계산하면 다른 티어의 확률이 섞여 나온다. `raidTier`는 정산이 이미
                     // 끝난 뒤라 항상 채워져 있다(nil 은 안전망일 뿐이다).
-                    Text("· \(RaidBoss.catchPercent(for: RaidBoss.rarity(speciesID: center.todaysRaidSpeciesID(tier: center.raidTier ?? .one))))%")
+                    let tier = center.raidTier ?? .one
+                    Text("· \(RaidBoss.catchPercent(tier: tier, speciesID: center.todaysRaidSpeciesID(tier: tier)))%")
                         .font(.caption2).foregroundStyle(.secondary)
                 }
                 ForEach(Array(center.raidCatchAttempts.enumerated()), id: \.element.id) { index, attempt in
