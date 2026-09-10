@@ -1334,7 +1334,10 @@ private struct MoveRelearnCard: View {
 ///
 /// 설명은 두 줄로 자른다 — PokéAPI 설명문은 길이가 제각각이라 안 자르면 행 높이가 기술마다 달라져
 /// 목록이 읽히지 않는다. 잘린 뒷부분은 툴팁이 들고 있다.
-private struct RelearnCandidateRow: View {
+///
+/// `private` 이 아니다 — `PokemonDetailCard`(`PokemonRosterView.swift`)의 "놓친 기술" 목록도
+/// 같은 모양(이름·타입·위력/명중/PP+설명, 탭하면 콜백)이라 이 행을 그대로 재사용한다.
+struct RelearnCandidateRow: View {
     let move: MoveSpec
     let l: L
     let onTap: () -> Void

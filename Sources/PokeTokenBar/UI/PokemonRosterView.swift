@@ -414,6 +414,21 @@ private struct PokemonDetailCard: View {
     @State private var profile: PokemonBattleProfile?
     @State private var line: EvoLine?
     @State private var abilityText: String?
+    /// `mon.learnedMoves` 의 로컬 편집본 — "놓친 기술" 을 이 자리에서 바로 배우면 목록이 즉시
+    /// 갱신돼야 하는데, `mon` 은 호출부(`PokemonRosterView`)가 넘긴 스냅샷이라 스토어를 고쳐도
+    /// 저절로 안 바뀐다. 팝오버를 닫았다 다시 열어야 반영되는 대신, 이 카드 안에서만 앞서간다.
+    @State private var learnedMoves: [MoveSpec]
+    /// 레벨업 때 놓쳤던 기술 — `store.missedLevelUpMoves(for:)` 가 채운다(2026-09-10 사용자 보고:
+    /// 모험 파티 예비 자리는 레벨업으로 기술을 큐에 못 넣는다).
+    @State private var missedMoves: [MoveSpec] = []
+    /// 이미 4개를 배운 상태에서 놓친 기술을 골랐을 때, 뺄 기술을 고르는 중.
+    @State private var replacingCandidate: MoveSpec?
+
+    init(store: CompanionStore, mon: MonState) {
+        self.store = store
+        self.mon = mon
+        _learnedMoves = State(initialValue: mon.learnedMoves)
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -442,10 +457,10 @@ private struct PokemonDetailCard: View {
             if let base = profile?.stats { statGrid(base.effective(level: mon.level, nature: mon.nature)) }
             Divider()
             Text(store.l.movesTitle).font(.caption.bold())
-            if mon.learnedMoves.isEmpty {
+            if learnedMoves.isEmpty {
                 Text(store.l.movesEmpty).font(.caption2).foregroundStyle(.secondary)
             } else {
-                ForEach(mon.learnedMoves) { move in
+                ForEach(learnedMoves) { move in
                     HStack(spacing: 5) {
                         Text(move.name).font(.caption.bold())
                         MoveCategoryIcon(damageClass: move.damageClass, l: store.l)
@@ -457,6 +472,7 @@ private struct PokemonDetailCard: View {
                     }
                 }
             }
+            missedMovesSection
         }
         .padding(14).frame(width: 330)
         .task(id: "\(mon.presentationID)-\(mon.abilitySlug ?? "default")-ko") {
@@ -469,6 +485,76 @@ private struct PokemonDetailCard: View {
                 abilityText = nil
             }
         }
+        .task(id: mon.id) {
+            // 활성 개체는 대상이 아니다 — 그쪽은 `queueMoveLearning` 이 레벨업마다 이미 큐에 넣는다.
+            // 여기서도 조회하면, 막 레벨업해 아직 답하지 않은 큐(`moveLearningPrompt`)와 같은
+            // 기술을 "놓친 기술" 로 동시에 보여주게 되고, 한쪽에서 배우면 다른 쪽이 같은 기술을
+            // 중복으로 또 붙일 수 있다(두 경로가 서로를 모른다). 놓치는 건 **예비 자리(박스
+            // 개체)** 뿐이라 이 조회도 그쪽만 본다.
+            guard mon.id != store.activeMonID else { missedMoves = []; return }
+            missedMoves = await store.missedLevelUpMoves(for: mon)
+        }
+    }
+
+    /// 놓친 기술 목록 + (4개 꽉 찼을 때) 뺄 기술 고르기. 개체마다 조회가 끝나기 전엔 빈 배열이라
+    /// 아무것도 안 그린다 — "놓친 기술 없음" 과 "아직 조회 중" 을 구별하지 않는다(짧은 조회라
+    /// 로딩 문구까지 둘 필요는 없다는 판단, `heldItemRow` 와 같은 절제).
+    @ViewBuilder private var missedMovesSection: some View {
+        if !missedMoves.isEmpty {
+            Divider()
+            Label("놓친 기술", systemImage: "gift.fill")
+                .font(.caption.bold()).foregroundStyle(.pink)
+            Text("모험 중 레벨이 올랐을 때 배울 수 있었지만 놓친 기술입니다. 무료로 배울 수 있어요.")
+                .font(.caption2).foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            VStack(alignment: .leading, spacing: 4) {
+                ForEach(missedMoves) { move in
+                    RelearnCandidateRow(move: move, l: store.l) { pickMissedMove(move) }
+                }
+            }
+            if let replacingCandidate {
+                replacementPicker(for: replacingCandidate)
+            }
+        }
+    }
+
+    private func replacementPicker(for candidate: MoveSpec) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("이미 4개를 배웠어요 — 뺄 기술을 골라 주세요.")
+                .font(.caption2).foregroundStyle(.secondary)
+            ForEach(Array(learnedMoves.enumerated()), id: \.offset) { index, existing in
+                Button {
+                    confirmReplace(candidate: candidate, index: index)
+                } label: {
+                    HStack {
+                        Text(existing.name).font(.caption2)
+                        Spacer()
+                        Image(systemName: "arrow.triangle.2.circlepath").font(.caption2)
+                    }
+                }
+                .buttonStyle(.bordered).controlSize(.mini)
+            }
+            Button("취소") { self.replacingCandidate = nil }
+                .buttonStyle(.borderless).controlSize(.mini)
+        }
+    }
+
+    private func pickMissedMove(_ move: MoveSpec) {
+        guard learnedMoves.count >= 4 else {
+            guard store.learnMissedLevelUpMove(monID: mon.id, move: move) else { return }
+            learnedMoves.append(move)
+            missedMoves.removeAll { $0.id == move.id }
+            return
+        }
+        replacingCandidate = move
+    }
+
+    private func confirmReplace(candidate: MoveSpec, index: Int) {
+        guard learnedMoves.indices.contains(index),
+              store.learnMissedLevelUpMove(monID: mon.id, move: candidate, replacing: index) else { return }
+        learnedMoves[index] = candidate
+        missedMoves.removeAll { $0.id == candidate.id }
+        replacingCandidate = nil
     }
 
     /// 테라 타입 줄. 값이 없으면 그리지 않는다 — `nil` 은 "첫 번째 타입에서 파생" 이라
