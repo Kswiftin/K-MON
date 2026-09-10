@@ -144,7 +144,6 @@ final class TeraShardTests: XCTestCase {
     func testTheShardIsNotAnEvolutionItem() {
         XCTAssertNil(ItemKind.teraShard.evolutionRule)
         XCTAssertFalse(ItemKind.teraShard.isEvolutionItem)
-        XCTAssertFalse(ItemKind.teraShard.isPassive)
         XCTAssertNil(ItemKind.teraShard.roomReaction)
     }
 
@@ -182,7 +181,6 @@ final class TeraShardTests: XCTestCase {
         for kind in ItemKind.allCases {
             XCTAssertEqual(kind.bagUse == .evolutionItem, kind.isEvolutionItem,
                            "\(kind.rawValue) 의 가방 갈래와 진화 규칙이 어긋난다")
-            XCTAssertEqual(kind.bagUse == .passive, kind.isPassive)
             XCTAssertEqual(kind.bagUse == .furniture, kind.roomReaction != nil)
         }
         XCTAssertEqual(ItemKind.teraShard.bagUse, .teraShard)

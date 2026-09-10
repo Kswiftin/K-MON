@@ -690,7 +690,6 @@ final class SaveTransferTests: XCTestCase {
                                           "raidRewardDateTierThree", "raidRewardDateTierFive",
                                           "raidCatchDateTierThree", "raidCatchDateTierFive",
                                           "raidRewardDateTierSix", "raidCatchDateTierSix",
-                                          "weeklyRaidAttemptDate", "weeklyRaidAttemptsToday",
                                           // 사파리존 방문(참여)·포획(보상) 원장 — 레이드 지급·포획
                                           // 원장과 같은 이유로 따로 두고(서로 안 태우게) 병합한다.
                                           "safariZoneVisitDate", "safariZoneVisitsToday",

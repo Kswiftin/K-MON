@@ -83,7 +83,6 @@ final class BerryTests: XCTestCase {
             XCTAssertEqual(kind.bagUse, .heldItem, kind.rawValue)
             XCTAssertNotNil(kind.heldBattleEffect, "\(kind.rawValue) 가 배틀에서 하는 일이 없다")
             XCTAssertNil(kind.evolutionRule, kind.rawValue)
-            XCTAssertFalse(kind.isPassive, kind.rawValue)
             XCTAssertNil(kind.roomReaction, kind.rawValue)
             XCTAssertTrue(MultiplayerValidation.validHeldItem(kind), "피어의 \(kind.rawValue) 가 반려된다")
             XCTAssertTrue(ItemKind.nameable.contains(kind), "\(kind.rawValue) 를 이름으로 못 부른다")

@@ -189,10 +189,8 @@ private struct ItemCard: View {
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(spacing: 6) {
                         Text(l.itemName(kind)).font(.callout.weight(.semibold))
-                        if !kind.isPassive {   // 보유형은 개수 개념이 없음(1회 구매·영구)
-                            Text("×\(count)").font(.caption.weight(.bold))
-                                .foregroundStyle(.secondary).monospacedDigit()
-                        }
+                        Text("×\(count)").font(.caption.weight(.bold))
+                            .foregroundStyle(.secondary).monospacedDigit()
                     }
                     Text(l.itemDescription(kind))
                         .font(.caption).foregroundStyle(.secondary)
@@ -219,7 +217,6 @@ private struct ItemCard: View {
         case .teraShard:      return store.canUseTeraShard
         case .heartScale:     return store.canUseHeartScale
         case .heldItem:       return store.canGiveHeldItem(kind)
-        case .passive:        return false   // 보유형 — 사용 개념 없음(상시 효과)
         case .furniture:      return false
         case .evolutionItem:  return store.canUseEvolutionItem(kind)
         }
@@ -234,7 +231,6 @@ private struct ItemCard: View {
         case .teraShard:  return l.teraShardEffectHint
         case .heartScale: return l.heartScaleEffectHint
         case .heldItem:   return l.heldItemEffectHint(kind)
-        case .passive:    return l.shinyCharmEffectHint
         case .furniture:  return "미니룸에서 배치"
         case .evolutionItem:
             return "진화 가능할 때 사용"
@@ -249,7 +245,6 @@ private struct ItemCard: View {
         case .teraShard:  _ = store.useTeraShard()
         case .heartScale: store.useHeartScale()
         case .heldItem:   store.giveHeldItem(kind)
-        case .passive:    break   // 보유형 — 사용 동작 없음
         case .furniture:  break
         case .evolutionItem: _ = store.useEvolutionItem(kind)
         }
@@ -257,14 +252,7 @@ private struct ItemCard: View {
 
     @ViewBuilder
     private func useControls(_ l: L) -> some View {
-        if kind.isPassive {
-            // 보유형(이로치 부적) — 사용 버튼 대신 상시 효과 표시.
-            HStack(spacing: 6) {
-                Image(systemName: "checkmark.seal.fill").font(.caption2).foregroundStyle(.green)
-                Text(l.shinyCharmEffectHint).font(.caption2.weight(.semibold)).foregroundStyle(.green)
-                Spacer()
-            }
-        } else if discarding {
+        if discarding {
             discardControls(l)
         } else if canUse {
             if confirming {

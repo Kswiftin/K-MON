@@ -66,8 +66,6 @@ enum CompanionAction {
             // 재고 없음(사러 가야 한다)과 거절(이미 그것을 지니고 있다)을 갈라 낸다.
             guard companion.itemCount(kind) > 0 else { return .unavailable }
             return companion.giveHeldItem(kind) ? .heldItemGiven : .refused
-        case .passive:
-            return .notUsedThisWay
         case .furniture:
             // 가방에서 쓰는 물건이 아니다(방에서 배치한다). 이름표(`nameable`)가 가구를 빼므로
             // 이름으로는 여기까지 오지 않지만, 갈래를 비워 두면 그 사실이 코드에 안 남는다.

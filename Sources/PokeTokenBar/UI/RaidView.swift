@@ -193,10 +193,10 @@ struct RaidView: View {
                         .frame(maxWidth: .infinity).padding(.vertical, 6)
                     }
                     .buttonStyle(.bordered)
-                    .disabled(center.phase != .idle || (tier == .six && store.weeklyRaidAttemptsRemaining == 0))
+                    .disabled(center.phase != .idle)
                 }
             }
-            Text("6★ 주간 레이드 · 추천 5명 · 오늘 남은 도전 \(store.weeklyRaidAttemptsRemaining)/2")
+            Text("6★ 주간 레이드 · 추천 5명 · 도전 횟수 제한 없음(보상은 오전·오후 각 1회)")
                 .font(.caption2).foregroundStyle(.secondary)
         }
     }
@@ -219,7 +219,7 @@ struct RaidView: View {
                     Spacer()
                     Button("참가") { center.join(peer) }
                         .controlSize(.small)
-                        .disabled(center.phase != .idle || (parsed.tier == .six && store.weeklyRaidAttemptsRemaining == 0))
+                        .disabled(center.phase != .idle)
                 }
             }
         }

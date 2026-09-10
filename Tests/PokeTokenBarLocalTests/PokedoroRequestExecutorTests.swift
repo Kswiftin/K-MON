@@ -224,8 +224,8 @@ struct PokedoroRequestExecutorTests {
         #expect(store.rareCandyCount == 0, "재고가 줄지 않았으면 실제 경로를 안 밟았다")
     }
 
-    /// 보유형(부적)은 "지금 쓴다" 는 개념이 없다. 재고 부족과 **다른 문구**로 답해야 한다 —
-    /// 사용자가 사러 가야 하는지, 애초에 쓰는 물건이 아닌지 갈린다.
+    /// 가구는 "지금 쓴다" 는 개념이 없다(미니룸에서 배치한다). 재고 부족과 **다른 문구**로 답해야
+    /// 한다 — 사용자가 사러 가야 하는지, 애초에 쓰는 물건이 아닌지 갈린다.
     @Test func testAHeldItemSaysItIsNotUsedThatWay() async {
         let directory = makeDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -233,7 +233,7 @@ struct PokedoroRequestExecutorTests {
         let store = await makeStore(in: directory, clock: clock)
 
         let reply = await PokedoroRequestExecutor(timer: FocusTimer(), companion: store)
-            .execute(request(.use(item: .shinyCharm), at: clock.now))
+            .execute(request(.use(item: .roomBed), at: clock.now))
 
         #expect(!reply.succeeded)
         #expect(!reply.message.contains("없다"), "재고 문구를 재사용하면 안 된다: \(reply.message)")

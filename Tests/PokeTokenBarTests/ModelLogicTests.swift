@@ -414,7 +414,6 @@ final class EvolutionItemCoverageTests: XCTestCase {
     func testNewStonesArePurchasable() {
         for kind in [ItemKind.shinyStone, .duskStone, .dawnStone] {
             XCTAssertEqual(kind.shopPrice, 500, "\(kind) 가격이 기존 돌과 달라졌다")
-            XCTAssertFalse(kind.isPassive)
         }
     }
 
@@ -423,7 +422,6 @@ final class EvolutionItemCoverageTests: XCTestCase {
     func testEveryEvolutionItemIsSoldAtTheSamePrice() {
         for kind in ItemKind.allCases where kind.isEvolutionItem {
             XCTAssertEqual(kind.shopPrice, ItemKind.evolutionItemPrice, "\(kind) 가격이 다르다")
-            XCTAssertFalse(kind.isPassive, "\(kind) 는 쓰면 소모되는 아이템이다")
         }
     }
 }
