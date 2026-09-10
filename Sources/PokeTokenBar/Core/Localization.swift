@@ -1015,8 +1015,7 @@ struct L {
     var trainerLevelLabel: String { "트레이너" }
     var notifMissionDoneTitle: String { "🎯 미션 완료!" }
     func notifMissionDoneBody(_ name: String, _ stardust: Int) -> String {
-        let amount = GameNumberFormatter.compact(stardust)
-        return "\(name) — 별의조각 \(amount) 받았어요!"
+        "\(name) — 알 \(stardust)개를 받았어요!"
     }
     /// 목표 이름 — 미션과 시즌 챌린지가 **같은 문구를 공유**한다. 두 곳에 두면 한쪽만 고쳐진다.
     ///
@@ -1032,6 +1031,12 @@ struct L {
             return "집중 \(target)분"
         case .graduations:
             return "졸업 \(target)회"
+        case .battles:
+            return "배틀 \(target)회"
+        case .dungeonClears:
+            return "오늘의 던전 클리어 \(target)회"
+        case .dexRegistrations:
+            return "새로운 포켓몬 도감 등록 \(target)회"
         }
     }
 
@@ -1376,6 +1381,11 @@ struct L {
         "오늘 남은 방문 \(remaining)/\(cap)"
     }
     var safariZoneEnter: String { "입장" }
+    var safariZoneEncounterPool: String { "출현 포켓몬" }
+    func safariZoneEncounterChance(_ percent: Double) -> String {
+        String(format: "%.1f%%", percent)
+    }
+    var safariZoneUndiscoveredPokemon: String { "아직 잡지 못한 포켓몬" }
     var safariZoneNoVisitsLeftToday: String { "오늘의 방문 횟수를 다 썼어요. 내일 다시 와 주세요." }
     var safariZoneNoMoreCatchesTodayBanner: String {
         "오늘의 포획 기회를 다 썼어요. 산책은 계속할 수 있어요."

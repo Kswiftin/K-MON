@@ -6,6 +6,7 @@ import Foundation
 /// 저장되지 않으니 case 이름을 나중에 바꿔도 기존 세이브가 깨지지 않는다.
 enum MissionEvent: Sendable {
     case focusMinutes, adventures, graduations
+    case battles, dungeonClears, dexRegistrations
 }
 
 enum MissionPeriod: Sendable {
@@ -60,7 +61,7 @@ struct Mission: Identifiable, Sendable, Goal {
     let period: MissionPeriod
     let event: MissionEvent
     let target: Int
-    /// 완료 보상 — **기존 재화인 별의조각**. 새 재화를 만들면 상점·판돈 경제가 두 갈래로 쪼개진다.
+    /// 완료 보상 알 개수. 일일 미션은 완료 즉시 보관 알로 지급한다.
     let reward: Int
 }
 
@@ -73,27 +74,41 @@ struct Mission: Identifiable, Sendable, Goal {
 /// 별도의 "수령함" 플래그가 아니라 **목표값 클램프**다: 진행도가 목표를 넘을 수 없으니
 /// 완료 순간을 두 번 지날 수 없다.
 struct MissionBoard: Codable, Sendable, Equatable {
-    /// 조절 손잡이는 이 표 하나뿐이다. 기준선 — 25분 모험 200⭐ · 90분 5,400⭐ · 사탕 5,000⭐ · 알 20,000⭐.
-    /// 주간 상한은 알 한 개 값보다 낮게 유지한다(`MissionBoardTests` 가 강제).
+    /// 일일 미션 후보 풀. 아래 후보 중 사용자·날짜별로 세 개만 배정된다.
     static let catalog: [Mission] = [
-        Mission(id: "dailyAdventures", period: .daily, event: .adventures, target: 2, reward: 300),
-        Mission(id: "dailyFocus", period: .daily, event: .focusMinutes, target: 60, reward: 500),
-        Mission(id: "weeklyFocus", period: .weekly, event: .focusMinutes, target: 300, reward: 3_000),
-        Mission(id: "weeklyGraduation", period: .weekly, event: .graduations, target: 1, reward: 2_000)
+        Mission(id: "dailyFocus25", period: .daily, event: .focusMinutes, target: 25, reward: 1),
+        Mission(id: "dailyAdventure", period: .daily, event: .adventures, target: 1, reward: 1),
+        Mission(id: "dailyBattle", period: .daily, event: .battles, target: 1, reward: 1),
+        Mission(id: "dailyDungeon", period: .daily, event: .dungeonClears, target: 1, reward: 1),
+        Mission(id: "dailyDexRegistration", period: .daily, event: .dexRegistrations, target: 1, reward: 1)
     ]
 
     var dayKey = ""
     var weekKey = ""
     var daily: [String: Int] = [:]
     var weekly: [String: Int] = [:]
+    var assignedDayKey = ""
+    var assignedDailyIDs: [String] = []
+
+    init() {}
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        dayKey = (try? c.decodeIfPresent(String.self, forKey: .dayKey)) ?? ""
+        weekKey = (try? c.decodeIfPresent(String.self, forKey: .weekKey)) ?? ""
+        daily = (try? c.decodeIfPresent([String: Int].self, forKey: .daily)) ?? [:]
+        weekly = (try? c.decodeIfPresent([String: Int].self, forKey: .weekly)) ?? [:]
+        assignedDayKey = (try? c.decodeIfPresent(String.self, forKey: .assignedDayKey)) ?? ""
+        assignedDailyIDs = (try? c.decodeIfPresent([String].self, forKey: .assignedDailyIDs)) ?? []
+    }
 
     /// 기록 — 갱신하고, 진행도를 올리고, **이번에 완료된** 미션만 반환한다.
     /// 호출부는 반환된 것에만 보상을 지급하면 되므로 "이미 줬나"를 따로 기억할 필요가 없다.
     mutating func record(_ event: MissionEvent, _ amount: Int,
-                         dayKey: String, weekKey: String) -> [Mission] {
+                         dayKey: String, weekKey: String, assignmentSeed: String = "") -> [Mission] {
         roll(dayKey: dayKey, weekKey: weekKey)
         guard amount > 0 else { return [] }
-        return Self.missions(in: .daily).advance(event, amount, in: &daily)
+        return currentDailyMissions(dayKey: dayKey, seed: assignmentSeed).advance(event, amount, in: &daily)
              + Self.missions(in: .weekly).advance(event, amount, in: &weekly)
     }
 
@@ -112,9 +127,41 @@ struct MissionBoard: Codable, Sendable, Equatable {
         weekKey = SaveTransfer.clampedKey(weekKey)
         daily = Self.missions(in: .daily).normalized(daily)
         weekly = Self.missions(in: .weekly).normalized(weekly)
+        assignedDayKey = SaveTransfer.clampedKey(assignedDayKey)
+        let valid = Set(Self.missions(in: .daily).map(\.id))
+        assignedDailyIDs = Array(assignedDailyIDs.filter(valid.contains).prefix(3))
+        if Set(assignedDailyIDs).count != assignedDailyIDs.count { assignedDailyIDs = [] }
     }
 
-    var canonical: String { "d\(dayKey)|w\(weekKey)|\(daily.canonicalCounts)|\(weekly.canonicalCounts)" }
+    var canonical: String {
+        let assignment = assignedDailyIDs.isEmpty ? "" : "|a\(assignedDayKey):\(assignedDailyIDs.joined(separator: ","))"
+        return "d\(dayKey)|w\(weekKey)|\(daily.canonicalCounts)|\(weekly.canonicalCounts)\(assignment)"
+    }
+
+    mutating func currentDailyMissions(dayKey: String, seed: String) -> [Mission] {
+        if assignedDayKey != dayKey || assignedDailyIDs.count != 3 {
+            assignedDayKey = dayKey
+            assignedDailyIDs = Self.assignedDailyMissions(dayKey: dayKey, seed: seed).map(\.id)
+        }
+        return assignedDailyIDs.compactMap { id in Self.catalog.first { $0.id == id } }
+    }
+
+    /// 같은 사용자에게는 하루 동안 같은 세 개, 날짜나 사용자가 달라지면 다른 조합을 준다.
+    /// Swift `Hasher`는 실행마다 시드가 달라 재실행 시 목록이 바뀌므로 고정 FNV-1a를 쓴다.
+    static func assignedDailyMissions(dayKey: String, seed: String) -> [Mission] {
+        var value: UInt64 = 14_695_981_039_346_656_037
+        for byte in "\(seed)|\(dayKey)".utf8 {
+            value ^= UInt64(byte)
+            value &*= 1_099_511_628_211
+        }
+        var candidates = missions(in: .daily)
+        var selected: [Mission] = []
+        while !candidates.isEmpty && selected.count < 3 {
+            value = value &* 6_364_136_223_846_793_005 &+ 1_442_695_040_888_963_407
+            selected.append(candidates.remove(at: Int(value % UInt64(candidates.count))))
+        }
+        return selected
+    }
 
     private mutating func roll(dayKey: String, weekKey: String) {
         // 두 주기를 따로 본다 — 같이 비우면 주간 목표가 매일 초기화돼 도달할 수 없게 된다.

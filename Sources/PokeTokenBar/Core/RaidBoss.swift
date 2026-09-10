@@ -6,7 +6,7 @@ import Foundation
 /// 스케일하지 않는다). 대신 티어가 필요한 머릿수를 정하고, LAN 이라 사람이 안 모일 수 있으니
 /// 1★ 는 혼자서도 잡히게 둔다 — 그게 "이웃이 없으면 콘텐츠가 0" 을 막는 자리다.
 enum RaidTier: Int, Codable, Sendable, CaseIterable {
-    case one = 1, three = 3, five = 5
+    case one = 1, three = 3, five = 5, six = 6
 
     /// 보스 레벨. **HP 가 절대값이라 레벨은 보스의 화력만 정한다** — 손잡이가 둘로 갈리지 않는다.
     /// 파티 레벨(50)을 넘지 않게 둔다. 넘기면 화력이 HP 표와 무관하게 튀어 5★ 가 첫 턴에 한 명을
@@ -16,6 +16,7 @@ enum RaidTier: Int, Codable, Sendable, CaseIterable {
         case .one: 10
         case .three: 25
         case .five: 40
+        case .six: 50
         }
     }
 
@@ -27,6 +28,7 @@ enum RaidTier: Int, Codable, Sendable, CaseIterable {
         case .one: 400
         case .three: 1_600
         case .five: 2_800
+        case .six: 6_000
         }
     }
 
@@ -42,6 +44,7 @@ enum RaidTier: Int, Codable, Sendable, CaseIterable {
         case .one: 2_000
         case .three: 5_000
         case .five: 13_000
+        case .six: 20_000
         }
     }
 
@@ -55,7 +58,8 @@ enum RaidTier: Int, Codable, Sendable, CaseIterable {
     /// 방 목록이 그리는 권장 인원. **표에서 파생한다** — 따로 적어 두면 HP 를 조정할 때 한쪽만
     /// 바뀌어 화면이 거짓말을 한다.
     var recommendedRunners: Int {
-        max(1, Int((Double(bossHP) / Double(RaidBoss.runnerDamageBudget)).rounded(.up)))
+        if self == .six { return 5 }
+        return max(1, Int((Double(bossHP) / Double(RaidBoss.runnerDamageBudget)).rounded(.up)))
     }
 }
 
@@ -170,6 +174,7 @@ enum RaidBoss {
     static let legendarySpeciesPool = [
         150, 249, 250, 384, 483, 484, 487, 643, 644, 646
     ]
+    static let weeklySpeciesPool = [464, 466, 467, 472, 473, 474, 475, 476]
 
     /// 티어가 뽑는 풀. `speciesID(dayKey:tier:)` 가 이 풀 안에서만 고른다.
     static func speciesPool(for tier: RaidTier) -> [Int] {
@@ -177,6 +182,7 @@ enum RaidBoss {
         case .one: uncommonSpeciesPool
         case .three: rareSpeciesPool
         case .five: legendarySpeciesPool
+        case .six: weeklySpeciesPool
         }
     }
 
@@ -229,7 +235,17 @@ enum RaidBoss {
     }
 
     static func speciesID(at date: Date, tier: RaidTier, calendar: Calendar = .current) -> Int {
-        speciesID(dayKey: periodKey(date, calendar: calendar), tier: tier)
+        speciesID(dayKey: tier == .six ? weeklyPeriodKey(date, calendar: calendar)
+                                      : periodKey(date, calendar: calendar), tier: tier)
+    }
+
+    static func weeklyPeriodKey(_ date: Date, calendar: Calendar = .current) -> String {
+        let parts = calendar.dateComponents([.yearForWeekOfYear, .weekOfYear], from: date)
+        return String(format: "%04d-W%02d", parts.yearForWeekOfYear ?? 0, parts.weekOfYear ?? 0)
+    }
+
+    static func bossKey(at date: Date, tier: RaidTier) -> String {
+        tier == .six ? weeklyPeriodKey(date) : periodKey(date)
     }
 
     /// 참가자마다 독립 포획 판정을 하되 모든 피어가 같은 순서와 결과를 계산한다.

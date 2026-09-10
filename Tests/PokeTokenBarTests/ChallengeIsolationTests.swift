@@ -1,16 +1,15 @@
+import Foundation
 import XCTest
 @testable import PokeTokenBar
 
 final class ChallengeIsolationTests: XCTestCase {
-    func testFriendActivitiesNeverRenderInsideTheChallengeTab() {
-        XCTAssertFalse(ChallengeView.presentsPokeathlon(phase: .tournament, activity: .tournament))
-        XCTAssertFalse(ChallengeView.presentsPokeathlon(phase: .battling, activity: .battle))
-        XCTAssertFalse(ChallengeView.presentsPokeathlon(phase: .joined, activity: .gym))
-    }
-
-    func testChallengeActivitiesRemainInTheChallengeTab() {
-        XCTAssertTrue(ChallengeView.presentsPokeathlon(phase: .idle, activity: nil))
-        XCTAssertTrue(ChallengeView.presentsPokeathlon(phase: .joined, activity: .pokeathlon))
-        XCTAssertTrue(ChallengeView.presentsPokeathlon(phase: .pokemonQuiz, activity: .pokemonQuiz))
+    func testChallengeScreenNoLongerExposesPokeathlonOrQuiz() throws {
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+            .deletingLastPathComponent().deletingLastPathComponent()
+        let source = try String(contentsOf: root.appendingPathComponent("Sources/PokeTokenBar/UI/ChallengeView.swift"),
+                                encoding: .utf8)
+        XCTAssertFalse(source.contains("PokeathlonView"))
+        XCTAssertFalse(source.contains("createPokeathlonRoom"))
+        XCTAssertFalse(source.contains("createPokemonQuizRoom"))
     }
 }

@@ -2676,6 +2676,7 @@ struct CompanionState: Codable, Sendable {
     var raidRewardDateTierThree = ""
     /// 5★ 전용 지급 원장 — `raidRewardDate` 와 같은 규칙, 다른 티어.
     var raidRewardDateTierFive = ""
+    var raidRewardDateTierSix = ""
     /// 레이드 보스를 마지막으로 잡은 오전/오후 키 — **1★ 전용**. 구간당 한 마리의 멱등 가드이고
     /// 같은 이유로 서명 대상이다(`rc` 세그먼트).
     ///
@@ -2687,6 +2688,9 @@ struct CompanionState: Codable, Sendable {
     var raidCatchDateTierThree = ""
     /// 5★ 전용 포획 원장 — `raidCatchDate` 와 같은 규칙, 다른 티어.
     var raidCatchDateTierFive = ""
+    var raidCatchDateTierSix = ""
+    var weeklyRaidAttemptDate = ""
+    var weeklyRaidAttemptsToday = 0
     /// 사파리존 하루 방문(참여) 원장 — `gymDefenseRewardDate`/`Today` 와 같은 날짜+카운트 모양.
     /// 방문 자체(걷기·볼)를 몇 번 할 수 있는지를 잠근다. 포획(보상) 원장과 분리하는 이유는
     /// `raidRewardDate` vs `raidCatchDate` 와 같다 — 하나로 합치면 "얼마나 노는지"와 "얼마나
@@ -2790,9 +2794,13 @@ struct CompanionState: Codable, Sendable {
         raidRewardDate     = c.lenient(String.self, forKey: .raidRewardDate, default: "")
         raidRewardDateTierThree = c.lenient(String.self, forKey: .raidRewardDateTierThree, default: "")
         raidRewardDateTierFive  = c.lenient(String.self, forKey: .raidRewardDateTierFive, default: "")
+        raidRewardDateTierSix   = c.lenient(String.self, forKey: .raidRewardDateTierSix, default: "")
         raidCatchDate      = c.lenient(String.self, forKey: .raidCatchDate, default: "")
         raidCatchDateTierThree  = c.lenient(String.self, forKey: .raidCatchDateTierThree, default: "")
         raidCatchDateTierFive   = c.lenient(String.self, forKey: .raidCatchDateTierFive, default: "")
+        raidCatchDateTierSix    = c.lenient(String.self, forKey: .raidCatchDateTierSix, default: "")
+        weeklyRaidAttemptDate   = c.lenient(String.self, forKey: .weeklyRaidAttemptDate, default: "")
+        weeklyRaidAttemptsToday = c.lenient(Int.self, forKey: .weeklyRaidAttemptsToday, default: 0)
         safariZoneVisitDate     = c.lenient(String.self, forKey: .safariZoneVisitDate, default: "")
         safariZoneVisitsToday   = c.lenient(Int.self, forKey: .safariZoneVisitsToday, default: 0)
         safariZoneCatchDate     = c.lenient(String.self, forKey: .safariZoneCatchDate, default: "")

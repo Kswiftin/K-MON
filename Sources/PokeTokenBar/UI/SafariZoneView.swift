@@ -17,6 +17,7 @@ struct SafariZoneView: View {
     /// 것처럼 보이던 결함의 근본원인). 부모가 들고 있어야 "배너를 보여주는 동안은 걷기 화면으로
     /// 넘어가지 않는다"를 조건에 반영할 수 있다.
     @State private var pendingOutcome: SafariOutcome?
+    @State private var encounterNames: [Int: String] = [:]
 
     private var l: L { store.l }
 
@@ -59,24 +60,67 @@ struct SafariZoneView: View {
                 zoneCard(zone)
             }
         }
+        .task { await loadEncounterNames() }
     }
 
     private func zoneCard(_ zone: SafariZone.ZoneID) -> some View {
-        Button {
-            store.beginSafariZoneVisit(zone: zone)
-        } label: {
-            HStack {
-                Text(l.safariZoneName(zone))
-                Spacer()
-                Text(l.safariZoneEnter).font(.caption2).foregroundStyle(.secondary)
-                Image(systemName: "chevron.right").font(.caption2)
+        VStack(alignment: .leading, spacing: 8) {
+            Button {
+                store.beginSafariZoneVisit(zone: zone)
+            } label: {
+                HStack {
+                    Text(l.safariZoneName(zone)).fontWeight(.semibold)
+                    Spacer()
+                    Text(l.safariZoneEnter).font(.caption2).foregroundStyle(.secondary)
+                    Image(systemName: "chevron.right").font(.caption2)
+                }
             }
-            .padding(10)
-            .frame(maxWidth: .infinity)
-            .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 8))
+            .buttonStyle(.plain)
+            .disabled(store.safariZoneVisitsRemainingToday <= 0)
+
+            Text(l.safariZoneEncounterPool)
+                .font(.caption2.bold())
+                .foregroundStyle(.secondary)
+
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 4), count: 5), spacing: 7) {
+                ForEach(SafariZone.encounterPool(for: zone), id: \.speciesID) { entry in
+                    encounterCell(entry)
+                }
+            }
         }
-        .buttonStyle(.plain)
-        .disabled(store.safariZoneVisitsRemainingToday <= 0)
+        .padding(10)
+        .frame(maxWidth: .infinity)
+        .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 8))
+    }
+
+    private func encounterCell(_ entry: SafariZone.EncounterPoolEntry) -> some View {
+        let discovered = store.isSpeciesAlreadyOwned(entry.speciesID)
+        return VStack(spacing: 1) {
+            SpriteView(speciesID: entry.speciesID, size: 34, animated: false,
+                       fallbackLabel: "#\(entry.speciesID)")
+                .grayscale(discovered ? 0 : 1)
+                .opacity(discovered ? 1 : 0.38)
+            Text(encounterNames[entry.speciesID] ?? "#\(entry.speciesID)")
+                .font(.system(size: 10, weight: .medium))
+                .lineLimit(1)
+                .minimumScaleFactor(0.9)
+            Text(l.safariZoneEncounterChance(entry.chancePercent))
+                .font(.system(size: 10, weight: .semibold, design: .rounded))
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(discovered
+            ? "\(encounterNames[entry.speciesID] ?? "#\(entry.speciesID)"), \(l.safariZoneEncounterChance(entry.chancePercent))"
+            : "\(l.safariZoneUndiscoveredPokemon), \(l.safariZoneEncounterChance(entry.chancePercent))")
+    }
+
+    private func loadEncounterNames() async {
+        let species = Set(SafariZone.ZoneID.allCases.flatMap { SafariZone.speciesPool(for: $0) }).sorted()
+        for speciesID in species where encounterNames[speciesID] == nil {
+            guard !Task.isCancelled else { return }
+            encounterNames[speciesID] = await store.safariEncounterName(speciesID)
+        }
     }
 
     private func walkSummary(_ visit: SafariVisit) -> some View {

@@ -689,6 +689,8 @@ final class SaveTransferTests: XCTestCase {
                                           // 이유(계정 원장, 병합)로 여기 함께 둔다.
                                           "raidRewardDateTierThree", "raidRewardDateTierFive",
                                           "raidCatchDateTierThree", "raidCatchDateTierFive",
+                                          "raidRewardDateTierSix", "raidCatchDateTierSix",
+                                          "weeklyRaidAttemptDate", "weeklyRaidAttemptsToday",
                                           // 사파리존 방문(참여)·포획(보상) 원장 — 레이드 지급·포획
                                           // 원장과 같은 이유로 따로 두고(서로 안 태우게) 병합한다.
                                           "safariZoneVisitDate", "safariZoneVisitsToday",

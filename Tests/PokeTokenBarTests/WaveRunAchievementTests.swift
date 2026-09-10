@@ -56,16 +56,19 @@ final class WaveRunAchievementTests: XCTestCase {
     func testClearingAWaveRunGrantsOneEgg() {
         let store = makeStore()
         XCTAssertEqual(store.state.focusEggs, 0)
-        store.recordRunResult(reachedWave: RogueRun.finalWave, cleared: true)
-        XCTAssertEqual(store.state.focusEggs, 1, "클리어가 알 하나를 안 냈다")
+        XCTAssertTrue(store.recordRunResult(reachedWave: RogueRun.finalWave, cleared: true),
+                      "클리어가 일일 던전 알을 지급하지 않았다")
+        // 오늘의 랜덤 미션에 던전이 포함됐다면 별도의 미션 알도 함께 지급된다.
+        XCTAssertTrue((1...2).contains(store.state.focusEggs), "던전·미션 외 알이 함께 지급됐다")
     }
 
     /// 같은 날 두 번째 클리어는 알을 또 주지 않는다 — `waveRunEggRewardDate` 원장이 하루 한 번을 막는다.
     func testClearingTwiceInOneDayGrantsOnlyOneEgg() {
         let store = makeStore()
         store.recordRunResult(reachedWave: RogueRun.finalWave, cleared: true)
+        let afterFirstClear = store.state.focusEggs
         store.recordRunResult(reachedWave: RogueRun.finalWave, cleared: true)
-        XCTAssertEqual(store.state.focusEggs, 1)
+        XCTAssertEqual(store.state.focusEggs, afterFirstClear)
     }
 
     /// 실패한 판은 알을 주지 않는다.

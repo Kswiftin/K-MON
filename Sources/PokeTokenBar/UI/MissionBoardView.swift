@@ -40,7 +40,7 @@ struct MissionBoardView: View {
                         .foregroundStyle(done ? .secondary : .primary)
                     Spacer(minLength: 4)
                     if done {
-                        Text("✓ \(GameNumberFormatter.compact(row.mission.reward)) ⭐")
+                        Text("✓ 🥚 ×\(row.mission.reward)")
                             .font(.caption2.weight(.semibold)).foregroundStyle(.green)
                             .lineLimit(1)
                     } else {

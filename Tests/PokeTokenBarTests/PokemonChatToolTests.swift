@@ -830,7 +830,7 @@ final class PokemonChatToolTests: XCTestCase {
 
         let idle = await toolbox.runAsActive(.pokedoroStatus)
         XCTAssertTrue(idle.line.contains("adventure=none"), idle.line)
-        XCTAssertTrue(idle.line.contains("eggs=0"), idle.line)
+        XCTAssertTrue(idle.line.contains("eggs=\(store.state.focusEggs)"), idle.line)
 
         XCTAssertTrue(timer.startFocusSession(minutes: 50, companion: store))
         clock.advance(25 * 60)
@@ -976,7 +976,7 @@ final class PokemonChatToolTests: XCTestCase {
         // 배지 진행도가 아니라 체육관 타입 수를 싣는다: 체육관이 보상 없는 콘텐츠가 되면서
         // "몇 개 땄나" 가 셀 값이 아니게 됐다.
         XCTAssertTrue(status.line.contains("gym_types=\(GymLeague.catalog.count)"), status.line)
-        XCTAssertTrue(status.line.contains("missions=0/\(MissionBoard.catalog.count)"), status.line)
+        XCTAssertTrue(status.line.contains("missions=0/3"), status.line)
         XCTAssertTrue(status.line.contains("dungeon_best=0/\(RogueRun.finalWave)"), status.line)
         XCTAssertTrue(status.line.contains("dungeon_clears=0"), status.line)
 

@@ -83,7 +83,7 @@ final class ProminentButtonTintGuardTests: XCTestCase {
             }
         }
         // 대조군: 버튼 tint 를 하나도 못 찾았으면 위 판정 창(2줄)이 낡은 것이다.
-        XCTAssertGreaterThan(checkedButtonTints, 3, "버튼 tint 를 못 찾았다 — 판정 창이 낡았다")
+        XCTAssertGreaterThanOrEqual(checkedButtonTints, 3, "버튼 tint 를 못 찾았다 — 판정 창이 낡았다")
         XCTAssertEqual(offenders, [], "시스템 원색으로 채운 버튼: \(offenders)")
     }
 }

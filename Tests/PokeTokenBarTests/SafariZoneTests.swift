@@ -170,6 +170,20 @@ final class SafariZoneTests: XCTestCase {
         }
     }
 
+    func testDisplayedEncounterPoolMatchesTheWeightedDrawExactly() {
+        for zone in SafariZone.ZoneID.allCases {
+            let entries = SafariZone.encounterPool(for: zone)
+            XCTAssertEqual(entries.map(\.speciesID), SafariZone.speciesPool(for: zone))
+            XCTAssertEqual(entries.reduce(0) { $0 + $1.chancePercent }, 100, accuracy: 0.0001)
+            XCTAssertEqual(entries.filter { $0.rarity == .common }.map(\.chancePercent),
+                           Array(repeating: 7.5, count: 10))
+            XCTAssertEqual(entries.filter { $0.rarity == .uncommon }.map(\.chancePercent),
+                           Array(repeating: 1.8, count: 10))
+            XCTAssertEqual(entries.filter { $0.rarity == .rare }.map(\.chancePercent),
+                           Array(repeating: 0.7, count: 10))
+        }
+    }
+
     /// 등급 가중 추첨이 실제로 일반 75%·고급 18%·희귀 7% 근처로 수렴하는지 — 균등 추첨으로
     /// 되돌리는 회귀가 있으면 이 테스트가 걸린다(균등이면 존마다 등급 수 비율로만 나온다).
     func testChooseEncounterGradeWeightsConverge() {

@@ -94,8 +94,8 @@ struct RaidView: View {
     private var todaysBossCard: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(RaidHalfDay.at(Date()) == .morning
-                 ? "오전 레이드 보스"
-                 : "오후 레이드 보스")
+                 ? "오전 레이드 보스 · 6★는 이번 주 고정"
+                 : "오후 레이드 보스 · 6★는 이번 주 고정")
                 .font(.caption2).foregroundStyle(.secondary)
             HStack(spacing: 10) {
                 ForEach(RaidTier.allCases, id: \.rawValue) { tier in bossPreview(tier: tier) }
@@ -194,9 +194,11 @@ struct RaidView: View {
                         .frame(maxWidth: .infinity).padding(.vertical, 6)
                     }
                     .buttonStyle(.bordered)
-                    .disabled(center.phase != .idle)
+                    .disabled(center.phase != .idle || (tier == .six && store.weeklyRaidAttemptsRemaining == 0))
                 }
             }
+            Text("6★ 주간 레이드 · 추천 5명 · 오늘 남은 도전 \(store.weeklyRaidAttemptsRemaining)/2")
+                .font(.caption2).foregroundStyle(.secondary)
         }
     }
 
@@ -217,7 +219,8 @@ struct RaidView: View {
                     Text(parsed.trainerName).font(.caption).lineLimit(1)
                     Spacer()
                     Button("참가") { center.join(peer) }
-                        .controlSize(.small).disabled(center.phase != .idle)
+                        .controlSize(.small)
+                        .disabled(center.phase != .idle || (parsed.tier == .six && store.weeklyRaidAttemptsRemaining == 0))
                 }
             }
         }
