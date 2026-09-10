@@ -2951,17 +2951,22 @@ final class CompanionStore {
     /// **불리언이 아니다.** 화면이 결과를 문장으로 옮겨야 하는데, 실패(`unavailable`)와 "오늘은 이미
     /// 잡았다"(`claimedToday`)는 사용자가 할 다음 일이 다르고, 성공도 상자와 빈 동행 자리가 다른
     /// 문장이다(`RaidCatchResult`).
+    ///
+    /// **이벤트 창(`LiveEventWindow`) 동안은 원장을 아예 안 본다** — "포획 추첨 무제한" 이라 판
+    /// 마다 다시 잡을 수 있어야 한다. 원장을 쓰지도 않으므로 이벤트가 끝난 뒤에도 그날 남은
+    /// 정상 한도(반나절/하루 1회)가 그대로 살아 있다.
     @discardableResult
     func catchRaidBoss(speciesID: Int, tier: RaidTier = .one) async -> RaidCatchResult {
+        let eventActive = LiveEventWindow.isActive(clock())
         // 원장을 **먼저 본다** — 여기서 걸린 판은 네트워크를 건드리지도 않았으므로 "불러오지 못했다"
         // 가 아니라 "오늘은 이미 잡았다" 다. 두 사유를 한 값으로 접으면 화면이 반드시 하나를 틀린다.
-        guard !raidCatchClaimedToday(tier: tier) else { return .claimedToday }
+        guard eventActive || !raidCatchClaimedToday(tier: tier) else { return .claimedToday }
         // 그릴 수 없는 번호는 잡지 않는다 — 박스에 빈 칸이 영구히 남는다(교환 경계와 같은 계약).
         guard PokemonAssets.hasAnimatedSprite(speciesID: speciesID),
               let line = try? await provider.line(baseSpeciesID: speciesID) else { return .unavailable }
         // 원장은 **개체를 만들기 직전에** 찍는다. 위 가드보다 먼저 찍으면 라인 조회 실패가 그날의
         // 기회를 태우고, 뒤에 찍으면 네트워크 창 동안 들어온 두 번째 판이 한 마리를 더 넣는다.
-        guard claimRaidCatch(tier: tier) else { return .claimedToday }
+        guard eventActive || claimRaidCatch(tier: tier) else { return .claimedToday }
         return commitCaughtMon(speciesID: speciesID, line: line, source: .raid,
                                presetShiny: RaidBoss.isShinyBoss(tier: tier) ? true : nil)
     }
@@ -3032,7 +3037,7 @@ final class CompanionStore {
                                  presetGender: PokemonGender? = nil,
                                  presetShiny: Bool? = nil) -> RaidCatchResult {
         let wasRegistered = isSpeciesAlreadyOwned(speciesID)
-        let isShiny = presetShiny ?? Self.rollsShiny(roll: rng.next())
+        let isShiny = presetShiny ?? Self.rollsShiny(roll: rng.next(), denominator: shinyDenominator)
         let nature = PokemonNature.allCases[Int(rng.next() % UInt64(PokemonNature.allCases.count))]
         let gender = presetGender ?? PokemonGender.from(genderRate: line.genderRate, roll: rng.next())
         let caught = MonState(baseID: speciesID, pathIDs: [speciesID], plannedPathIDs: [speciesID],
@@ -4093,7 +4098,7 @@ final class CompanionStore {
         // 보증이 남아 이후 모든 부화에 적용됐다(`hatchCore` 만 소비했다).
         state.eggTier = nil
         // rng 는 확정이든 아니든 항상 굴린다 — 소비량이 갈리면 같은 시드가 다른 결과를 낸다.
-        let rolledShiny = Self.rollsShiny(roll: rng.next())
+        let rolledShiny = Self.rollsShiny(roll: rng.next(), denominator: shinyDenominator)
         let shiny = consumeShinyCharge() || rolledShiny
         let nature = PokemonNature.allCases[Int(rng.next() % UInt64(PokemonNature.allCases.count))]
         let gender = PokemonGender.from(genderRate: line.genderRate, roll: rng.next())
@@ -4270,9 +4275,17 @@ final class CompanionStore {
         rarity == .common && totalForms >= 2 && roll % PokemonOdds.dittoDisguiseDenominator == 0
     }
 
-    /// 이로치 부화 판정(순수) — 미리 뽑은 roll 값 % 분모(1/64)==0. (부수효과 없이 xctest)
-    nonisolated static func rollsShiny(roll: UInt64) -> Bool {
-        roll % PokemonOdds.shinyDenominator == 0
+    /// 이로치 판정(순수) — 미리 뽑은 roll 값 % 분모==0. (부수효과 없이 xctest) 분모는 평소
+    /// `PokemonOdds.shinyDenominator`(1/64)지만, 호출부가 이벤트 창(`LiveEventWindow`) 동안은
+    /// `eventShinyDenominator`(1/16, 4배)를 넘긴다 — 함수 자체는 날짜를 모르는 순수 함수로 남긴다.
+    nonisolated static func rollsShiny(roll: UInt64, denominator: UInt64 = PokemonOdds.shinyDenominator) -> Bool {
+        roll % denominator == 0
+    }
+
+    /// `rollsShiny` 호출부 세 곳(레이드/사파리존 포획·즉시 부화·보관 알 부화)이 공유하는 분모 —
+    /// 이벤트 창 동안만 4배로 올린다.
+    private var shinyDenominator: UInt64 {
+        LiveEventWindow.isActive(clock()) ? PokemonOdds.eventShinyDenominator : PokemonOdds.shinyDenominator
     }
 
     /// 실제 부화 로직 — isHatching 락은 호출자(hatch / hatchIfNeeded)가 소유·해제한다.
@@ -4307,7 +4320,7 @@ final class CompanionStore {
         state.eggUsage = 0
         state.eggTier = nil   // 보증은 이 부화로 소비된다(다음 알은 다시 무보증)
         // 개체 롤 — shiny(1/64)·성격(25종)은 부화 순간 확정, 진화해도 유지.
-        let rolledShiny = Self.rollsShiny(roll: rng.next())
+        let rolledShiny = Self.rollsShiny(roll: rng.next(), denominator: shinyDenominator)
         let isShiny = consumeShinyCharge() || rolledShiny
         let nature = PokemonNature.allCases[Int(rng.next() % UInt64(PokemonNature.allCases.count))]
         // 메타몽 위장 롤 — common·≥2형태에 한해 1/128. .app 게이트(&& 단락 → 비앱에선 rng 미소비로

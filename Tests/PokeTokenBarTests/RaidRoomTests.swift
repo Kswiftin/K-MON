@@ -405,6 +405,40 @@ final class RaidRoomTests: XCTestCase {
         XCTAssertTrue(store.claimRaidCatch(tier: .six), "날짜가 바뀌면 다시 2회가 열린다")
     }
 
+    // MARK: 이벤트 창(2026-09-11 08~20시) — 포획 추첨 무제한
+
+    /// [이벤트] 이벤트 창 동안은 `catchRaidBoss` 가 원장을 아예 안 본다 — 같은 반나절 안에서
+    /// 이미 한 번 잡았어도 다음 승리에서 또 잡혀야 한다.
+    @MainActor
+    func testCatchRaidBossIsUnlimitedDuringTheEventWindow() async {
+        let calendar = Calendar.current
+        let inEvent = calendar.date(from: DateComponents(year: 2026, month: 9, day: 11, hour: 12))!
+        let store = stubStore(TestClock(inEvent), tag: "raid-catch-event-unlimited")
+        await store.hatch(baseID: 20)
+
+        let first = await store.catchRaidBoss(speciesID: 20)
+        XCTAssertEqual(first, .box, "이벤트 창 안에서도 첫 판은 평소처럼 잡힌다")
+        XCTAssertFalse(store.raidCatchClaimedToday, "이벤트 창 동안은 원장을 안 써 '오늘 이미 잡음'이 뜨면 안 된다")
+
+        let second = await store.catchRaidBoss(speciesID: 20)
+        XCTAssertEqual(second, .box, "같은 반나절 안에서도 두 번째 판이 또 잡혀야 한다")
+        XCTAssertEqual(store.state.boxedMons.count, 2, "두 번 다 실제로 박스에 들어가야 한다")
+    }
+
+    /// 이벤트 창이 끝나면(같은 날 20시 이후) 평소 하루 한 번 규칙으로 돌아간다.
+    @MainActor
+    func testCatchRaidBossReturnsToTheDailyLimitAfterTheEventWindowEnds() async {
+        let calendar = Calendar.current
+        let afterEvent = calendar.date(from: DateComponents(year: 2026, month: 9, day: 11, hour: 21))!
+        let store = stubStore(TestClock(afterEvent), tag: "raid-catch-event-ended")
+        await store.hatch(baseID: 20)
+
+        let first = await store.catchRaidBoss(speciesID: 20)
+        XCTAssertEqual(first, .box)
+        let second = await store.catchRaidBoss(speciesID: 20)
+        XCTAssertEqual(second, .claimedToday, "이벤트 창 밖에서는 평소처럼 하루 한 마리로 돌아간다")
+    }
+
     // MARK: 포획 원장 — 지급 원장과 갈라져 있어야 한다
 
     /// 포획도 하루 한 마리다. 지급(`creditRaidReward`)과 **같은 규칙, 다른 원장**이다.
