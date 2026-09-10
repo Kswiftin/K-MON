@@ -196,7 +196,7 @@ struct RaidView: View {
                     .disabled(center.phase != .idle)
                 }
             }
-            Text("6★ 주간 레이드 · 추천 5명 · 도전 횟수 제한 없음(보상은 오전·오후 무관 주 2회)")
+            Text("6★ 주간 레이드 · 추천 5명 · 도전 횟수 제한 없음(보상은 오전·오후 무관 하루 2회)")
                 .font(.caption2).foregroundStyle(.secondary)
         }
     }

@@ -233,11 +233,16 @@ enum RaidBoss {
         tier == .six ? 3 : catchPercent(for: rarity(speciesID: speciesID))
     }
 
-    static func periodKey(_ date: Date, calendar: Calendar = .current) -> String {
+    /// 반나절로 안 가른, 달력 하루 키(`yyyy-MM-dd`) — 6★ 주간 레이드의 보상·포획 원장이 쓴다
+    /// (오전/오후 무관 하루 2회, `CompanionStore.sixStarDailyClaimLimit`).
+    static func dailyKey(_ date: Date, calendar: Calendar = .current) -> String {
         let components = calendar.dateComponents([.year, .month, .day], from: date)
-        let datePart = String(format: "%04d-%02d-%02d", components.year ?? 0,
-                              components.month ?? 0, components.day ?? 0)
-        return "\(datePart)-\(RaidHalfDay.at(date, calendar: calendar).rawValue)"
+        return String(format: "%04d-%02d-%02d", components.year ?? 0,
+                      components.month ?? 0, components.day ?? 0)
+    }
+
+    static func periodKey(_ date: Date, calendar: Calendar = .current) -> String {
+        "\(dailyKey(date, calendar: calendar))-\(RaidHalfDay.at(date, calendar: calendar).rawValue)"
     }
 
     /// 날짜 키 → 난수 시드.
