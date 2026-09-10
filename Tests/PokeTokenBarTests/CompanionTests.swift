@@ -2023,6 +2023,49 @@ final class CompanionIdentityTests: XCTestCase {
         XCTAssertEqual(s.celebration, .hatch(shiny: true), "evolve 가 shiny 부화 버스트를 덮으면 안 된다")
     }
 
+    /// `rollsShiny` 는 분모를 인자로 받는 순수 함수다 — 이벤트 여부는 호출부(`shinyDenominator`)가
+    /// 판단하고, 이 함수 자체는 그 판단 결과만 받는다.
+    func testRollsShinyRespectsTheGivenDenominator() {
+        XCTAssertTrue(CompanionStore.rollsShiny(roll: 16, denominator: PokemonOdds.eventShinyDenominator))
+        XCTAssertFalse(CompanionStore.rollsShiny(roll: 16, denominator: PokemonOdds.shinyDenominator),
+                       "16 은 64 로 안 나누어떨어진다 — 평소 분모에서는 shiny 가 아니어야 한다")
+        XCTAssertTrue(CompanionStore.rollsShiny(roll: 64, denominator: PokemonOdds.shinyDenominator))
+    }
+
+    /// [이벤트] 2026-09-11 08:00~20:00(기기 로컬) 동안 이로치 확률이 4배(1/64 → 1/16)로 오른다.
+    /// 같은 시드를 이벤트 창 안/밖 시계로 각각 돌려, **분모 차이가 실제로 부화 결과에 반영되는지**
+    /// 대조한다 — `rollsShiny` 단위 테스트만으로는 `shinyDenominator`(private) 배선까지는 못 본다.
+    func testShinyOddsAreQuadrupledDuringTheEventWindow() async {
+        // hatchIfNeeded 경로: chooseBase(1) → shiny(2) → nature(3) 순 rng 소비. 이벤트 확률(1/16)엔
+        // 걸리지만 평소 확률(1/64)엔 안 걸리는 시드를 찾는다 — 두 분모의 차이를 직접 보여준다.
+        func rollsEventShinyOnlyViaHatchIfNeeded(_ seed: UInt64) -> Bool {
+            var r = SeededRNG(seed: seed)
+            _ = r.next()   // chooseBase
+            let roll = r.next()
+            return roll % PokemonOdds.eventShinyDenominator == 0 && roll % PokemonOdds.shinyDenominator != 0
+        }
+        var seed: UInt64?
+        for s: UInt64 in 0..<20000 where rollsEventShinyOnlyViaHatchIfNeeded(s) { seed = s; break }
+        guard let seed else { return XCTFail("이벤트 전용 shiny 시드 탐색 실패") }
+
+        let calendar = Calendar.current
+        let inEvent = calendar.date(from: DateComponents(year: 2026, month: 9, day: 11, hour: 12))!
+        let outsideEvent = calendar.date(from: DateComponents(year: 2026, month: 9, day: 11, hour: 21))!
+
+        let eventStore = CompanionStore(provider: StubProvider(value: linear3), clock: { inEvent },
+                                        fileURL: storeStateURL("event-shiny"), rng: SeededRNG(seed: seed))
+        eventStore.debugAccrue(135_000_000)
+        await eventStore.hatchIfNeeded()
+        XCTAssertEqual(eventStore.state.active?.isShiny, true, "이벤트 창 안에서는 4배 확률이 적용돼야 한다")
+
+        let normalStore = CompanionStore(provider: StubProvider(value: linear3), clock: { outsideEvent },
+                                         fileURL: storeStateURL("normal-shiny"), rng: SeededRNG(seed: seed))
+        normalStore.debugAccrue(135_000_000)
+        await normalStore.hatchIfNeeded()
+        XCTAssertEqual(normalStore.state.active?.isShiny, false,
+                       "이벤트 창 밖에서는 같은 시드라도 평소 확률(1/64)만 적용돼야 한다")
+    }
+
     /// [회귀] 이월이 졸업 총량을 넘어 부화 즉시 졸업한 극단 케이스 — hatch 연출은 생략(이미 도감행).
     /// [갱신] 원래는 "부화 즉시 오버플로로 졸업까지 이어지면 떠난 mon 의 hatch 연출이 남으면
     /// 안 된다"는 회귀 가드였다(hatch() 의 `if state.active != nil { fireCelebration(.hatch) }`

@@ -2233,6 +2233,8 @@ enum PokemonNature: String, Codable, Sendable, CaseIterable {
 enum PokemonOdds {
     /// 색이 다른 포켓몬(shiny) 부화 확률 분모 — 1/64 (본가 1/4096 은 데스크톱 앱 규모에선 평생 못 봄).
     static let shinyDenominator: UInt64 = 64
+    /// 이벤트 창(`LiveEventWindow`) 한정 이로치 확률 분모 — 기존 대비 4배(1/16).
+    static let eventShinyDenominator: UInt64 = 16
     /// 메타몽 위장 확률 분모 — common·≥2형태 부화에 한해 1/128 (GO 변장 메타몽 추정 1/50~70보다 귀하게).
     static let dittoDisguiseDenominator: UInt64 = 128
     /// 메타몽 종 id — 위장 리빌 전용(일반 부화 풀에서 제외).

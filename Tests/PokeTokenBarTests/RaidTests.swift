@@ -121,6 +121,52 @@ final class RaidTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(RaidBoss.weeklySpeciesPool.count, 80)
     }
 
+    // MARK: 이벤트 창(2026-09-11 08~20시) — 레이드 1시간 로테이션
+
+    func testLiveEventWindowIsOnlyActiveOnTheGivenDayAndHours() {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+
+        func at(_ day: Int, _ hour: Int, _ minute: Int = 0, month: Int = 9, year: Int = 2026) -> Date {
+            calendar.date(from: DateComponents(year: year, month: month, day: day,
+                                               hour: hour, minute: minute))!
+        }
+
+        XCTAssertFalse(LiveEventWindow.isActive(at(11, 7, 59), calendar: calendar), "창 시작 직전")
+        XCTAssertTrue(LiveEventWindow.isActive(at(11, 8), calendar: calendar), "창 시작")
+        XCTAssertTrue(LiveEventWindow.isActive(at(11, 19, 59), calendar: calendar), "창 끝 직전")
+        XCTAssertFalse(LiveEventWindow.isActive(at(11, 20), calendar: calendar), "창 끝")
+        XCTAssertFalse(LiveEventWindow.isActive(at(10, 12), calendar: calendar), "하루 전")
+        XCTAssertFalse(LiveEventWindow.isActive(at(12, 12), calendar: calendar), "하루 뒤")
+        XCTAssertFalse(LiveEventWindow.isActive(at(11, 12, year: 2027), calendar: calendar), "1년 뒤 같은 날짜")
+    }
+
+    /// 이벤트 창 동안만 보스 종 선택이 반나절(`periodKey`)이 아니라 시간(`hourlyKey`)을 탄다 —
+    /// 6★ 는 그 주 내내 고정이라 이벤트와 무관하다.
+    func testBossKeyRotatesHourlyOnlyDuringTheEventWindow() {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        let inEvent = calendar.date(from: DateComponents(year: 2026, month: 9, day: 11, hour: 13, minute: 30))!
+        let nextHour = calendar.date(from: DateComponents(year: 2026, month: 9, day: 11, hour: 14, minute: 5))!
+        let outsideEvent = calendar.date(from: DateComponents(year: 2026, month: 9, day: 12, hour: 13, minute: 30))!
+
+        XCTAssertEqual(RaidBoss.bossKey(at: inEvent, tier: .three, calendar: calendar), "2026-09-11-13")
+        XCTAssertEqual(RaidBoss.bossKey(at: nextHour, tier: .three, calendar: calendar), "2026-09-11-14")
+        XCTAssertNotEqual(RaidBoss.bossKey(at: inEvent, tier: .three, calendar: calendar),
+                          RaidBoss.bossKey(at: nextHour, tier: .three, calendar: calendar),
+                          "같은 반나절 안이라도 시간이 바뀌면 보스 선택 키가 바뀌어야 한다")
+        XCTAssertEqual(RaidBoss.speciesID(at: inEvent, tier: .three, calendar: calendar),
+                       RaidBoss.speciesID(dayKey: "2026-09-11-13", tier: .three),
+                       "speciesID(at:) 는 bossKey 가 낸 키를 그대로 써야 한다")
+
+        // 창 밖에서는 평소처럼 반나절 키다.
+        XCTAssertEqual(RaidBoss.bossKey(at: outsideEvent, tier: .three, calendar: calendar), "2026-09-12-pm")
+
+        // 6★ 는 이벤트와 무관하게 그 주 내내 고정.
+        XCTAssertEqual(RaidBoss.bossKey(at: inEvent, tier: .six, calendar: calendar),
+                       RaidBoss.weeklyPeriodKey(inEvent, calendar: calendar))
+    }
+
     func testEvolutionDayAndNightAlsoChangeAtNoon() {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = TimeZone(secondsFromGMT: 0)!

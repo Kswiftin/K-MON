@@ -593,7 +593,12 @@ final class MultiplayerRoomCenter {
         //
         // **티어마다 원장이 갈린다(#270).** 1★로 이미 받았어도 3★·5★는 각자 첫 승리를 기다린다 —
         // 종도 다르고 포획 확률도 다른, 사실상 독립된 세 레이드이기 때문이다.
-        if (raidPayout ?? 0) > 0 { drawRaidCatcher(runners: runners, tier: tier) }
+        //
+        // **이벤트 창(`LiveEventWindow`) 동안만 예외다** — "포획 추첨 무제한" 이벤트라, 지급이
+        // 이미 끝난 판(`raidPayout == 0`)에서도 추첨을 돌린다. `drawRaidCatcher` → `catchRaidBoss`
+        // 가 이벤트 동안 원장을 안 보므로, 이 게이트를 열어도 원장 없는 무한 지급이 되진 않는다 —
+        // 위에서 되돌렸던 "게이트를 없앤" 수정과 달리, 이번엔 원장 쪽도 같이 이벤트로 열었다.
+        if (raidPayout ?? 0) > 0 || LiveEventWindow.isActive() { drawRaidCatcher(runners: runners, tier: tier) }
     }
 
     /// 보스를 데려갈 한 명을 뽑는다. 모든 피어가 `.raidStart` 로 받은 같은 시드와 같은 편성
@@ -628,8 +633,9 @@ final class MultiplayerRoomCenter {
         guard let mine = attempts.first(where: { $0.id == myID }) else { return }
         // **오늘 이미 잡았으면 주사위와 무관하게 "이미 진행했다"다.** 먼저 안 보면, 이번 추첨에서
         // 마침 실패가 나온 경우 "놓쳤다"로 보여 방금 기회를 날린 것처럼 읽힌다 — 사실은 애초에
-        // 오늘 몫을 다 썼을 뿐이다(#270 뒤 사용자 지적).
-        guard !companion.raidCatchClaimedToday(tier: tier) else {
+        // 오늘 몫을 다 썼을 뿐이다(#270 뒤 사용자 지적). 이벤트 창 동안은 이 원장 자체를 안 본다
+        // (`catchRaidBoss` 와 같은 예외 — 무제한 포획 이벤트).
+        guard LiveEventWindow.isActive() || !companion.raidCatchClaimedToday(tier: tier) else {
             raidCatchResult = .claimedToday
             // 비동기 경로(아래 `catchRaidBoss`)의 `.claimedToday` 분기와 같은 안내를 띄운다 —
             // 여기서 빼먹으면 이 이른 반환만 결과는 맞는데 화면에 이유가 안 뜬다.
