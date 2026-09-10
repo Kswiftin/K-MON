@@ -108,7 +108,7 @@ struct RaidView: View {
 
     /// 한정 이벤트(`LiveEventWindow`) 적용 여부를 이 화면만 보고 알 수 있게 하는 배지 —
     /// "오전/오후 레이드 보스" 문구는 이벤트 중에도 그대로라(반나절 문구는 6★ 표시용으로 남겨
-    /// 둔다), 실제로 1시간 로테이션·포획 무제한이 켜졌는지 이 줄 하나로 가늠한다(2026-09-10
+    /// 둔다), 실제로 1시간 로테이션·보상/포획 무제한이 켜졌는지 이 줄 하나로 가늠한다(2026-09-10
     /// 사용자 보고 — "이거 봐선 적용이 된 건지 안 된 건지 모르겠다"). 분 단위로만 갱신한다
     /// (`TimelineView(.periodic(by: 60))`) — 몇 시간짜리 창에 초 단위 갱신은 과하다.
     @ViewBuilder private var liveEventBanner: some View {
@@ -117,7 +117,7 @@ struct RaidView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Label("한정 이벤트 진행 중", systemImage: "sparkles")
                         .font(.caption.bold())
-                    Text("이로치 확률 4배 · 보스 1시간마다 교체 · 포획 무제한 · \(eventRemainingText) 남음")
+                    Text("이로치 확률 4배 · 보스 1시간마다 교체 · 보상·포획 무제한 · \(eventRemainingText) 남음")
                         .font(.caption2)
                         .fixedSize(horizontal: false, vertical: true)
                 }

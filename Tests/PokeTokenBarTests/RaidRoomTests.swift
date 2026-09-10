@@ -439,6 +439,32 @@ final class RaidRoomTests: XCTestCase {
         XCTAssertEqual(second, .claimedToday, "이벤트 창 밖에서는 평소처럼 하루 한 마리로 돌아간다")
     }
 
+    /// [이벤트] 이벤트 창 동안은 `creditRaidReward` 도 원장을 아예 안 본다 — 포획과 같은 예외다
+    /// (2026-09-11 사용자 보고 — 포획은 무제한인데 별의조각은 그대로라 어색했다).
+    @MainActor
+    func testCreditRaidRewardIsUnlimitedDuringTheEventWindow() {
+        let calendar = Calendar.current
+        let inEvent = calendar.date(from: DateComponents(year: 2026, month: 9, day: 11, hour: 12))!
+        let store = stubStore(TestClock(inEvent), tag: "raid-reward-event-unlimited")
+        let before = store.state.starPieces
+
+        XCTAssertEqual(store.creditRaidReward(500), 500, "이벤트 창 안에서도 첫 지급은 평소처럼 된다")
+        XCTAssertFalse(store.raidRewardClaimedToday, "이벤트 창 동안은 원장을 안 써 '오늘 이미 받음'이 뜨면 안 된다")
+        XCTAssertEqual(store.creditRaidReward(500), 500, "같은 반나절 안에서도 두 번째 지급이 또 돼야 한다")
+        XCTAssertEqual(store.state.starPieces, before + 1_000, "두 번 다 실제로 지갑에 쌓여야 한다")
+    }
+
+    /// 이벤트 창이 끝나면(같은 날 20시 이후) 평소 반나절 한 번 규칙으로 돌아간다.
+    @MainActor
+    func testCreditRaidRewardReturnsToTheHalfDayLimitAfterTheEventWindowEnds() {
+        let calendar = Calendar.current
+        let afterEvent = calendar.date(from: DateComponents(year: 2026, month: 9, day: 11, hour: 21))!
+        let store = stubStore(TestClock(afterEvent), tag: "raid-reward-event-ended")
+
+        XCTAssertEqual(store.creditRaidReward(500), 500)
+        XCTAssertEqual(store.creditRaidReward(500), 0, "이벤트 창 밖에서는 평소처럼 반나절 한 번으로 돌아간다")
+    }
+
     // MARK: 포획 원장 — 지급 원장과 갈라져 있어야 한다
 
     /// 포획도 하루 한 마리다. 지급(`creditRaidReward`)과 **같은 규칙, 다른 원장**이다.
