@@ -201,6 +201,18 @@ final class MultiplayerRoomCenter {
     /// 체감이 갈리면 같은 앱에서 다른 게임을 하는 것처럼 느껴진다.
     static let turnDuration: TimeInterval = 30
 
+    /// 호스트가 열어 둘 실제 게스트 연결 수. 로비 러너 정원과 관전자 정원을 한 식에서 계산해
+    /// 활동 정원만 늘리고 소켓 상한을 예전 값에 두는 일을 막는다.
+    nonisolated static func maxGuestConnections(activity: RoomActivity?) -> Int {
+        switch activity {
+        case .pokemonQuiz: MultiplayerLobby.quizCapacity - 1
+        case .tournament: 7
+        case .gym: 1 + MultiplayerLobby.spectatorCapacity
+        case .raid: MultiplayerLobby.raidCapacity - 1 + MultiplayerLobby.spectatorCapacity
+        default: 3 + MultiplayerLobby.spectatorCapacity
+        }
+    }
+
     init(companion: CompanionStore) { self.companion = companion }
 
     /// 지금 방이 무엇을 하고 있나. 화면 갈림길이 이 값을 본다 — `phase` 만 보면 방이 켜졌다는 것만
@@ -439,6 +451,12 @@ final class MultiplayerRoomCenter {
             // 이 가드가 없는 동안 "나가기" 뒤에 깨어난 이 Task 가 떠난 방의 편성으로 교전을
             // 세워 유령 방을 만들었고, "시작"을 두 번 누르면 seed 가 다른 판이 두 번 나갔다.
             guard sessionEpoch == epoch, phase == .hosting else { return }
+            // API 응답을 기다리는 동안 참가·이탈이 일어날 수 있으므로 시작 버튼을 누른 순간의
+            // `lobby` 사본을 쓰지 않는다. 최신 명단이 전부 준비된 상태인지 다시 확인한다.
+            guard let lobby = self.lobby, lobby.activity == .raid, lobby.canStart else {
+                lastError = "참가자 명단이 변경되었습니다. 모두 준비한 뒤 다시 시작해 주세요."
+                return
+            }
             let runners = lobby.runners.compactMap { participant -> MultiplayerFighter? in
                 guard var snapshot = snapshots[participant.id] else { return nil }
                 snapshot.level = RaidBoss.partyLevel
@@ -474,6 +492,9 @@ final class MultiplayerRoomCenter {
 
     /// 개시 상태를 세운다 — 호스트와 게스트가 **같은 자리**를 지나야 한 쪽만 초기화를 빠뜨리지 않는다.
     private func beginRaidCombat(fighters: [MultiplayerFighter], seed: UInt64) {
+        // 전투가 시작된 방을 Bonjour 목록에 계속 광고하면 새 참가자는 눌러 본 뒤에야 거절된다.
+        // 기존 연결은 유지하면서 신규 발견·접속만 닫는다.
+        if isHost { listener?.service = nil }
         raidSeed = seed
         combatFighters = fighters; combatRound = 1; combatEvents = []
         // **행동 버퍼도 비운다.** 형제 경로(`startBattle`)가 같은 자리에서 비우는 것과 같은 이유다 —
@@ -655,6 +676,7 @@ final class MultiplayerRoomCenter {
         let receivedKey = periodKey ?? expectedKey
         guard receivedKey == expectedKey,
               RaidBoss.validRaidStart(fighters: fighters, tier: tier, dayKey: receivedKey),
+              fighters.contains(where: { $0.id == myID && $0.team == .red }),
               let started = try? MultiplayerBattle(fighters: fighters, mode: .coopBoss, seed: seed) else {
             lastError = companion.l.raidBossMismatch; leaveRoom(); return false
         }
@@ -1776,16 +1798,7 @@ final class MultiplayerRoomCenter {
     }
 
     private func acceptGuest(_ connection: NWConnection) {
-        let maxGuests: Int
-        switch lobby?.activity {
-        case .pokemonQuiz: maxGuests = MultiplayerLobby.quizCapacity - 1
-        case .tournament: maxGuests = 7
-        // 도전자 하나 + 관전자들. 관장은 호스트라 게스트로 세지 않는다.
-        case .gym: maxGuests = 1 + MultiplayerLobby.spectatorCapacity
-        // 러너 넷 중 셋이 게스트고, 보스는 참가자가 아니라 자리를 쓰지 않는다.
-        case .raid: maxGuests = 3 + MultiplayerLobby.spectatorCapacity
-        default: maxGuests = 3 + MultiplayerLobby.spectatorCapacity
-        }
+        let maxGuests = Self.maxGuestConnections(activity: lobby?.activity)
         guard isHost, guestConnections.count + pendingGuestConnections.count < maxGuests else {
             connection.cancel(); return
         }
@@ -1854,7 +1867,13 @@ final class MultiplayerRoomCenter {
             case .team(let pid, let team) where pid == id && !self.isInPlay:
                 self.lobby?.setTeam(team, participantID: pid); self.broadcastLobby()
             case .leave(let pid) where pid == id:
-                if self.phase == .battling { self.retireFighter(pid) }
+                if self.phase == .battling {
+                    self.retireFighter(pid)
+                    // 레이드는 전투 중에도 `lobby.mode` 가 항상 coopBoss라 명단을 지워도
+                    // 승패 규칙이 바뀌지 않는다. 여기서 지우지 않으면 끝난 뒤 같은 사용자가
+                    // 다시 들어올 때 UUID 중복으로 거절된다.
+                    if self.lobby?.activity == .raid { try? self.lobby?.leave(participantID: pid) }
+                }
                 else if self.lobby?.activity == .gym { self.retireGymChallenger(pid); try? self.lobby?.leave(participantID: pid) }
                 else { try? self.lobby?.leave(participantID: pid) }
                 self.snapshots.removeValue(forKey: pid); self.guestConnections.removeValue(forKey: pid)
@@ -2145,6 +2164,12 @@ final class MultiplayerRoomCenter {
         tournamentPools.removeValue(forKey: id); tournamentTeams.removeValue(forKey: id)
         if phase == .battling {
             retireFighter(id)
+            // 명시적인 나가기와 연결 끊김이 같은 정리를 해야 한다. 특히 레이드 명단에
+            // 끊긴 UUID가 남으면 그 사용자의 다음 참가가 `.duplicate` 로 막힌다.
+            if lobby?.activity == .raid {
+                try? lobby?.leave(participantID: id)
+                broadcastLobby()
+            }
         } else {
             // 체육관은 `phase` 가 `.hosting` 인 채로 판이 돈다(방 배틀과 국면이 다르다). 그래서
             // 여기서 따로 몰수를 걸어야 도전자가 지는 도중 앱을 꺼서 결과를 흐리는 걸 막는다.
