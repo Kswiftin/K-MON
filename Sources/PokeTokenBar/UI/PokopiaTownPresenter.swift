@@ -42,10 +42,6 @@ final class PokopiaTownPresenter: NSObject, NSWindowDelegate {
                               backing: .buffered, defer: false)
         window.title = "포코피아"
         window.minSize = NSSize(width: 900, height: 640)
-        // 배경 블러(`PokedoroTheme.pageBackground`)가 실제로 비치려면 창 자체가 불투명하면 안 된다
-        // — 불투명한 창은 배경을 먼저 칠해 `.behindWindow` 블렌딩을 가린다.
-        window.isOpaque = false
-        window.backgroundColor = .clear
         // **Memory Home 과 달라야 한다.** 같은 이름을 쓰면 두 창이 한 프레임을 두고 다퉈,
         // 한쪽을 옮기면 다른 쪽이 다음 실행에서 그 자리에 뜬다.
         window.setFrameAutosaveName("PokopiaTownWindow")
