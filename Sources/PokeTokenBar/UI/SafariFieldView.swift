@@ -93,6 +93,9 @@ struct SafariFieldView: View {
         case .grassland: .green.opacity(0.25)
         case .wetland: .teal.opacity(0.25)
         case .cave: .brown.opacity(0.25)
+        case .volcano: .red.opacity(0.25)
+        case .highland: .cyan.opacity(0.25)
+        case .ruins: .purple.opacity(0.25)
         case nil: .clear
         }
     }
