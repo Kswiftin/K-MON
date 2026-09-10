@@ -86,11 +86,6 @@ final class AppSettings {
         didSet { defaults.set(releaseNotesOnUpdateEnabled, forKey: "releaseNotesOnUpdateEnabled") }
     }
     var doNotDisturb: Bool { didSet { defaults.set(doNotDisturb, forKey: "doNotDisturb") } }
-    /// 상단 창(팝오버)을 비롯한 앱 창 배경의 불투명도. 1.0 = 기존과 같은 완전 불투명, 0.0 = 블러만
-    /// 남기고 데스크톱이 비침. 기본값 1.0 은 기존 모습을 그대로 보존한다.
-    var windowBackgroundOpacity: Double {
-        didSet { defaults.set(windowBackgroundOpacity, forKey: "windowBackgroundOpacity") }
-    }
     /// 상단 창(팝오버)을 열고 닫는 전역 단축키. nil = 설정 안 함(기본) — 임의 조합을 기본값으로
     /// 강제하면 다른 앱이 이미 쓰는 조합과 겹칠 수 있어, 사용자가 직접 고를 때까지 비워 둔다.
     var togglePopoverShortcut: KeyCombo? {
@@ -152,7 +147,6 @@ final class AppSettings {
         releaseNotesOnUpdateEnabled = defaults.object(forKey: "releaseNotesOnUpdateEnabled") as? Bool ?? true
         doNotDisturb = defaults.object(forKey: "doNotDisturb") as? Bool
             ?? defaults.object(forKey: "officeMode") as? Bool ?? false
-        windowBackgroundOpacity = defaults.object(forKey: "windowBackgroundOpacity") as? Double ?? 1.0
         togglePopoverShortcut = (defaults.data(forKey: "togglePopoverShortcut"))
             .flatMap { try? JSONDecoder().decode(KeyCombo.self, from: $0) }
         dailyFocusGoal = min(max(defaults.object(forKey: "dailyFocusGoal") as? Int
