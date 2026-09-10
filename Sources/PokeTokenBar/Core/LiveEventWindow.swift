@@ -13,4 +13,14 @@ enum LiveEventWindow {
               let hour = components.hour else { return false }
         return (8..<20).contains(hour)
     }
+
+    /// 창이 끝나는 시각(`date` 가 속한 날의 20:00) — 화면이 "몇 시간 남았다" 배너를 그릴 때 쓴다.
+    /// `isActive(date)` 가 참일 때만 의미 있는 값이다(호출부가 그 가드를 먼저 본다).
+    static func endDate(_ date: Date = Date(), calendar: Calendar = .current) -> Date? {
+        var components = calendar.dateComponents([.year, .month, .day], from: date)
+        components.hour = 20
+        components.minute = 0
+        components.second = 0
+        return calendar.date(from: components)
+    }
 }
