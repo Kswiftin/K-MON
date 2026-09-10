@@ -233,6 +233,24 @@ final class SafariZoneTests: XCTestCase {
         }
     }
 
+    /// `PixelSprite.init(rows:key:)` 의 폭 판정은 **첫 줄 길이 기준 상대 비교**다
+    /// (`rows.allSatisfy { $0.count == width }`, `width = rows.first?.count`) — 8줄 전부가
+    /// 나란히 7자여도 서로 길이가 같으니 크래시 없이 폭 7짜리 스프라이트가 조용히 만들어진다.
+    /// 손으로 고른 문자열 배열(`SafariFieldPixelArt`)이 실수로 이 함정에 걸리지 않았는지, 고정
+    /// 상수(`tileSize`=8)와 직접 대조해 확인한다 — 신규 존을 늘릴 때마다 반복될 위험이라 한 번
+    /// 여기 박아 둔다.
+    func testEveryZonePixelArtIsExactlyTileSized() {
+        for zone in SafariZone.ZoneID.allCases {
+            for tile in SafariFieldPixelArt.tiles(for: zone) {
+                XCTAssertEqual(tile.width, SafariFieldPixelArt.tileSize, "\(zone) 타일 폭")
+                XCTAssertEqual(tile.height, SafariFieldPixelArt.tileSize, "\(zone) 타일 높이")
+            }
+            let obstacle = SafariFieldPixelArt.obstacle(for: zone)
+            XCTAssertEqual(obstacle.width, SafariFieldPixelArt.tileSize, "\(zone) 장애물 폭")
+            XCTAssertEqual(obstacle.height, SafariFieldPixelArt.tileSize, "\(zone) 장애물 높이")
+        }
+    }
+
     func testDisplayedEncounterPoolMatchesTheWeightedDrawExactly() {
         for zone in SafariZone.ZoneID.allCases {
             let entries = SafariZone.encounterPool(for: zone)
