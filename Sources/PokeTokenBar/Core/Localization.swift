@@ -1748,7 +1748,6 @@ struct L {
         case .quickClaw: return "선제공격손톱"
         case .focusBand: return "기합의머리띠"
         case .eviolite: return "진화의휘석"
-        case .shinyCharm: return "이로치 부적"
         case .linkingCord: return "연결의끈"
         case .fireStone: return "불꽃의돌"
         case .waterStone: return "물의돌"
@@ -2020,8 +2019,6 @@ struct L {
                 // 지닌물건 갈래인데 효과가 없는 조합 — `bagUse` 가 둘을 함께 정하므로 도달 불가다.
                 return ""
             }
-        case .passive:
-            return "보유하면 이로치 포켓몬이 태어날 확률이 올라가요."
         case .furniture:
             return "미니룸에 배치하는 가구예요. 성장이나 보상에는 영향을 주지 않아요."
         case .evolutionItem:
@@ -2171,7 +2168,6 @@ struct L {
     func ownedCount(_ n: Int) -> String { "보유 ×\(n)" }
     var shopPriceLabel: String { "가격" }
     var ownedAlready: String { "보유 중" }
-    var shinyCharmEffectHint: String { "이로치 확률 ↑ · 적용 중" }
     // 알 (리롤) — tier = 보증 등급 하한(nil = 보증 없는 기본 알).
     // 이름은 `rarityLabel(r) + " 알"` 식 조합으로 만들지 않는다 — 등급마다 자연스러운 표기가
     // 달라서, 조합으로 만들면 어느 등급에선가 어색해진다. 등급별로 이름을 그대로 적는다.

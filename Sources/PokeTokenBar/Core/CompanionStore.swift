@@ -2866,24 +2866,6 @@ final class CompanionStore {
         }
     }
 
-    var weeklyRaidAttemptsRemaining: Int {
-        state.weeklyRaidAttemptDate == Self.dayKey(clock())
-            ? max(0, 2 - state.weeklyRaidAttemptsToday) : 2
-    }
-
-    @discardableResult
-    func claimWeeklyRaidAttempt() -> Bool {
-        let today = Self.dayKey(clock())
-        if state.weeklyRaidAttemptDate != today {
-            state.weeklyRaidAttemptDate = today
-            state.weeklyRaidAttemptsToday = 0
-        }
-        guard state.weeklyRaidAttemptsToday < 2 else { return false }
-        state.weeklyRaidAttemptsToday += 1
-        save()
-        return true
-    }
-
     /// 현재 오전/오후, 1★ 레이드 보상을 이미 받았나. 정오 타이머 대신 구간 키를 비교한다.
     var raidRewardClaimedToday: Bool { raidRewardClaimedToday(tier: .one) }
 
@@ -3014,7 +2996,7 @@ final class CompanionStore {
                                  presetGender: PokemonGender? = nil,
                                  presetShiny: Bool? = nil) -> RaidCatchResult {
         let wasRegistered = isSpeciesAlreadyOwned(speciesID)
-        let isShiny = presetShiny ?? Self.rollsShiny(roll: rng.next(), charmOwned: ownsShinyCharm)
+        let isShiny = presetShiny ?? Self.rollsShiny(roll: rng.next())
         let nature = PokemonNature.allCases[Int(rng.next() % UInt64(PokemonNature.allCases.count))]
         let gender = presetGender ?? PokemonGender.from(genderRate: line.genderRate, roll: rng.next())
         let caught = MonState(baseID: speciesID, pathIDs: [speciesID], plannedPathIDs: [speciesID],
@@ -3534,8 +3516,6 @@ final class CompanionStore {
 
     var rareCandyCount: Int { itemCount(.rareCandy) }
     func itemCount(_ kind: ItemKind) -> Int { state.inventory[kind.rawValue] ?? 0 }
-    /// 이로치 부적 보유 여부 — 보유형이라 개수>0 = 소유(부화 shiny 분모를 낮춘다).
-    var ownsShinyCharm: Bool { itemCount(.shinyCharm) > 0 }
 
     /// 소유 아이템(개수>0) — 가방 목록. 정렬은 ItemKind.allCases 순서.
     var ownedItems: [(kind: ItemKind, count: Int)] {
@@ -3546,12 +3526,9 @@ final class CompanionStore {
     }
 
     /// 가방에서 아이템을 버린다 — 되돌릴 수 없고 환불도 없다. 보유 수보다 많이 버릴 수 없다.
-    ///
-    /// 보유형(이로치 부적)은 대상이 아니다: 개수 개념이 없고, 버려도 정리되는 것 없이 상시 효과만
-    /// 사라진다.
     @discardableResult
     func discardItem(_ kind: ItemKind, quantity: Int = 1) -> Bool {
-        guard quantity > 0, !kind.isPassive else { return false }
+        guard quantity > 0 else { return false }
         let owned = itemCount(kind)
         guard owned >= quantity else { return false }
         let left = owned - quantity
@@ -3875,15 +3852,11 @@ final class CompanionStore {
         return true
     }
 
-    /// 상점 판매 아이템 — shopPrice 있는 것만. 가격 저렴한 순, 단 구매 완료한 보유형은 맨 아래로.
+    /// 상점 판매 아이템 — shopPrice 있는 것만. 가격 저렴한 순.
     var purchasableItems: [ItemKind] {
         ItemKind.allCases
             .filter { $0.shopPrice != nil }
             .sorted { a, b in
-                // 구매 완료한 보유형(이로치 부적 등)은 맨 아래로 — 재구매 불가라 위에 있을 이유가 없다.
-                let aDone = a.isPassive && itemCount(a) > 0
-                let bDone = b.isPassive && itemCount(b) > 0
-                if aDone != bDone { return !aDone }
                 let (pa, pb) = (a.shopPrice ?? 0, b.shopPrice ?? 0)
                 // 진화 아이템 28종이 모두 같은 값이라 가격만으로는 순서가 정해지지 않는다(sort 는
                 // 안정 정렬이 아니라 목록이 실행마다 뒤바뀔 수 있다) → 선언 순서로 고정한다.
@@ -3898,11 +3871,11 @@ final class CompanionStore {
     }
 
     /// 상점 표시 순서 — 판매 아이템 + (활성 포켓몬 있을 때) 알 3종을 하나의 가격 오름차순 목록으로 병합.
-    /// 정렬 규칙은 purchasableItems 와 동일: 구매 완료한 보유형은 맨 아래, 나머지는 가격 저렴한 순.
+    /// 구매 완료한 의상(재구매 불가)은 맨 아래, 나머지는 가격 저렴한 순.
     /// 알은 즉시 액션이라 '보유' 개념이 없어 가격 순서에만 참여한다.
     ///
     /// 등급 알끼리 붙여 '티어 사다리'로 묶어 보이게 하는 안도 검토했으나 채택하지 않았다 — 지금의 순수
-    /// 가격 오름차순은 "알이 무조건 맨 아래로 append 돼 더 비싼 부적보다 아래에 놓이던" 표시 회귀를
+    /// 가격 오름차순은 "알이 무조건 맨 아래로 append 돼 더 비싼 물건보다 아래에 놓이던" 표시 회귀를
     /// 고치며 들어온 규칙이라(ShopTests 참조), 그룹 배치는 그 회귀를 부분적으로 되살린다. 티어 관계는
     /// 카드의 등급 배지로 읽히게 한다.
     var shopEntries: [ShopEntry] {
@@ -3920,11 +3893,11 @@ final class CompanionStore {
         }.map(\.element)
     }
 
-    /// 구매 완료한 보유형(이로치 부적·의상 등)인지 — shopEntries 정렬에서 맨 아래로 보낼 판정.
+    /// 구매 완료한 의상인지 — shopEntries 정렬에서 맨 아래로 보낼 판정(재구매 불가라 위에 있을 이유가 없다).
     private func isPurchasedPassive(_ entry: ShopEntry) -> Bool {
         switch entry {
-        case .item(let kind): return kind.isPassive && itemCount(kind) > 0
-        case .outfit(let item): return ownsOutfit(item)   // 재구매 불가라 위에 있을 이유가 없다
+        case .item: return false
+        case .outfit(let item): return ownsOutfit(item)
         case .egg: return false   // 즉시 액션 — 보유 개념 없음
         }
     }
@@ -3932,18 +3905,12 @@ final class CompanionStore {
     /// 구매 가능 — 잔액이 그 아이템 가격 이상(상점 미판매면 false). 활성/알 무관(재고는 미리 쌓아둘 수 있음).
     func canBuy(_ kind: ItemKind) -> Bool {
         guard let price = kind.shopPrice else { return false }
-        if kind.isPassive && itemCount(kind) > 0 { return false }   // 보유형은 1회만(재구매 불가)
         return availableTokens >= price
     }
 
     /// 잔액으로 한 번에 살 수 있는 최대 수량 — 상점의 수량 선택 상한.
-    ///
-    /// 보유형 분기는 지금 도달하지 않는다(유일한 보유형인 이로치 부적은 `shopPrice` 가 nil 이라
-    /// 위 guard 에서 걸린다). 보유형이 판매 목록에 들어오는 날 스텝퍼가 항상 실패하는 수량을
-    /// 고르게 두지 않으려고 남긴다 — `buy(_:quantity:)` 는 보유형의 2개 이상을 거절한다.
     func maxPurchasable(_ kind: ItemKind) -> Int {
         guard let price = kind.shopPrice, price > 0 else { return 0 }
-        if kind.isPassive { return canBuy(kind) ? 1 : 0 }
         return availableTokens / price
     }
 
@@ -3955,8 +3922,6 @@ final class CompanionStore {
     @discardableResult
     func buy(_ kind: ItemKind, quantity: Int = 1) -> Bool {
         guard quantity > 0, let price = kind.shopPrice else { return false }
-        // 보유형은 1회만 — 수량 구매 대상이 아니다(재구매 방어 포함).
-        if kind.isPassive && (quantity > 1 || itemCount(kind) > 0) { return false }
         let total = price * quantity
         guard availableTokens >= total else { return false }
         state.starPieces -= total
@@ -4092,7 +4057,7 @@ final class CompanionStore {
         // 보증이 남아 이후 모든 부화에 적용됐다(`hatchCore` 만 소비했다).
         state.eggTier = nil
         // rng 는 확정이든 아니든 항상 굴린다 — 소비량이 갈리면 같은 시드가 다른 결과를 낸다.
-        let rolledShiny = Self.rollsShiny(roll: rng.next(), charmOwned: ownsShinyCharm)
+        let rolledShiny = Self.rollsShiny(roll: rng.next())
         let shiny = consumeShinyCharge() || rolledShiny
         let nature = PokemonNature.allCases[Int(rng.next() % UInt64(PokemonNature.allCases.count))]
         let gender = PokemonGender.from(genderRate: line.genderRate, roll: rng.next())
@@ -4269,9 +4234,9 @@ final class CompanionStore {
         rarity == .common && totalForms >= 2 && roll % PokemonOdds.dittoDisguiseDenominator == 0
     }
 
-    /// 이로치 부화 판정(순수) — 미리 뽑은 roll 값 % 분모(부적 보유 48, 없으면 64)==0. (부수효과 없이 xctest)
-    nonisolated static func rollsShiny(roll: UInt64, charmOwned: Bool) -> Bool {
-        roll % (charmOwned ? ShinyCharm.shinyDenominator : PokemonOdds.shinyDenominator) == 0
+    /// 이로치 부화 판정(순수) — 미리 뽑은 roll 값 % 분모(1/64)==0. (부수효과 없이 xctest)
+    nonisolated static func rollsShiny(roll: UInt64) -> Bool {
+        roll % PokemonOdds.shinyDenominator == 0
     }
 
     /// 실제 부화 로직 — isHatching 락은 호출자(hatch / hatchIfNeeded)가 소유·해제한다.
@@ -4306,7 +4271,7 @@ final class CompanionStore {
         state.eggUsage = 0
         state.eggTier = nil   // 보증은 이 부화로 소비된다(다음 알은 다시 무보증)
         // 개체 롤 — shiny(1/64)·성격(25종)은 부화 순간 확정, 진화해도 유지.
-        let rolledShiny = Self.rollsShiny(roll: rng.next(), charmOwned: ownsShinyCharm)
+        let rolledShiny = Self.rollsShiny(roll: rng.next())
         let isShiny = consumeShinyCharge() || rolledShiny
         let nature = PokemonNature.allCases[Int(rng.next() % UInt64(PokemonNature.allCases.count))]
         // 메타몽 위장 롤 — common·≥2형태에 한해 1/128. .app 게이트(&& 단락 → 비앱에선 rng 미소비로

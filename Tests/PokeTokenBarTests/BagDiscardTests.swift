@@ -60,13 +60,6 @@ final class BagDiscardTests: XCTestCase {
         XCTAssertEqual(s.itemCount(.mint), 2)
     }
 
-    /// 보유형(이로치 부적)은 버리기 대상이 아니다 — 상시 효과가 조용히 사라지는 것을 막는다.
-    func testPassiveItemCannotBeDiscarded() {
-        let s = store(inventory: [.shinyCharm: 1])
-        XCTAssertFalse(s.discardItem(.shinyCharm))
-        XCTAssertTrue(s.ownsShinyCharm)
-    }
-
     /// 버리기는 환불이 아니다 — 지갑은 그대로다.
     func testDiscardDoesNotRefund() {
         let s = store(inventory: [.rareCandy: 2])

@@ -477,9 +477,6 @@ final class MultiplayerRoomCenter {
                   let started = try? MultiplayerBattle(fighters: fighters, mode: .coopBoss, seed: seed) else {
                 lastError = companion.l.raidBossLoadFailed; return
             }
-            guard tier != .six || companion.claimWeeklyRaidAttempt() else {
-                lastError = "주간 6성 레이드는 하루에 두 번만 도전할 수 있습니다."; return
-            }
             battle = started
             beginRaidCombat(fighters: fighters, seed: seed)
             let message = MultiplayerWireMessage.raidStart(seed: seed, fighters: fighters,
@@ -679,9 +676,6 @@ final class MultiplayerRoomCenter {
               fighters.contains(where: { $0.id == myID && $0.team == .red }),
               let started = try? MultiplayerBattle(fighters: fighters, mode: .coopBoss, seed: seed) else {
             lastError = companion.l.raidBossMismatch; leaveRoom(); return false
-        }
-        guard tier != .six || companion.claimWeeklyRaidAttempt() else {
-            lastError = "주간 6성 레이드는 하루에 두 번만 도전할 수 있습니다."; leaveRoom(); return false
         }
         battle = started
         raidTier = tier

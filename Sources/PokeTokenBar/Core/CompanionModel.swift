@@ -215,8 +215,6 @@ enum BagUse: Sendable, Equatable, CaseIterable {
     /// 셋을 한 case 로 접는 이유는 진화 아이템과 같다: 갈래가 갈리는 것은 **어느 배틀 효과인가**
     /// 뿐이고 그 질문은 `ItemKind.heldBattleEffect` 가 답한다.
     case heldItem
-    /// 지니고만 있는 물건(이로치 부적) — "지금 쓴다" 는 개념이 없다.
-    case passive
     /// 미니룸 가구 — 가방에서 쓰는 것이 아니라 방에서 배치한다.
     case furniture
     case evolutionItem
@@ -227,7 +225,6 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
     case rareCandy
     case mint
     case abilityCapsule, abilityPatch
-    case shinyCharm
     case linkingCord, fireStone, waterStone, thunderStone, leafStone, iceStone, moonStone, sunStone
     // 4세대 추가분 — 없으면 로즈레이드·눈여아·무레인 등 8종이 진화할 방법이 아예 없다.
     case shinyStone, duskStone, dawnStone
@@ -404,10 +401,10 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
     /// 진화 아이템 공통가 — 돌과 지닌물건을 구분하지 않는다(둘 다 진화 1회분의 값).
     static let evolutionItemPrice = 500
 
-    /// 이 아이템이 여는 진화 조건. nil = 진화 아이템이 아님(사탕·민트·부적).
+    /// 이 아이템이 여는 진화 조건. nil = 진화 아이템이 아님(사탕·민트 등).
     var evolutionRule: EvolutionItemRule? {
         switch self {
-        case .rareCandy, .mint, .abilityCapsule, .abilityPatch, .shinyCharm, .heartScale, .teraShard,
+        case .rareCandy, .mint, .abilityCapsule, .abilityPatch, .heartScale, .teraShard,
              .lifeOrb, .focusSash, .leftovers, .choiceBand, .choiceSpecs, .choiceScarf,
              .flameOrb, .toxicOrb, .assaultVest,
              .silverPowder, .softSand, .hardStone, .miracleSeed, .blackGlasses, .blackBelt,
@@ -540,7 +537,6 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
              .loadedDice, .bindingBand, .gripClaw, .throatSpray,
              .quickClaw, .focusBand, .eviolite:
             return .heldItem
-        case .shinyCharm: return .passive
         case .roomBed, .roomTable, .roomLamp, .lovelyVanity, .lovelySofa, .lovelyHeartLamp,
              .retroArcade, .retroRadio, .retroTV, .naturePlant, .natureBench, .natureLantern:
             return .furniture
@@ -791,7 +787,6 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
         case .mint: return nil   // PokéAPI 에 민트 스프라이트 없음(8세대 아이템) → 이모지 폴백
         case .abilityCapsule: return "ability-capsule"
         case .abilityPatch: return "ability-patch"
-        case .shinyCharm: return "shiny-charm"
         case .heartScale: return "heart-scale"
         case .teraShard: return nil   // PokéAPI 에 테라피스 스프라이트 없음(9세대) → 이모지 폴백
         case .lifeOrb: return "life-orb"
@@ -868,7 +863,6 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
         case .mint: return "🌿"
         case .abilityCapsule: return "💊"
         case .abilityPatch: return "🩹"
-        case .shinyCharm: return "✨"
         case .linkingCord: return "🔗"
         case .fireStone: return "🔥"; case .waterStone: return "💧"; case .thunderStone: return "⚡"
         case .leafStone: return "🍃"; case .iceStone: return "❄️"; case .moonStone: return "🌙"; case .sunStone: return "☀️"
@@ -987,7 +981,6 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
         case .mint: return Mint.price
         case .abilityCapsule: return AbilityItemBalance.capsulePrice
         case .abilityPatch: return AbilityItemBalance.patchPrice
-        case .shinyCharm: return nil
         case .heartScale: return MoveRelearn.price
         case .teraShard: return TeraShard.price
         case .lifeOrb: return HeldItemBalance.lifeOrbPrice
@@ -1027,13 +1020,6 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
         case .lovelySofa, .retroTV, .naturePlant: return 1_100
         case .lovelyHeartLamp, .retroRadio, .natureLantern: return 850
         default: return isEvolutionItem ? Self.evolutionItemPrice : nil
-        }
-    }
-    /// 보유형(패시브) 아이템 — 소비하지 않고 보유하는 동안 상시 효과. 1회 구매(재구매 불가), 가방엔 "적용 중" 표시.
-    var isPassive: Bool {
-        switch self {
-        case .shinyCharm: return true
-        default: return false
         }
     }
     /// R7 reactions are per furniture (not per species), keeping the content budget finite.
@@ -1938,15 +1924,6 @@ enum TeraShard {
     static let price = 2_500
 }
 
-/// 이로치 부적 밸런스 상수 — 보유형(1회 구매·영구, 소비 안 됨).
-enum ShinyCharm {
-    /// 상점 구매가. 앞으로의 모든 부화에 적용되는 영구 럭 업그레이드라 프리미엄(레어 1마리 졸업분=3B).
-    static let price = 3_000_000_000
-    /// 보유 시 이로치 부화 확률 분모 — 1/64 → 1/48 (+33%). 본가 '반짝이 부적'(이로치 확률↑) 오마주.
-    /// ×2(1/32)는 과해 절제. 이미 부화한 개체엔 소급 없음(이로치는 부화 순간 확정).
-    static let shinyDenominator: UInt64 = 48
-}
-
 /// 새 알(리롤) 밸런스 상수 — 상점 구매 시 현재 포켓몬을 폐기하고 새 알로 되돌린다.
 enum FreshEgg {
     /// 상점 구매가(재화 = 별의조각 starPieces). 마음에 안 드는 부화를 리롤하는 프리미엄. 폐기 개체는
@@ -2689,8 +2666,6 @@ struct CompanionState: Codable, Sendable {
     /// 5★ 전용 포획 원장 — `raidCatchDate` 와 같은 규칙, 다른 티어.
     var raidCatchDateTierFive = ""
     var raidCatchDateTierSix = ""
-    var weeklyRaidAttemptDate = ""
-    var weeklyRaidAttemptsToday = 0
     /// 사파리존 하루 방문(참여) 원장 — `gymDefenseRewardDate`/`Today` 와 같은 날짜+카운트 모양.
     /// 방문 자체(걷기·볼)를 몇 번 할 수 있는지를 잠근다. 포획(보상) 원장과 분리하는 이유는
     /// `raidRewardDate` vs `raidCatchDate` 와 같다 — 하나로 합치면 "얼마나 노는지"와 "얼마나
@@ -2799,8 +2774,6 @@ struct CompanionState: Codable, Sendable {
         raidCatchDateTierThree  = c.lenient(String.self, forKey: .raidCatchDateTierThree, default: "")
         raidCatchDateTierFive   = c.lenient(String.self, forKey: .raidCatchDateTierFive, default: "")
         raidCatchDateTierSix    = c.lenient(String.self, forKey: .raidCatchDateTierSix, default: "")
-        weeklyRaidAttemptDate   = c.lenient(String.self, forKey: .weeklyRaidAttemptDate, default: "")
-        weeklyRaidAttemptsToday = c.lenient(Int.self, forKey: .weeklyRaidAttemptsToday, default: 0)
         safariZoneVisitDate     = c.lenient(String.self, forKey: .safariZoneVisitDate, default: "")
         safariZoneVisitsToday   = c.lenient(Int.self, forKey: .safariZoneVisitsToday, default: 0)
         safariZoneCatchDate     = c.lenient(String.self, forKey: .safariZoneCatchDate, default: "")

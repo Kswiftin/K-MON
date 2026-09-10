@@ -32,11 +32,10 @@ enum ShopGood: Equatable, Sendable {
         }
     }
 
-    /// 여러 개를 한 번에 살 수 있는가. 의상은 한 벌뿐이고, 보유형 아이템도 재구매가 막혀 있다.
+    /// 여러 개를 한 번에 살 수 있는가. 의상은 한 벌뿐이다.
     var allowsQuantity: Bool {
         switch self {
-        case .item(let kind): !kind.isPassive
-        case .egg, .machine: true
+        case .item, .egg, .machine: true
         case .outfit: false
         }
     }

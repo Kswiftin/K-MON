@@ -267,8 +267,6 @@ enum SaveTransfer {
         s.focusEggReadyDates = Array(s.focusEggReadyDates.sorted().prefix(s.focusEggs))
         s.eggFragments = min(max(0, s.eggFragments), 9)
         s.weeklyAdventureCount = min(max(0, s.weeklyAdventureCount), 10)
-        s.weeklyRaidAttemptDate = clampedKey(s.weeklyRaidAttemptDate)
-        s.weeklyRaidAttemptsToday = min(max(0, s.weeklyRaidAttemptsToday), 2)
         s.eggUsage = clampToken(s.eggUsage)
         // 알 보증은 "지금 품고 있는 알"에만 붙는 값이라 활성 포켓몬과 공존할 수 없다. 손편집·구버전
         // 조합으로 둘 다 들어오면 그 보증이 다음 알로 새어 영구 프리미엄이 되므로 여기서 떨군다.
@@ -490,9 +488,6 @@ enum SaveTransfer {
         if !s.raidCatchDateTierThree.isEmpty { p.append("c3d\(s.raidCatchDateTierThree)") }
         if !s.raidCatchDateTierFive.isEmpty { p.append("c5d\(s.raidCatchDateTierFive)") }
         if !s.raidCatchDateTierSix.isEmpty { p.append("c6d\(s.raidCatchDateTierSix)") }
-        if !s.weeklyRaidAttemptDate.isEmpty || s.weeklyRaidAttemptsToday != 0 {
-            p.append("r6a\(s.weeklyRaidAttemptDate):\(s.weeklyRaidAttemptsToday)")
-        }
         // 웨이브 런 클리어 알 보상의 하루 원장 — 위 레이드 원장들과 같은 부류다. 서명 밖에 두면
         // 지우는 것만으로 같은 날 클리어할 때마다 알을 다시 받는다. 새 필드라 조건부 append,
         // `integrityVersion` 은 올리지 않는다.

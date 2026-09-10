@@ -91,13 +91,12 @@ final class HeldItemTests: XCTestCase {
 
     // MARK: - 아이템 축
 
-    /// 셋 다 진화 아이템이 아니고 가구도 보유형도 아니다. 이 판정이 틀리면 상점가가 진화 아이템
+    /// 셋 다 진화 아이템이 아니고 가구도 아니다. 이 판정이 틀리면 상점가가 진화 아이템
     /// 공통가로 접히고 가방이 "진화 가능할 때 사용" 을 띄운다(하트비늘·테라피스와 같은 함정).
     func testTheThreeAreNotEvolutionItems() {
         for kind in Self.three {
             XCTAssertNil(kind.evolutionRule, "\(kind.rawValue)")
             XCTAssertFalse(kind.isEvolutionItem, "\(kind.rawValue)")
-            XCTAssertFalse(kind.isPassive, "\(kind.rawValue)")
             XCTAssertNil(kind.roomReaction, "\(kind.rawValue)")
             XCTAssertEqual(kind.bagUse, .heldItem, "\(kind.rawValue)")
         }

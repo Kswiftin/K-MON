@@ -28,7 +28,9 @@ enum RaidTier: Int, Codable, Sendable, CaseIterable {
         case .one: 400
         case .three: 1_600
         case .five: 2_800
-        case .six: 6_000
+        // 2026-09-10 완화: 6,000 → 5,200. 난이도가 너무 높다는 피드백 — 레벨(화력)은 그대로 두고
+        // 그라인드만 줄인다(`testTierHPGatesPartySize` 의 상한·하한 안에서).
+        case .six: 5_200
         }
     }
 

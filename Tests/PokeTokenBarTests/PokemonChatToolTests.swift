@@ -422,11 +422,11 @@ final class PokemonChatToolTests: XCTestCase {
         XCTAssertTrue(mint.succeeded, mint.line)
         XCTAssertEqual(store.itemCount(.mint), 0)
 
-        // 보유형(부적)은 대화에서 "지금 쓴다" 는 개념이 없다. 재고가 있어도 실패다.
-        store.debugAddItem(.shinyCharm, 1)
-        let charm = await toolbox.runAsActive(.itemUse(kind: .shinyCharm))
-        XCTAssertFalse(charm.succeeded, charm.line)
-        XCTAssertEqual(store.itemCount(.shinyCharm), 1, "쓸 수 없다고 해 놓고 소모했다")
+        // 가구는 대화에서 "지금 쓴다" 는 개념이 없다(미니룸에서 배치한다). 재고가 있어도 실패다.
+        store.debugAddItem(.roomBed, 1)
+        let furniture = await toolbox.runAsActive(.itemUse(kind: .roomBed))
+        XCTAssertFalse(furniture.succeeded, furniture.line)
+        XCTAssertEqual(store.itemCount(.roomBed), 1, "쓸 수 없다고 해 놓고 소모했다")
     }
 
     /// 가방·로스터는 모델이 **되돌려 줄 수 있는 값**으로 찍힌다. 되돌려 줄 수 없는 값을 찍으면

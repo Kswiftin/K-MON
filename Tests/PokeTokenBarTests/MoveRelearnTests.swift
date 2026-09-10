@@ -46,7 +46,6 @@ final class MoveRelearnTests: XCTestCase {
     func testHeartScaleIsNotAnEvolutionItem() {
         XCTAssertNil(ItemKind.heartScale.evolutionRule)
         XCTAssertFalse(ItemKind.heartScale.isEvolutionItem)
-        XCTAssertFalse(ItemKind.heartScale.isPassive)
     }
 
     func testHeartScaleShopPriceComesFromMoveRelearn() {

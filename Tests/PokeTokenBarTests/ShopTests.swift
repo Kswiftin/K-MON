@@ -155,17 +155,6 @@ final class ShopTests: XCTestCase {
         XCTAssertEqual(s.availableTokens, RareCandy.price * 3)
     }
 
-    /// 보유형(이로치 부적)은 상점에서 팔지 않는다 — 잔액이 아무리 많아도 수량 선택도 구매도 없다.
-    /// `shopPrice` 단언은 경보다: 보유형이 판매 목록에 들어오는 날 수량 규칙을 다시 봐야 한다
-    /// (개수 개념이 없는 아이템에 스텝퍼가 붙으면 항상 실패하는 수량을 고르게 된다).
-    func testPassiveItemHasNoQuantity() {
-        XCTAssertNil(ItemKind.shinyCharm.shopPrice, "보유형이 판매 목록에 들어왔다 — 수량 규칙 재검토 필요")
-        let s = store(used: 10_000_000_000)
-        XCTAssertEqual(s.maxPurchasable(.shinyCharm), 0)
-        XCTAssertFalse(s.buy(.shinyCharm, quantity: 2))
-        XCTAssertEqual(s.itemCount(.shinyCharm), 0)
-    }
-
     // MARK: 탭 분류
 
     /// **판매품은 탭 하나에만 들어간다.** 상점 탭은 화면 쪽 필터로 갈리는데, 세 필터가 각자
@@ -189,29 +178,13 @@ final class ShopTests: XCTestCase {
                       "'도구' 탭이 지닌물건을 그대로 두고 있다 — 두 탭에 겹쳐 뜬다")
     }
 
-    // MARK: 정렬 (가격 저렴한 순 + 구매 완료 보유형 맨 아래)
+    // MARK: 정렬 (가격 저렴한 순)
 
-    /// 상점 목록은 가격 오름차순(민트 100M < 사탕 500M < 이로치 부적 3B).
+    /// 상점 목록은 가격 오름차순.
     func testItemsSortedByPriceAscending() {
         let items = store(used: 0).purchasableItems
         let prices = items.compactMap(\.shopPrice)
         XCTAssertEqual(prices, prices.sorted(), "shopPrice 오름차순 — 가격 상수가 바뀌어도 정렬 불변식 유지")
-    }
-
-    /// 구매 완료한 보유형(이로치 부적)은 맨 아래로. 재구매 불가라 상단에 둘 이유 없음.
-    /// (현재 부적이 최고가라 가격순 결과와 일치하지만, 향후 저가 보유형이 생겨도 규칙이 유지되도록 게이트.)
-    func testOwnedPassiveSinksToBottom() {
-        let url = storeStateURL("shop-sort")
-        let json = "{\"economyVersion\":2,\"forcedResetVersion\":1,\"starterChosen\":true,\"installBaselineSet\":true,\"usedSinceInstall\":0,\"spentTokens\":0,\"starPieces\":0,"
-            + "\"lastDate\":\"d\",\"dex\":[],\"collectedFinals\":[],\"inventory\":{\"shinyCharm\":1}}"
-        try? json.data(using: .utf8)!.write(to: url)
-        let s = CompanionStore(provider: ShopNoProvider(), clock: { self.now }, fileURL: url, rng: SeededRNG(seed: 1))
-        XCTAssertTrue(s.itemCount(.shinyCharm) > 0)
-        // **목록의 마지막이 무엇인지로 묻지 않는다** — 그러면 "사탕이 가장 비싼 판매품" 이라는
-        // 전제가 단언에 숨어, 사탕과 같은 값의 아이템이 들어오는 날(지닌물건 3종) 규칙과 무관하게
-        // 빨개진다. 이 테스트가 잠그려는 것은 **보유형이 목록에 없다**는 것 하나다.
-        XCTAssertFalse(s.purchasableItems.contains(.shinyCharm), "보유형은 구매 목록에서 제외")
-        XCTAssertFalse(s.purchasableItems.isEmpty, "목록이 비면 이 단언은 아무것도 안 잠근다")
     }
 
     // MARK: shopEntries (판매 아이템 + 알 3종을 하나의 가격 오름차순 목록으로 병합)
