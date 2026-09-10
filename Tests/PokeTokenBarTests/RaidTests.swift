@@ -141,6 +141,17 @@ final class RaidTests: XCTestCase {
         XCTAssertFalse(LiveEventWindow.isActive(at(11, 12, year: 2027), calendar: calendar), "1년 뒤 같은 날짜")
     }
 
+    /// `endDate` 는 그 날의 20:00 을 낸다 — 레이드 화면의 "N시간 M분 남음" 배너
+    /// (`RaidView.eventRemainingText`)가 이 값과 지금 시각의 차로 카운트다운을 계산한다.
+    func testLiveEventWindowEndDateIsTwentyHundredOnTheSameDay() {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        let noon = calendar.date(from: DateComponents(year: 2026, month: 9, day: 11, hour: 12))!
+        let expectedEnd = calendar.date(from: DateComponents(year: 2026, month: 9, day: 11, hour: 20))!
+
+        XCTAssertEqual(LiveEventWindow.endDate(noon, calendar: calendar), expectedEnd)
+    }
+
     /// 이벤트 창 동안만 보스 종 선택이 반나절(`periodKey`)이 아니라 시간(`hourlyKey`)을 탄다 —
     /// 6★ 는 그 주 내내 고정이라 이벤트와 무관하다.
     func testBossKeyRotatesHourlyOnlyDuringTheEventWindow() {
