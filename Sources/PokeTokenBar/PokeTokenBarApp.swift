@@ -783,7 +783,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, UNU
             // LSUIElement 앱이 비활성이면 팝오버 내부 버튼 클릭이 무시됨 — show 전에 활성화 보장
             NSApp.activate(ignoringOtherApps: true)
             popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
-            popover.contentViewController?.view.window?.makeKeyAndOrderFront(nil)
+            // 팝오버 창은 기본이 불투명이다 — 그대로 두면 `PokedoroTheme.pageBackground` 의 블러가
+            // 안에서 아무리 옅어져도 이 창 자체의 불투명 배경이 가려 투명도 설정이 무효해진다.
+            let popoverWindow = popover.contentViewController?.view.window
+            popoverWindow?.isOpaque = false
+            popoverWindow?.backgroundColor = .clear
+            popoverWindow?.makeKeyAndOrderFront(nil)
             syncMenuAnimation()   // 팝오버 열림 → 메뉴바 애니메이션 정지(중복 + WindowServer 부하 회피)
             settings.requestNotificationAuthorizationIfNeeded()
             Task { await updater.check() }   // 팝오버 열 때 재확인(내부 minInterval 디바운스)
