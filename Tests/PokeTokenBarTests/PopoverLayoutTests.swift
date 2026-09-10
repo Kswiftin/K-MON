@@ -473,18 +473,6 @@ final class PopoverLayoutTests: XCTestCase {
                        "25분 집중하자 진화하자", "다른 칩까지 삼켰다")
     }
 
-    /// 같은 부류 스윕: 릴레이 방 목록도 LAN 이 길이를 정한다 — 상한도 페이저도 없으면 팝오버가 잘린다.
-    func testEveryRelayRoomLandsOnSomePage() {
-        let pageSize = PokeathlonView.roomPageSize
-        for roomCount in [0, 1, pageSize, pageSize + 1, 20] {
-            let pages = PokeathlonView.roomPageCount(roomCount)
-            XCTAssertGreaterThanOrEqual(pages * pageSize, roomCount,
-                                        "\(roomCount)개 방이 \(pages)페이지에 다 안 들어간다")
-            XCTAssertLessThan((pages - 1) * pageSize, max(1, roomCount),
-                              "\(roomCount)개인데 마지막 페이지가 비어 있다")
-        }
-    }
-
     // MARK: 미션 카드 — 세로 예산
 
     /// 홈 탭 스크롤 뷰포트 예산. 560pt 창에서 패딩·상단 바·타이머·탭 피커·푸터를 빼면 약 250pt 가

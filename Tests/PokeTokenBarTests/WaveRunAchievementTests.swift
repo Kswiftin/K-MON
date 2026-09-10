@@ -12,9 +12,14 @@ final class WaveRunAchievementTests: XCTestCase {
         let line = EvoLine(baseID: 25, tree: EvoNode(speciesID: 25, children: []), rarity: .common,
                            names: [25: ["ko": "피카츄", "en": "Pikachu"]])
         let url = storeStateURL("wave-run")
-        return CompanionStore(provider: StubProvider(value: line),
-                              clock: { Date(timeIntervalSince1970: 1_000) },
-                              fileURL: url, rng: SeededRNG(seed: 7))
+        let store = CompanionStore(provider: StubProvider(value: line),
+                                   clock: { Date(timeIntervalSince1970: 1_000) },
+                                   fileURL: url, rng: SeededRNG(seed: 7))
+        // 던전 자체의 일일 보상만 검증한다. 랜덤 일일 미션에 던전 미션이 배정되면
+        // 미션 완료 알까지 함께 들어와 결과가 사용자/기기 시드에 따라 달라진다.
+        store.state.missions.assignedDayKey = "1970-01-01"
+        store.state.missions.assignedDailyIDs = ["dailyFocus25", "dailyAdventure", "dailyBattle"]
+        return store
     }
 
     func testClearingAWaveRunRecordsTheDungeonAchievement() {
