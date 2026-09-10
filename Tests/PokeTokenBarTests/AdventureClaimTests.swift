@@ -163,7 +163,8 @@ final class AdventureClaimTests: XCTestCase {
         clock.advance(90 * 60)
         let reward = store.completeFocusSession(minutes: 90)
 
-        XCTAssertGreaterThan(reward.missionBonus, 0, "테스트 전제: 이 세션은 일간 집중 미션을 완료시킨다")
+        // 랜덤 일일 미션은 별의조각이 아니라 알을 지급하므로 정산의 재화 설명과 분리된다.
+        XCTAssertEqual(reward.missionBonus, 0)
         // 90분 세션은 집중 업적 1단계(60분)도 함께 넘긴다 — 지급 경로가 넷이 됐으니 넷 다 실려야 한다.
         XCTAssertGreaterThan(reward.achievementBonus, 0, "테스트 전제: 이 세션은 집중 업적 1단계도 넘긴다")
         XCTAssertEqual(reward.totalStardust, store.state.starPieces - starPiecesBefore,

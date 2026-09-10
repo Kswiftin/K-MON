@@ -113,15 +113,17 @@ final class RunProgressTests: XCTestCase {
 
         store.recordRunResult(reachedWave: RogueRun.finalWave, cleared: true)
         let firstDayDust = store.state.starPieces
+        let firstDayEggs = store.state.focusEggs
         XCTAssertGreaterThanOrEqual(firstDayDust, DungeonDailyReward.starPieces)
-        XCTAssertEqual(store.state.focusEggs, DungeonDailyReward.eggs)
+        XCTAssertTrue((DungeonDailyReward.eggs...(DungeonDailyReward.eggs + 1)).contains(firstDayEggs))
         store.recordRunResult(reachedWave: RogueRun.finalWave, cleared: true)
         XCTAssertEqual(store.state.starPieces, firstDayDust)
-        XCTAssertEqual(store.state.focusEggs, DungeonDailyReward.eggs)
+        XCTAssertEqual(store.state.focusEggs, firstDayEggs)
         clock.advance(24 * 60 * 60)
         store.recordRunResult(reachedWave: RogueRun.finalWave, cleared: true)
         XCTAssertEqual(store.state.starPieces, firstDayDust + DungeonDailyReward.starPieces)
-        XCTAssertEqual(store.state.focusEggs, DungeonDailyReward.eggs * 2)
+        XCTAssertTrue((DungeonDailyReward.eggs...(DungeonDailyReward.eggs + 1))
+            .contains(store.state.focusEggs - firstDayEggs))
     }
 
     /// 서명 뒤에 기록을 고치면 조작으로 잡힌다.
