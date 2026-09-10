@@ -35,6 +35,7 @@ final class RaidTests: XCTestCase {
                       speed: Int = 1) -> MultiplayerFighter {
         var snapshot = tank(level: tier.bossLevel, speed: speed)
         snapshot.speciesID = RaidBoss.speciesID(dayKey: dayKey, tier: tier)
+        snapshot.isShiny = RaidBoss.isShinyBoss(tier: tier)
         snapshot.moves = [tackle(power: 40)]
         return RaidBoss.bossFighter(tier: tier, snapshot: snapshot)
     }
@@ -63,6 +64,9 @@ final class RaidTests: XCTestCase {
         XCTAssertTrue(Set(RaidBoss.uncommonSpeciesPool).isDisjoint(with: RaidBoss.rareSpeciesPool))
         XCTAssertTrue(Set(RaidBoss.uncommonSpeciesPool).isDisjoint(with: RaidBoss.legendarySpeciesPool))
         XCTAssertTrue(Set(RaidBoss.rareSpeciesPool).isDisjoint(with: RaidBoss.legendarySpeciesPool))
+        XCTAssertTrue(Set(RaidBoss.weeklySpeciesPool).isDisjoint(with: RaidBoss.uncommonSpeciesPool))
+        XCTAssertTrue(Set(RaidBoss.weeklySpeciesPool).isDisjoint(with: RaidBoss.rareSpeciesPool))
+        XCTAssertTrue(Set(RaidBoss.weeklySpeciesPool).isDisjoint(with: RaidBoss.legendarySpeciesPool))
     }
 
     /// 날짜가 바뀌면 로테이션이 돈다. 한 해를 돌려 **풀의 절반 이상**이 실제로 나오는지 본다 —
@@ -100,6 +104,21 @@ final class RaidTests: XCTestCase {
         XCTAssertEqual(RaidBoss.catchPercent(for: .legendary), 5)
         XCTAssertEqual(RaidBoss.catchPercent(for: .rare), 15)
         XCTAssertEqual(RaidBoss.catchPercent(for: .uncommon), 25)
+    }
+
+    func testWeeklySixStarBossIsAlwaysShinyAndHasThreePercentCatchRate() {
+        let species = RaidBoss.speciesID(dayKey: "2026-W37", tier: .six)
+        XCTAssertTrue(RaidBoss.isShinyBoss(tier: .six))
+        XCTAssertFalse(RaidBoss.isShinyBoss(tier: .five))
+        XCTAssertTrue(boss(tier: .six, dayKey: "2026-W37").side.snapshot.isShiny)
+        XCTAssertEqual(RaidBoss.catchPercent(tier: .six, speciesID: species), 3)
+    }
+
+    func testRaidPoolsAreBroadEnoughToAvoidFrequentRepeats() {
+        XCTAssertGreaterThanOrEqual(RaidBoss.uncommonSpeciesPool.count, 100)
+        XCTAssertGreaterThanOrEqual(RaidBoss.rareSpeciesPool.count, 20)
+        XCTAssertGreaterThanOrEqual(RaidBoss.legendarySpeciesPool.count, 30)
+        XCTAssertGreaterThanOrEqual(RaidBoss.weeklySpeciesPool.count, 80)
     }
 
     func testEvolutionDayAndNightAlsoChangeAtNoon() {

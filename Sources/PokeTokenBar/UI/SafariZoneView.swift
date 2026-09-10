@@ -18,6 +18,7 @@ struct SafariZoneView: View {
     /// 넘어가지 않는다"를 조건에 반영할 수 있다.
     @State private var pendingOutcome: SafariOutcome?
     @State private var encounterNames: [Int: String] = [:]
+    @State private var expandedPoolZones: Set<SafariZone.ZoneID> = []
 
     private var l: L { store.l }
 
@@ -78,14 +79,30 @@ struct SafariZoneView: View {
             .buttonStyle(.plain)
             .disabled(store.safariZoneVisitsRemainingToday <= 0)
 
-            Text(l.safariZoneEncounterPool)
+            Button {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    if expandedPoolZones.contains(zone) { expandedPoolZones.remove(zone) }
+                    else { expandedPoolZones.insert(zone) }
+                }
+            } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: expandedPoolZones.contains(zone) ? "chevron.down" : "chevron.right")
+                    Text(expandedPoolZones.contains(zone) ? "나오는 포켓몬 접기" : "나오는 포켓몬 보기")
+                    Spacer()
+                }
                 .font(.caption2.bold())
                 .foregroundStyle(.secondary)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
 
-            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 4), count: 5), spacing: 7) {
-                ForEach(SafariZone.encounterPool(for: zone), id: \.speciesID) { entry in
-                    encounterCell(entry)
+            if expandedPoolZones.contains(zone) {
+                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 4), count: 5), spacing: 7) {
+                    ForEach(SafariZone.encounterPool(for: zone), id: \.speciesID) { entry in
+                        encounterCell(entry)
+                    }
                 }
+                .transition(.opacity.combined(with: .move(edge: .top)))
             }
         }
         .padding(10)

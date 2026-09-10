@@ -2944,7 +2944,8 @@ final class CompanionStore {
         // 원장은 **개체를 만들기 직전에** 찍는다. 위 가드보다 먼저 찍으면 라인 조회 실패가 그날의
         // 기회를 태우고, 뒤에 찍으면 네트워크 창 동안 들어온 두 번째 판이 한 마리를 더 넣는다.
         guard claimRaidCatch(tier: tier) else { return .claimedToday }
-        return commitCaughtMon(speciesID: speciesID, line: line, source: .raid)
+        return commitCaughtMon(speciesID: speciesID, line: line, source: .raid,
+                               presetShiny: RaidBoss.isShinyBoss(tier: tier) ? true : nil)
     }
 
     /// 사파리존에서 잡은 조우를 데려간다. `catchRaidBoss` 와 원장 모양만 다르다(티어별이 아니라
@@ -3010,9 +3011,10 @@ final class CompanionStore {
     /// `presetGender` — 사파리존이 조우 시점에 미리 굴려 화면에 보여준 성별. 있으면 그대로 쓰고,
     /// 없으면(레이드, 또는 어떤 이유로든 사전 굴림이 안 된 사파리존) 기존처럼 여기서 즉석 굴린다.
     private func commitCaughtMon(speciesID: Int, line: EvoLine, source: CaughtMonSource,
-                                 presetGender: PokemonGender? = nil) -> RaidCatchResult {
+                                 presetGender: PokemonGender? = nil,
+                                 presetShiny: Bool? = nil) -> RaidCatchResult {
         let wasRegistered = isSpeciesAlreadyOwned(speciesID)
-        let isShiny = Self.rollsShiny(roll: rng.next(), charmOwned: ownsShinyCharm)
+        let isShiny = presetShiny ?? Self.rollsShiny(roll: rng.next(), charmOwned: ownsShinyCharm)
         let nature = PokemonNature.allCases[Int(rng.next() % UInt64(PokemonNature.allCases.count))]
         let gender = presetGender ?? PokemonGender.from(genderRate: line.genderRate, roll: rng.next())
         let caught = MonState(baseID: speciesID, pathIDs: [speciesID], plannedPathIDs: [speciesID],

@@ -151,6 +151,8 @@ enum RaidBoss {
     /// 있었다. 별·인원과 무관하게 클리어(그 반나절·그 티어의 첫 승리)만 하면 포획 추첨이 돈다.
     static let minimumCoopRunners = 2
 
+    static func isShinyBoss(tier: RaidTier) -> Bool { tier == .six }
+
     /// 이 머릿수에 협동 항이 붙나. **정산과 화면이 같은 술어를 본다** — 화면이 "협동 보너스는 2명
     /// 이상부터" 를 그리는 조건을 따로 적으면, 머릿수 기준을 옮긴 날 문구와 실제 정산이 갈린다.
     static func coopTermsApply(runnerCount: Int) -> Bool { runnerCount >= minimumCoopRunners }
@@ -166,15 +168,38 @@ enum RaidBoss {
     /// 5★와 같은 종·같은 포획 확률을 얻으니, 사람을 더 모아야 하는 것 말고는 5★를 돌 이유가
     /// 없었다. 이제 1★=고급, 3★=희귀, 5★=전설로 갈라 티어마다 고유한 포획 기회를 준다.
     static let uncommonSpeciesPool = [
-        3, 6, 9, 94, 131, 143, 212, 229, 257, 282, 392
+        3, 6, 9, 18, 31, 34, 36, 45, 51, 55, 59, 68, 71, 76, 94, 103, 112, 121,
+        127, 131, 134, 135, 136, 143, 154, 157, 160, 182, 186, 195, 199, 205, 208,
+        212, 217, 221, 224, 229, 230, 232, 237, 242, 254, 257, 260, 272, 275, 282,
+        286, 295, 297, 306, 308, 310, 319, 321, 323, 324, 326, 330, 332, 334, 350,
+        354, 357, 362, 365, 389, 392, 395, 398, 405, 407, 409, 416, 419, 423, 426,
+        430, 432, 435, 437, 450, 452, 454, 460, 461, 462, 463, 465, 469, 470, 471,
+        497, 500, 503, 508, 514, 516, 518, 521, 523, 526, 530, 534, 537, 542, 545,
+        549, 553, 555, 560, 563, 565, 567, 569, 571, 573, 576, 579, 581, 584, 586,
+        589, 591, 593, 596, 598, 601, 604, 609, 612, 614, 617, 621, 623, 625, 628,
+        630, 632
     ]
     static let rareSpeciesPool = [
-        65, 130, 149, 248, 260, 289, 373, 376, 445, 448, 635
+        65, 130, 149, 169, 248, 289, 373, 376, 445, 448, 464, 466, 467, 468, 472,
+        473, 474, 475, 476, 477, 478, 635, 637
     ]
     static let legendarySpeciesPool = [
-        150, 249, 250, 384, 483, 484, 487, 643, 644, 646
+        144, 145, 146, 150, 243, 244, 245, 249, 250, 377, 378, 379, 380, 381, 382,
+        383, 384, 480, 481, 482, 483, 484, 485, 486, 487, 488, 638, 639, 640, 641,
+        642, 643, 644, 645, 646
     ]
-    static let weeklySpeciesPool = [464, 466, 467, 472, 473, 474, 475, 476]
+    /// 주간 6성은 일반 티어와 별도 로테이션이다. 강한 최종 진화체를 넓게 섞어 같은 보스가
+    /// 몇 주 간격으로 되풀이되는 느낌을 줄인다.
+    static let weeklySpeciesPool = [
+        28, 38, 40, 49, 53, 57, 62, 73, 78, 80, 82, 85, 87, 89, 91, 97, 99,
+        101, 105, 110, 113, 119, 122, 123, 124, 125, 126, 128, 139, 141, 142, 164,
+        168, 171, 178, 181, 184, 185, 189, 192, 201, 202, 203, 206, 210, 211, 213,
+        214, 215, 216, 219, 222, 225, 226, 227, 234, 235, 241, 262, 267, 269, 277,
+        279, 291, 301, 303, 317, 320, 335, 336, 337, 338, 340, 342, 344, 346, 348,
+        352, 356, 358, 364, 367, 368, 369, 370, 411, 413, 414, 417, 424, 428, 429,
+        431, 442, 455, 457, 479, 512, 547, 556, 558, 561, 566, 575, 578, 583, 587, 594,
+        606, 615, 620, 624, 631
+    ]
 
     /// 티어가 뽑는 풀. `speciesID(dayKey:tier:)` 가 이 풀 안에서만 고른다.
     static func speciesPool(for tier: RaidTier) -> [Int] {
@@ -199,6 +224,11 @@ enum RaidBoss {
         case .rare: 15
         case .uncommon, .common: 25
         }
+    }
+
+    /// 주간 6성은 보스가 이로치로 확정되는 대신 포획 확률을 3%로 제한한다.
+    static func catchPercent(tier: RaidTier, speciesID: Int) -> Int {
+        tier == .six ? 3 : catchPercent(for: rarity(speciesID: speciesID))
     }
 
     static func periodKey(_ date: Date, calendar: Calendar = .current) -> String {
@@ -249,9 +279,9 @@ enum RaidBoss {
     }
 
     /// 참가자마다 독립 포획 판정을 하되 모든 피어가 같은 순서와 결과를 계산한다.
-    static func catchAttempts(runners: [MultiplayerFighter], speciesID: Int,
+    static func catchAttempts(runners: [MultiplayerFighter], speciesID: Int, tier: RaidTier,
                               seed: UInt64, finishedRound: Int) -> [RaidCatchAttempt] {
-        let percent = catchPercent(for: rarity(speciesID: speciesID))
+        let percent = catchPercent(tier: tier, speciesID: speciesID)
         return runners.sorted { $0.id.uuidString < $1.id.uuidString }.enumerated().map { index, runner in
             var rng = SplitMix64(seed: seed &+ UInt64(bitPattern: Int64(finishedRound))
                                  &+ UInt64(index) &* 0x9E37_79B9_7F4A_7C15)
@@ -283,6 +313,7 @@ enum RaidBoss {
         fighter.id == bossID && fighter.team == .blue
             && fighter.side.snapshot.speciesID == speciesID(dayKey: dayKey, tier: tier)
             && fighter.side.snapshot.level == tier.bossLevel
+            && fighter.side.snapshot.isShiny == isShinyBoss(tier: tier)
             && fighter.side.hp == tier.bossHP
             && fighter.side.status == nil && fighter.side.confusionTurns == 0
             && fighter.side.stages.isEmpty
