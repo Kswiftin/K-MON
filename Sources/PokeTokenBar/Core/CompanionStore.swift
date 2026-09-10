@@ -2242,6 +2242,50 @@ final class CompanionStore {
         showNextMoveLearningPrompt()
     }
 
+    /// `mon` 이 지금 레벨까지 배울 수 있었던 기술 중 아직 안 배운 것 — 하트비늘 후보 조회
+    /// (`useHeartScale`)와 같은 조회(`levelUpMoveHistory`)를 재사용하지만 재화를 요구하지 않는다.
+    ///
+    /// **왜 필요한가**: 모험 정산(`claimAdventure`)은 홈 파티(최대 6마리)에게 나눠 경험치를 주지만,
+    /// 레벨업 시 기술을 큐에 넣는 `queueMoveLearning` 은 **활성 개체 하나만** 본다(`homeParty` 가
+    /// 항상 활성을 1번으로 두므로 `recipients.dropFirst()` — 예비로 고른 박스 개체 — 는 레벨이
+    /// 올라도 배울 기술 제안이 전혀 안 뜬다, 2026-09-10 사용자 보고). 이 조회가 그 공백을 메운다 —
+    /// 포켓몬탭 정보 팝오버가 개체를 열 때마다 불러 "놓친 기술"을 무료로 되돌려준다.
+    func missedLevelUpMoves(for mon: MonState) async -> [MoveSpec] {
+        var inherited: [[MoveSpec]] = []
+        for speciesID in mon.pathIDs {
+            let moves = await PokeAPIClient.shared.levelUpMoveHistory(speciesID: speciesID, level: mon.level)
+            inherited.append(moves)
+        }
+        return MoveRelearn.candidates(inherited: inherited, learned: mon.learnedMoves)
+    }
+
+    /// `missedLevelUpMoves` 가 찾은 기술 하나를 무료로 배운다 — 레벨업 순간 놓친 몫을 돌려주는
+    /// 것이지 다시 배우는 게 아니므로 하트비늘을 쓰지 않는다. 활성·박스 어느 쪽이든 id로 찾는다
+    /// (`acceptMoveLearning` 은 활성 전용이라 이 경로는 그걸 재사용할 수 없다).
+    @discardableResult
+    func learnMissedLevelUpMove(monID: UUID, move: MoveSpec, replacing index: Int? = nil) -> Bool {
+        func apply(_ moves: inout [MoveSpec]) -> Bool {
+            if moves.count < 4 {
+                moves.append(move)
+            } else if let index, moves.indices.contains(index) {
+                moves[index] = move
+            } else {
+                return false
+            }
+            return true
+        }
+        if state.active?.id == monID {
+            guard apply(&state.active!.learnedMoves) else { return false }
+            displayedMoves = state.active!.learnedMoves
+        } else if let boxIndex = state.boxedMons.firstIndex(where: { $0.id == monID }) {
+            guard apply(&state.boxedMons[boxIndex].learnedMoves) else { return false }
+        } else {
+            return false
+        }
+        save()
+        return true
+    }
+
     /// 레벨 구간에서 새로 배울 기술을 큐에 넣는다.
     ///
     /// 개체를 값으로 한 번 캡처해 두면 안 된다. 이 루프는 await 를 끼고 도는 동안 사용자가 기술을

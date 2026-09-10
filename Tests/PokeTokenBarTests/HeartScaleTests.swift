@@ -233,4 +233,49 @@ final class HeartScaleTests: XCTestCase {
         XCTAssertTrue(text.contains("levelUpMoves(speciesID: speciesID, level: level, limit: 4)"))
         XCTAssertTrue(text.contains("levelUpMoves(speciesID: speciesID, level: level, limit: nil)"))
     }
+
+    // MARK: 놓친 레벨업 기술 무료 학습 — 모험 파티 예비 자리(박스 개체)용 (2026-09-10 사용자 보고)
+    //
+    // `queueMoveLearning` 은 활성 개체 하나만 본다 — 모험 정산이 홈 파티(예비 다섯 자리, 전부
+    // 박스 개체)에게 나눠 준 경험치로 레벨업해도 배울 기술 제안이 전혀 안 뜬다. 포켓몬탭 정보
+    // 팝오버가 이 함수로 그 공백을 메운다. `missedLevelUpMoves` 자체는 `PokeAPIClient.shared`
+    // 를 직접 불러 네트워크 없이는 못 재므로(하트비늘의 `useHeartScale` 과 같은 사정), 순수
+    // 로직인 `learnMissedLevelUpMove`(무브셋을 실제로 고치는 자리)만 잰다.
+
+    func testLearnMissedLevelUpMoveAppendsForActiveMonUnderFour() {
+        let s = store(scales: 0, learned: [11, 22])
+        XCTAssertTrue(s.learnMissedLevelUpMove(monID: s.state.active!.id, move: move(33)))
+        XCTAssertEqual(s.state.active?.learnedMoves.map(\.id), [11, 22, 33])
+    }
+
+    func testLearnMissedLevelUpMoveReplacesAtIndexWhenFull() {
+        let s = store(scales: 0, learned: [11, 22, 33, 44])
+        XCTAssertTrue(s.learnMissedLevelUpMove(monID: s.state.active!.id, move: move(55), replacing: 1))
+        XCTAssertEqual(s.state.active?.learnedMoves.map(\.id), [11, 55, 33, 44])
+    }
+
+    func testLearnMissedLevelUpMoveFailsWithoutIndexWhenFull() {
+        let s = store(scales: 0, learned: [11, 22, 33, 44])
+        XCTAssertFalse(s.learnMissedLevelUpMove(monID: s.state.active!.id, move: move(55)))
+        XCTAssertEqual(s.state.active?.learnedMoves.map(\.id), [11, 22, 33, 44], "실패하면 원래 무브셋 그대로")
+    }
+
+    /// [회귀] 박스 개체(모험 파티 예비 자리)는 활성 개체와 별도로 id 로 찾아 무브셋을 고쳐야
+    /// 한다 — `acceptMoveLearning` 처럼 `state.active!` 를 하드코딩하면 이 경로 자체가 무의미하다.
+    func testLearnMissedLevelUpMoveTargetsABoxedMonByID() {
+        let s = store(scales: 0, learned: [11, 22])
+        var boxed = MonState(baseID: 4, pathIDs: [4], stageIndex: 0, usedAtStage: 0,
+                             rarity: .common, totalForms: 1)
+        boxed.learnedMoves = [move(66)]
+        s.debugSetBoxedMons([boxed])
+
+        XCTAssertTrue(s.learnMissedLevelUpMove(monID: boxed.id, move: move(77)))
+        XCTAssertEqual(s.state.boxedMons.first?.learnedMoves.map(\.id), [66, 77])
+        XCTAssertEqual(s.state.active?.learnedMoves.map(\.id), [11, 22], "활성 개체 무브셋은 그대로여야 한다")
+    }
+
+    func testLearnMissedLevelUpMoveFailsForUnknownMonID() {
+        let s = store(scales: 0, learned: [11, 22])
+        XCTAssertFalse(s.learnMissedLevelUpMove(monID: UUID(), move: move(99)))
+    }
 }
