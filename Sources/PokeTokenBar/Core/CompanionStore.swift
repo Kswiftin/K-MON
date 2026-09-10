@@ -107,6 +107,16 @@ final class CompanionStore {
               let mon = state.active else { return nil }
         return base.effective(level: mon.level, nature: mon.nature)
     }
+    /// 소유 포켓몬 탭(`PokemonRosterView`)의 이름·타입·진화 트리 캐시 — 탭 자체가 아니라 스토어에
+    /// 둔 이유는 팝오버의 탭 전환이 `switch nav.tab { case .pokemon: PokemonRosterView(...) }` 로
+    /// 뷰를 통째로 새로 만들기 때문이다. `PokeAPIClient` 의 actor 캐시는 세션 내내 살아 있어 다시
+    /// 조회할 때 네트워크는 안 타지만, 뷰의 로컬 `@State` 는 매번 빈 딕셔너리로 시작해 `.task` 가
+    /// await 를 한 번은 거쳐야 채워진다 — 그 한 틱 동안 "이름·타입이 늦게 뜬다"(사용자 보고,
+    /// 2026-09-10). `PokemonRosterView` 가 이 캐시로 로컬 `@State` 를 미리 채워 두면 탭을
+    /// 나갔다 들어와도 그 틱이 안 보인다.
+    var rosterDisplayNameCache: [Int: String] = [:]
+    var rosterTypeCache: [Int: [PokemonType]] = [:]
+    var rosterEvoLineCache: [Int: EvoLine] = [:]
     private(set) var displayedMoves: [MoveSpec] = []
     private(set) var isLoadingDisplayedMoves = false
     private var moveLearningQueue: [MoveLearningPrompt] = []

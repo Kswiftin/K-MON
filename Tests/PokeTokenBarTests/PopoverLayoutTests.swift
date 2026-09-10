@@ -214,7 +214,8 @@ final class PopoverLayoutTests: XCTestCase {
         return RosterHeader(shownCount: 90, ownedCount: 164, owned: [], types: [:],
                             didResolveTypes: true, typeFilter: .constant(nil),
                             favoritesOnly: .constant(false), duplicatesOnly: .constant(false),
-                            unregisteredOnly: .constant(false), page: .constant(0))
+                            unregisteredOnly: .constant(false), graduateReadyOnly: .constant(false),
+                            page: .constant(0))
             .environment(settings)
     }
 
