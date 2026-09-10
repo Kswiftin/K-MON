@@ -297,6 +297,16 @@ enum RaidBoss {
             ? hourlyKey(date, calendar: calendar) : periodKey(date, calendar: calendar)
     }
 
+    /// 이번 판에서 포획 추첨을 돌려야 하는가 — 평소엔 별의조각 지급이 성공했을 때(그 구간의 첫
+    /// 승리)만, 이벤트 창 동안은 지급 여부와 무관하게 항상. 순수 함수로 뽑아낸 이유는
+    /// `MultiplayerRoomCenter` 가 시계를 주입받지 않아서다(`Date()` 를 직접 쓴다) — 이 판정을
+    /// `applyRaidSettlement` 안에 `||` 로만 남겨 두면, 이벤트 쪽 분기는 CI 가 우연히 9/11 08~20시에
+    /// 도는 게 아닌 한 한 번도 실행되지 않는 죽은 줄로 남는다.
+    static func shouldDrawRaidCatcher(payoutSucceeded: Bool, at date: Date = Date(),
+                                      calendar: Calendar = .current) -> Bool {
+        payoutSucceeded || LiveEventWindow.isActive(date, calendar: calendar)
+    }
+
     /// 참가자마다 독립 포획 판정을 하되 모든 피어가 같은 순서와 결과를 계산한다.
     static func catchAttempts(runners: [MultiplayerFighter], speciesID: Int, tier: RaidTier,
                               seed: UInt64, finishedRound: Int) -> [RaidCatchAttempt] {
