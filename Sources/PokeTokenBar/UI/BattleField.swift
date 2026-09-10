@@ -1011,10 +1011,21 @@ struct BattleLogBox: View {
         self.isScrollable = isScrollable
     }
 
+    private static let bottomID = "battle-log-bottom"
+
     var body: some View {
         Group {
             if isScrollable {
-                ScrollView { rows(lines) }
+                ScrollViewReader { proxy in
+                    ScrollView {
+                        rows(lines)
+                        Color.clear.frame(height: 1).id(Self.bottomID)
+                    }
+                    .onAppear { proxy.scrollTo(Self.bottomID, anchor: .bottom) }
+                    .onChange(of: lines.count) {
+                        withAnimation { proxy.scrollTo(Self.bottomID, anchor: .bottom) }
+                    }
+                }
             } else {
                 rows(Array(lines.suffix(BattleFieldMetrics.logLines)))
             }

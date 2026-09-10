@@ -363,6 +363,48 @@ final class RaidRoomTests: XCTestCase {
         XCTAssertEqual(store.creditRaidReward(300), 300)
     }
 
+    /// [회귀] 6★ 는 보스가 오전/오후로 안 바뀌고 그 주 내내 고정인데, 지급 원장은 다른 티어와
+    /// 같은 반나절 키를 써서 "오전 1회·오후 1회"로 잘렸다 — 아침에 두 판을 이겨도 두 번째
+    /// 보상이 없었다(사용자 보고, 2026-09-10). 오전/오후를 넘나들지 않고 **같은 반나절 안에서**
+    /// 두 번째 승리를 줘도 지급돼야 한다는 게 이 테스트의 핵심이다.
+    @MainActor
+    func testSixStarWeeklyRewardGivesTwiceRegardlessOfHalfDay() {
+        let clock = TestClock()
+        let store = stubStore(clock, tag: "raid-six-weekly-reward")
+
+        XCTAssertEqual(store.creditRaidReward(1_000, tier: .six), 1_000, "그 주 첫 승리는 지급된다")
+        XCTAssertFalse(store.raidRewardClaimedToday(tier: .six), "주 2회 중 아직 한 번만 썼다")
+
+        // 시계를 전혀 돌리지 않는다 — 같은 반나절 안에서의 두 번째 승리를 검증하는 것이 요점이다.
+        XCTAssertEqual(store.creditRaidReward(1_000, tier: .six), 1_000,
+                       "오전/오후 구분 없이 그 주 두 번째 승리도 지급돼야 한다")
+        XCTAssertTrue(store.raidRewardClaimedToday(tier: .six), "이 주의 2회를 다 썼다")
+        XCTAssertEqual(store.creditRaidReward(1_000, tier: .six), 0, "이 주 세 번째는 없다")
+
+        // 주가 바뀌면 다시 2회가 열린다.
+        clock.advance(7 * 24 * 60 * 60)
+        XCTAssertFalse(store.raidRewardClaimedToday(tier: .six), "주가 바뀌면 다시 2회가 열린다")
+        XCTAssertEqual(store.creditRaidReward(1_000, tier: .six), 1_000)
+    }
+
+    /// 포획 추첨은 지급 성공(`raidPayout > 0`)에서만 도므로, 포획 원장도 지급과 같은 주 한도를
+    /// 따라야 한다 — 안 그러면 같은 반나절 안의 두 번째 승리에서 보상은 나가는데 포획만
+    /// "이미 오늘 잡음"으로 막히는 어긋난 조합이 생긴다.
+    @MainActor
+    func testSixStarWeeklyCatchAllowsTwiceRegardlessOfHalfDay() {
+        let clock = TestClock()
+        let store = stubStore(clock, tag: "raid-six-weekly-catch")
+
+        XCTAssertTrue(store.claimRaidCatch(tier: .six))
+        XCTAssertFalse(store.raidCatchClaimedToday(tier: .six), "주 2회 중 아직 한 번만 썼다")
+        XCTAssertTrue(store.claimRaidCatch(tier: .six), "같은 반나절 안에서도 두 번째 포획이 열려야 한다")
+        XCTAssertTrue(store.raidCatchClaimedToday(tier: .six))
+        XCTAssertFalse(store.claimRaidCatch(tier: .six), "이 주 세 번째는 없다")
+
+        clock.advance(7 * 24 * 60 * 60)
+        XCTAssertTrue(store.claimRaidCatch(tier: .six), "주가 바뀌면 다시 2회가 열린다")
+    }
+
     // MARK: 포획 원장 — 지급 원장과 갈라져 있어야 한다
 
     /// 포획도 하루 한 마리다. 지급(`creditRaidReward`)과 **같은 규칙, 다른 원장**이다.
@@ -1198,6 +1240,47 @@ final class RaidRoomTests: XCTestCase {
     /// 조건부 append 여야 한다 — 무조건 붙이면 이 필드가 없던 정상 세이브가 전부 조작 판정된다.
     func testDefaultStateGainsNoRaidCanonicalSegment() {
         XCTAssertFalse(SaveTransfer.canonicalString(CompanionState()).contains("|rd"))
+    }
+
+    /// 6★ 는 "이번 주인가"(`raidRewardDateTierSix`)와 별개로 "이번 주 몇 번 받았나"
+    /// (`raidRewardCountTierSix`)를 서명 밖에 두면, 날짜는 그대로 두고 횟수만 0으로 되돌리는
+    /// 것만으로 그 주의 두 번째·세 번째 보상을 계속 받는다.
+    func testDeletingTheSixStarRewardCountAfterSigningIsDetected() {
+        var state = CompanionState()
+        state.raidRewardDateTierSix = "2026-W37"
+        state.raidRewardCountTierSix = 2
+        var signed = SaveTransfer.signed(state)
+        XCTAssertFalse(SaveTransfer.isTampered(signed))
+
+        signed.raidRewardCountTierSix = 0
+        XCTAssertTrue(SaveTransfer.isTampered(signed), "날짜는 그대로 두고 횟수만 되돌리는 방향이 곧 재수령 방향이다")
+    }
+
+    /// 포획 횟수도 같은 부류다 — `testDeletingTheSixStarRewardCountAfterSigningIsDetected` 와 짝이다.
+    func testDeletingTheSixStarCatchCountAfterSigningIsDetected() {
+        var state = CompanionState()
+        state.raidCatchDateTierSix = "2026-W37"
+        state.raidCatchCountTierSix = 2
+        var signed = SaveTransfer.signed(state)
+        XCTAssertFalse(SaveTransfer.isTampered(signed))
+
+        signed.raidCatchCountTierSix = 0
+        XCTAssertTrue(SaveTransfer.isTampered(signed), "날짜는 그대로 두고 횟수만 되돌리는 방향이 곧 재포획 방향이다")
+    }
+
+    /// [회귀 가드] `r6d` 세그먼트 자체는 **건드리지 않았다** — 값의 뜻만(반나절 키 → 주 키)
+    /// 바뀌었을 뿐, `canonicalString` 이 그 필드를 붙이는 방식(`"r6d" + 원문 그대로`)은 그대로다.
+    /// 그래서 이미 배포된 세이브가 반나절 키로 서명한 상태여도(6★ 레이드를 한 번이라도 도전한
+    /// 세이브) 그 서명은 여전히 재현된다. 값을 그대로 두고 형식(`":count"` 접미 등)을 덧붙이는
+    /// 실수를 하면 이 테스트가 바로 깨진다 — `signed()`/`isTampered()` 왕복만으로는 자기 자신과
+    /// 비교하는 것이라 형식이 바뀌어도 통과해 버린다(`r6a` 세그먼트를 통째로 지웠던
+    /// hotfix, 2026-09-10, 은 세그먼트 자체가 사라진 경우라 여기 해당하지 않는다).
+    func testTheSixStarRewardDateSegmentFormatIsUnchanged() {
+        var state = CompanionState()
+        state.raidRewardDateTierSix = "2026-09-08-am"   // 이번 배포 전 형식(반나절 키) 그대로도 안전해야 한다
+        let segments = SaveTransfer.canonicalString(state).components(separatedBy: "|")
+        XCTAssertTrue(segments.contains("r6d2026-09-08-am"),
+                      "r6d 세그먼트는 raidRewardDateTierSix 값을 그대로 붙여야 한다 — 형식을 바꾸면 이미 배포된 세이브의 서명이 깨진다")
     }
 
     /// 세이브 이전에서 이 필드는 **계정 원장**이다(일일 사탕 원장과 같은 부류). 더 최근 날짜를
