@@ -24,6 +24,10 @@ struct TeamPicker: View {
     /// 종 id → 타입. `MonState` 는 종 id 만 들고 있어 타입은 따로 받아야 한다.
     /// `battleProfile` 이 메모리 캐시를 두므로 같은 종을 여러 마리 가져도 조회는 한 번이다.
     @State private var monTypes: [Int: [PokemonType]] = [:]
+    /// 종 id → 종족값. 타입과 **같은 조회**(`battleProfile`)에서 온다 — 따로 부르지 않는다.
+    /// 화면엔 이걸 그대로 안 띄운다 — `CompanionStore.currentStats` 와 같은 이유로, 개체의
+    /// 레벨·성격을 먹여야 실제로 들고 나가는 수치가 된다(`statPreview`).
+    @State private var monBaseStats: [Int: BattleStats] = [:]
     /// 종 id → 표시 이름. 스프라이트만으로는 무엇인지 알아보기 어렵다.
     @State private var speciesNames: [Int: String] = [:]
     /// 칩 줄의 정렬. 기본은 다른 선택기와 같은 가나다순이지만, 전투에는 키운 개체를 먼저 보는
@@ -178,6 +182,7 @@ struct TeamPicker: View {
                     if monTypes[speciesID] == nil,
                        let profile = try? await PokeAPIClient.shared.battleProfile(speciesID: speciesID) {
                         monTypes[speciesID] = profile.types
+                        monBaseStats[speciesID] = profile.stats
                     }
                     if speciesNames[speciesID] == nil {
                         speciesNames[speciesID] = await store.resolveSpeciesName(speciesID)
@@ -270,6 +275,7 @@ struct TeamPicker: View {
         let moves = previewMoves[mon.id]
         return VStack(alignment: .leading, spacing: 3) {
             let name = displayName(mon)
+            statPreview(mon)
             Text("\(name)의 기술")
                 .font(.system(size: 10, weight: .semibold))
                 .foregroundStyle(.secondary).lineLimit(1)
@@ -279,6 +285,31 @@ struct TeamPicker: View {
                         moveCell(move(moves, at: row * Self.previewColumns + column))
                     }
                 }
+            }
+        }
+    }
+
+    /// 누른 개체의 **지금 레벨** 능력치 — 종족값이 아니라 `CompanionStore.currentStats` 와 같은
+    /// 식으로 레벨·성격을 먹인 값이다. 종족값만 보이면 레벨이 달라도 숫자가 안 움직여, 어느
+    /// 개체를 들고 나갈지 고르는 자리에서 정작 지금 얼마나 센지 알 수 없다.
+    ///
+    /// 조회가 덜 끝났어도 **칸 여섯 개는 그대로** 그린다 — `moveCell` 이 없는 기술을 흐리게
+    /// 두는 것과 같은 이유(칸 수가 널뛰면 아래 기술 줄까지 흔들린다).
+    private func statPreview(_ mon: MonState) -> some View {
+        let stats = monBaseStats[mon.currentID].map { $0.effective(level: mon.level, nature: mon.nature) }
+        let values: [(String, Int?)] = [("HP", stats?.hp), ("공격", stats?.atk), ("방어", stats?.def),
+                                         ("특공", stats?.spa), ("특방", stats?.spd), ("스피드", stats?.spe)]
+        return LazyVGrid(columns: Array(repeating: .init(.flexible()), count: 3), spacing: 3) {
+            ForEach(values, id: \.0) { label, value in
+                HStack(spacing: 2) {
+                    Text(label)
+                    Spacer(minLength: 2)
+                    Text(value.map { "\($0)" } ?? "—").bold()
+                }
+                .font(.system(size: 10))
+                .padding(.horizontal, 4).padding(.vertical, 2)
+                .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 4))
+                .opacity(value == nil ? 0.35 : 1)
             }
         }
     }

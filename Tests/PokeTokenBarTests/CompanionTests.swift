@@ -1285,6 +1285,29 @@ final class CompanionStoreTests: XCTestCase {
         XCTAssertEqual(s.state.dex.count, dexAfterFirst, "도감 기록도 개체당 한 번")
     }
 
+    /// 로스터 카드의 "졸업 가능" 배지 근거 — 활성일 때 조건을 채운 개체를, 졸업 버튼을 누르지
+    /// 않은 채 다른 개체로 갈아타면 박스에 그대로 남는다. `canGraduate(_:in:)` 는 활성 여부를
+    /// 안 보므로, 박스로 넘어간 뒤에도 같은 라인을 넘기면 여전히 참이어야 한다 — 이게 거짓이면
+    /// 박스에 방치된 최종형 개체를 배지가 영영 못 알린다.
+    func testBoxedMonThatMetGraduationConditionsStillReportsCanGraduate() async {
+        let s = store(noEvo)
+        await s.hatch(baseID: 20)
+        let monID = try! XCTUnwrap(s.state.active?.id)
+        s.debugAccrueLevelExperience(300_000_000)
+        XCTAssertTrue(s.canGraduate, "전제: 활성일 때는 졸업 가능")
+
+        // 졸업 버튼을 누르지 않고 다른 개체로 갈아탄다 — 방금 개체는 박스로 밀려난다.
+        let other = MonState(baseID: 20, pathIDs: [20], stageIndex: 0, usedAtStage: 0,
+                             rarity: .common, totalForms: 1)
+        s.debugSetBoxedMons([other])
+        s.switchCompanion(to: other.id)
+
+        let boxed = try! XCTUnwrap(s.boxedMons.first { $0.id == monID })
+        XCTAssertFalse(boxed.isGraduated, "졸업 버튼을 안 눌렀다")
+        XCTAssertTrue(s.canGraduate(boxed, in: noEvo),
+                      "박스에 남아 있어도 같은 조건이면 졸업 가능해야 한다")
+    }
+
     /// [회귀] 기술 학습 카드는 그 제안을 받은 개체에게만 떠야 한다. 예전엔 동행을 바꿔도 이전 개체의
     /// 카드가 그대로 남아, 다른 포켓몬 화면에 "새 기술을 배울까요?" 가 계속 떠 있었다(수락은 monID
     /// 검사에 막혀 동작도 안 했다 — 눌러도 아무 일이 없는 카드).

@@ -24,6 +24,20 @@ struct RosterHeader: View {
     @Binding var page: Int
     @Environment(AppSettings.self) private var settings
 
+    /// 세 필터 버튼(즐겨찾기·중복·미등록)이 공유하는 호버 설명 상태. `.help()` 는 팝오버 안에서
+    /// 믿을 수 있는 표시 경로가 아니다(defect-log "`.help()` 는 NSPopover 안에서는 아무것도 안 뜬다")
+    /// — `.onHover` 로 잡아 직접 그린다.
+    private enum FilterHint: Equatable { case favorites, duplicates, unregistered }
+    @State private var hoveredHint: FilterHint?
+    /// 이탈 시 곧장 지우지 않고 살짝 늦춘다. 주기 갱신이 트래킹 영역을 순간 재설치하면 이탈
+    /// 이벤트 직후 같은 자리에 재진입 이벤트가 따라오는데, 그 사이 취소되지 않으면 설명이
+    /// 깜빡였다 사라지는 것으로 보인다 — 재진입이 오면 대기 중인 삭제를 취소한다.
+    @State private var hintHideTask: Task<Void, Never>?
+
+    private static let favoritesHint = "즐겨찾기로 표시한 포켓몬만 표시합니다."
+    private static let duplicatesHint = "진화 전후를 포함해 같은 계보가 2마리 이상인 포켓몬만 표시합니다."
+    private static let unregisteredHint = "영구 도감에 아직 기록되지 않은 현재 모습만 표시합니다."
+
     var body: some View {
         HStack(spacing: 6) {
             Image(systemName: "square.grid.2x2.fill")
@@ -84,6 +98,11 @@ struct RosterHeader: View {
         .buttonStyle(.borderless)
         .accessibilityLabel("즐겨찾기만 보기")
         .accessibilityAddTraits(favoritesOnly ? .isSelected : [])
+        .help(Self.favoritesHint)
+        .onHover { setHoveredHint(.favorites, isInside: $0) }
+        .overlay(alignment: .bottom) {
+            hintBubble(.favorites, text: Self.favoritesHint).offset(y: 22)
+        }
     }
 
     private func duplicateFamilyCount(in owned: [MonState]) -> Int {
@@ -105,7 +124,11 @@ struct RosterHeader: View {
         .disabled(duplicateCount == 0 && !duplicatesOnly)
         .accessibilityLabel("중복 진화 계보만 보기")
         .accessibilityAddTraits(duplicatesOnly ? .isSelected : [])
-        .help("진화 전후를 포함해 같은 계보가 2마리 이상인 포켓몬만 표시합니다.")
+        .help(Self.duplicatesHint)
+        .onHover { setHoveredHint(.duplicates, isInside: $0) }
+        .overlay(alignment: .bottom) {
+            hintBubble(.duplicates, text: Self.duplicatesHint).offset(y: 22)
+        }
     }
 
     private var unregisteredFilterButton: some View {
@@ -119,7 +142,38 @@ struct RosterHeader: View {
         .buttonStyle(.borderless)
         .accessibilityLabel("도감 미등록만 보기")
         .accessibilityAddTraits(unregisteredOnly ? .isSelected : [])
-        .help("영구 도감에 아직 기록되지 않은 현재 모습만 표시합니다.")
+        .help(Self.unregisteredHint)
+        .onHover { setHoveredHint(.unregistered, isInside: $0) }
+        .overlay(alignment: .bottom) {
+            hintBubble(.unregistered, text: Self.unregisteredHint).offset(y: 22)
+        }
+    }
+
+    private func setHoveredHint(_ hint: FilterHint, isInside: Bool) {
+        hintHideTask?.cancel()
+        if isInside {
+            hoveredHint = hint
+        } else {
+            hintHideTask = Task { @MainActor in
+                try? await Task.sleep(for: .milliseconds(200))
+                guard !Task.isCancelled else { return }
+                hoveredHint = nil
+            }
+        }
+    }
+
+    private func hintBubble(_ hint: FilterHint, text: String) -> some View {
+        Group {
+            if hoveredHint == hint {
+                Text(text)
+                    .font(.caption2)
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 8).padding(.vertical, 5)
+                    .background(Color.black.opacity(0.85), in: RoundedRectangle(cornerRadius: 6))
+                    .fixedSize()
+                    .transition(.opacity)
+            }
+        }
     }
 
     private func typeMenu(owned: [MonState]) -> some View {

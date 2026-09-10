@@ -26,10 +26,32 @@ final class PopoverNavigationTests: XCTestCase {
 
     /// 나머지는 지금까지 하던 대로 대전 화면이다 — 이 변경으로 배틀 신청 흐름이 바뀌면 안 된다.
     func testOtherNotificationsStillOpenTheBattleTab() {
-        for id in ["raid-room-abc", "raid-hatch-2", "gym-battle-\(UUID().uuidString)",
-                   "private-message-trade-1", "companion-event-7"] {
+        for id in ["gym-battle-\(UUID().uuidString)", "private-message-trade-1", "companion-event-7"] {
             XCTAssertEqual(PopoverNavigation.destination(forNotificationID: id), .battle, id)
         }
+    }
+
+    /// "레이드가 열렸어요"(raid-room-*)와 보스 교체(raid-hatch-*) 알림을 누르면 레이드 화면으로
+    /// 가야 한다. 분류가 없던 예전엔 둘 다 기본값(.battle)으로 떨어져 친구 탭으로 갔다 — 정작
+    /// 레이드 방은 `nav.showRaid` 오버레이라 친구 탭엔 아무것도 없었다(사용자 리포트).
+    func testRaidNotificationsOpenTheRaidScreen() {
+        for id in ["raid-room-abc", "raid-hatch-2"] {
+            XCTAssertEqual(PopoverNavigation.destination(forNotificationID: id), .raid, id)
+        }
+    }
+
+    /// 레이드 화면으로 가는 자리도 형제 오버레이를 접어야 한다 — 안 접으면 알림을 눌러도
+    /// 덮고 있던 체육관·던전 뒤에 레이드 방이 가려진다(체육관·던전이 이미 겪은 그 함정).
+    func testGoingToRaidFoldsWhateverOverlayWasCovering() {
+        let nav = PopoverNavigation()
+        nav.showGymLeague = true
+        nav.tab = .home
+
+        nav.goToRaid()
+
+        XCTAssertFalse(nav.showGymLeague)
+        XCTAssertTrue(nav.showRaid)
+        XCTAssertEqual(nav.tab, .challenge)
     }
 
     /// 목적지가 정해지면 그 화면이 실제로 열려야 한다 — 오버레이가 덮고 있으면 접는다.

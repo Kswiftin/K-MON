@@ -349,6 +349,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, UNU
             case .focusTimer: self.navigation.goToFocusTimer()
             case .battle: self.navigation.goToBattle()
             case .auction: self.navigation.goToAuction()
+            case .raid: self.navigation.goToRaid()
             }
         }
         completionHandler()

@@ -25,6 +25,12 @@ struct PokemonRosterView: View {
     /// 맞출 수 없다 — 정렬·필터는 박스 전체를 봐야 하는데 행은 자기 것만 알기 때문이다.
     @State private var names: [Int: String] = [:]
     @State private var types: [Int: [PokemonType]] = [:]
+    /// baseID → 진화 트리. 카드가 "졸업 가능" 배지를 달려면 그 개체가 최종형인지 알아야 하는데,
+    /// 최종형 여부는 트리를 봐야만 안다(`CompanionStore.canGraduate(_:in:)` 와 같은 판정).
+    /// 박스 개체는 활성화 전까지 `stageIndex`/`totalForms` 가 정규화되지 않을 수 있어
+    /// (defect-log) 저장된 필드 대신 이 트리로 직접 판정한다. base 단위라 같은 계보를 여럿
+    /// 가져도 조회는 한 번이다(`PokeAPIClient` 가 메모리 캐시를 둔다).
+    @State private var evoLines: [Int: EvoLine] = [:]
     /// 타입 해석이 한 바퀴 돌았는지. 돌기 전엔 필터 메뉴를 열지 않는다 — 절반만 해석된 표로
     /// 거르면 "왜 얘가 안 보이지"가 로딩 순서에 따라 달라진다.
     @State private var didResolveTypes = false
@@ -74,11 +80,14 @@ struct PokemonRosterView: View {
         let current = min(page, pageCount - 1)
         let slice = Array(arranged.dropFirst(current * Self.pageSize).prefix(Self.pageSize))
         VStack(alignment: .leading, spacing: 6) {
+            // zIndex — 필터 버튼 설명이 마우스를 올리면 아래 검색창·페이저 줄 위로 그려져야 한다.
+            // 기본 순서(먼저 쓴 자식이 아래)로는 바로 다음 줄이 설명 말풍선을 덮어버린다.
             RosterHeader(shownCount: arranged.count, ownedCount: owned.count, owned: owned,
                          types: types, didResolveTypes: didResolveTypes,
                          typeFilter: $typeFilter, favoritesOnly: $favoritesOnly,
                          duplicatesOnly: $duplicatesOnly, unregisteredOnly: $unregisteredOnly,
                          page: $page)
+                .zIndex(1)
             // 검색칸과 페이저가 한 줄이다 — 페이저는 격자 **위**에 있어야 한다. 아래에 두었을 때는
             // 탭 콘텐츠(520)가 팝오버 뷰포트보다 높아 스크롤 밖으로 밀려, 11페이지를 가진 사용자가
             // 다음 페이지 버튼을 못 봤다(2026-09-07 리포트).
@@ -143,6 +152,10 @@ struct PokemonRosterView: View {
                let profile = try? await PokeAPIClient.shared.battleProfile(speciesID: id) {
                 types[id] = profile.types
             }
+            if evoLines[mon.baseID] == nil,
+               let line = try? await PokeAPIClient.shared.line(baseSpeciesID: mon.baseID) {
+                evoLines[mon.baseID] = line
+            }
         }
         didResolveTypes = true
     }
@@ -163,9 +176,11 @@ struct PokemonRosterView: View {
                         let index = row * Self.columns + column
                         if index < slice.count {
                             let mon = slice[index]
+                            let graduateReady = evoLines[mon.baseID].map { store.canGraduate(mon, in: $0) } ?? false
                             RosterMonCard(store: store, mon: mon, isActive: mon.id == store.activeMonID,
                                           isGymDeployed: store.gymDefenseMonIDs.contains(mon.id),
                                           isFavorite: store.isFavorite(mon.id),
+                                          graduateReady: graduateReady,
                                           name: names[mon.presentationID] ?? "",
                                           types: types[mon.presentationID] ?? [],
                                           infoTarget: $infoTarget,
@@ -228,6 +243,10 @@ private struct RosterMonCard: View {
     /// 즐겨찾기는 표시가 아니라 자물쇠다 — 켜져 있으면 놓아주기·경매 출품이 막힌다. 카드가 잠금
     /// 사유를 직접 그려야 "놓아주기가 왜 없지" 가 고장으로 읽히지 않는다.
     let isFavorite: Bool
+    /// 최종 진화형에 닿았고 아직 졸업 버튼을 안 눌렀다(`CompanionStore.canGraduate(_:in:)`).
+    /// 활성 개체는 홈 탭에 "다음 포켓몬으로 넘어가기" 카드가 따로 뜨지만, 박스에 놔둔 채 잊은
+    /// 개체는 그 카드를 다시 볼 방법이 없다 — 활성으로 되돌리기 전까진 여기서만 알 수 있다.
+    let graduateReady: Bool
     /// 이름·타입은 부모가 박스 단위로 해석해 넘긴다 — 정렬·필터가 쓰는 값과 카드가 그리는 값이
     /// 갈라지지 않게 한다(행마다 따로 받아오면 정렬 키를 화면과 맞출 수 없다).
     let name: String
@@ -299,12 +318,14 @@ private struct RosterMonCard: View {
                             .background(type.rosterColor, in: Capsule())
                     }
                 }
-                Text(isGymDeployed
-                     ? store.l.gymDeployedBadge
-                     : isActive ? "동행 중"
-                                : "교체")
+                // "동행 중"/"교체" 는 지웠다 — 활성 여부는 테두리 색(`mint`)과 탭 가능 여부로
+                // 이미 보인다. 이 자리는 대신 놓치기 쉬운 신호를 준다: 최종형인데 졸업 버튼을
+                // 안 눌러 둔 개체. 활성 개체는 홈 탭에 "다음 포켓몬으로 넘어가기" 카드가 따로
+                // 뜨지만, 박스에 둔 채 잊은 개체는 여기서만 알 수 있다.
+                Text(isGymDeployed ? store.l.gymDeployedBadge
+                     : graduateReady ? "졸업 가능" : "")
                     .font(PokedoroTheme.badgeFont(size: 7, weight: .bold))
-                    .foregroundStyle(isGymDeployed ? .orange : isActive ? .green : .secondary)
+                    .foregroundStyle(isGymDeployed ? .orange : graduateReady ? .green : .clear)
             }.frame(maxWidth: .infinity).padding(4)
         }
         .buttonStyle(.plain).disabled(isActive || isGymDeployed)
@@ -390,7 +411,9 @@ private struct PokemonDetailCard: View {
             }
             heldItemRow()
             teraTypeRow()
-            if let stats = profile?.stats { statGrid(stats) }
+            // 종족값을 그대로 띄우지 않는다 — `CompanionStore.currentStats` 와 같은 이유로
+            // 이 개체의 레벨·성격을 먹인 실제 능력치라야 민트를 써도 숫자가 움직인다.
+            if let base = profile?.stats { statGrid(base.effective(level: mon.level, nature: mon.nature)) }
             Divider()
             Text(store.l.movesTitle).font(.caption.bold())
             if mon.learnedMoves.isEmpty {

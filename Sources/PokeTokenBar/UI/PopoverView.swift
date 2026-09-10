@@ -133,11 +133,14 @@ final class PopoverNavigation {
     /// 알림을 눌러 앱을 연 사용자가 정작 다음 세션을 시작할 수 없다.
     ///
     /// 판정이 순수한 이유는 `didReceive` 가 `@main` 안이라 테스트가 닿지 않기 때문이다.
-    enum NotificationDestination: Equatable, Sendable { case focusTimer, battle, auction }
+    enum NotificationDestination: Equatable, Sendable { case focusTimer, battle, auction, raid }
 
     static func destination(forNotificationID id: String) -> NotificationDestination {
         if id.hasPrefix(FocusChainRules.notificationIDPrefix) { return .focusTimer }
         if id.hasPrefix(AuctionNotification.identifierPrefix) { return .auction }
+        // "레이드가 열렸어요"(raid-room-*)와 보스 교체 알림(raid-hatch-*) 모두 레이드 화면을
+        // 가리킨다 — 분류가 없던 예전엔 둘 다 기본값(.battle)으로 떨어져 친구 탭으로 갔다.
+        if id.hasPrefix("raid-room-") || id.hasPrefix("raid-hatch-") { return .raid }
         return .battle
     }
 
