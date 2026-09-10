@@ -598,7 +598,11 @@ final class MultiplayerRoomCenter {
         // 이미 끝난 판(`raidPayout == 0`)에서도 추첨을 돌린다. `drawRaidCatcher` → `catchRaidBoss`
         // 가 이벤트 동안 원장을 안 보므로, 이 게이트를 열어도 원장 없는 무한 지급이 되진 않는다 —
         // 위에서 되돌렸던 "게이트를 없앤" 수정과 달리, 이번엔 원장 쪽도 같이 이벤트로 열었다.
-        if (raidPayout ?? 0) > 0 || LiveEventWindow.isActive() { drawRaidCatcher(runners: runners, tier: tier) }
+        // 판정을 `RaidBoss.shouldDrawRaidCatcher` 로 뽑아낸 이유는 이 클래스가 시계를 주입받지
+        // 않아서다 — 여기 `||` 로만 남기면 이벤트 쪽 분기가 CI 에서 한 번도 안 도는 죽은 줄이 된다.
+        if RaidBoss.shouldDrawRaidCatcher(payoutSucceeded: (raidPayout ?? 0) > 0) {
+            drawRaidCatcher(runners: runners, tier: tier)
+        }
     }
 
     /// 보스를 데려갈 한 명을 뽑는다. 모든 피어가 `.raidStart` 로 받은 같은 시드와 같은 편성

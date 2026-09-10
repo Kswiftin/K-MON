@@ -167,6 +167,24 @@ final class RaidTests: XCTestCase {
                        RaidBoss.weeklyPeriodKey(inEvent, calendar: calendar))
     }
 
+    /// [회귀 가드] `MultiplayerRoomCenter.applyRaidSettlement` 는 시계를 주입받지 않아
+    /// (`Date()` 를 직접 쓴다) 이 판정을 그 자리에 `||` 로만 남기면 이벤트 쪽 분기가 CI 에서
+    /// 한 번도 실행되지 않는 죽은 줄로 남는다 — `RaidBoss.shouldDrawRaidCatcher` 로 뽑아내
+    /// 여기서 직접 이벤트 경계를 테스트한다.
+    func testShouldDrawRaidCatcherIgnoresPayoutOnlyDuringTheEventWindow() {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        let inEvent = calendar.date(from: DateComponents(year: 2026, month: 9, day: 11, hour: 13))!
+        let outsideEvent = calendar.date(from: DateComponents(year: 2026, month: 9, day: 11, hour: 21))!
+
+        XCTAssertTrue(RaidBoss.shouldDrawRaidCatcher(payoutSucceeded: true, at: outsideEvent, calendar: calendar),
+                      "평소엔 지급 성공이 곧 추첨 조건이다")
+        XCTAssertFalse(RaidBoss.shouldDrawRaidCatcher(payoutSucceeded: false, at: outsideEvent, calendar: calendar),
+                       "평소엔 지급이 안 됐으면(같은 구간 재도전) 추첨도 없다")
+        XCTAssertTrue(RaidBoss.shouldDrawRaidCatcher(payoutSucceeded: false, at: inEvent, calendar: calendar),
+                      "이벤트 창 동안은 지급 성공 여부와 무관하게 항상 추첨을 돌려야 한다")
+    }
+
     func testEvolutionDayAndNightAlsoChangeAtNoon() {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = TimeZone(secondsFromGMT: 0)!
