@@ -2866,15 +2866,29 @@ final class CompanionStore {
         }
     }
 
+    /// 6★ 는 보스가 오전/오후로 바뀌지 않고 그 주 내내 고정이므로, 원장도 구간이 아니라 **주 승리
+    /// 횟수**로 센다 — 오전/오후 각 1회로 자르면 아침에 두 판을 이겨도 두 번째 보상이 없었다
+    /// (사용자 보고, 2026-09-10). 포획도 같은 한도를 따른다(아래 `raidCatchClaimedToday` 참고).
+    static let sixStarWeeklyClaimLimit = 2
+
     /// 현재 오전/오후, 1★ 레이드 보상을 이미 받았나. 정오 타이머 대신 구간 키를 비교한다.
     var raidRewardClaimedToday: Bool { raidRewardClaimedToday(tier: .one) }
 
     /// 티어별 판정(#270) — 3★·5★ 는 각자 원장을 쓰므로 1★ 로 받았어도 따로 열려 있다.
+    /// 6★ 는 구간이 아니라 `sixStarWeeklyClaimLimit`(2회)를 그 주 안에 다 썼는지로 판정한다.
     func raidRewardClaimedToday(tier: RaidTier) -> Bool {
-        state[keyPath: Self.raidRewardDateKeyPath(tier)] == RaidBoss.periodKey(clock())
+        if tier == .six { return sixStarWeeklyRewardCount >= Self.sixStarWeeklyClaimLimit }
+        return state[keyPath: Self.raidRewardDateKeyPath(tier)] == RaidBoss.periodKey(clock())
+    }
+
+    /// 이번 주(`RaidBoss.weeklyPeriodKey`) 6★ 보상을 몇 번 받았나. 저장된 주 키가 이번 주와
+    /// 다르면(주가 바뀌었으면) 0 — `raidRewardCountTierSix` 는 지난주 값이라 그대로 못 쓴다.
+    private var sixStarWeeklyRewardCount: Int {
+        state.raidRewardDateTierSix == RaidBoss.weeklyPeriodKey(clock()) ? state.raidRewardCountTierSix : 0
     }
 
     /// 레이드 정산 지급 — **티어마다, 오전·오후 한 번씩만** 준다(시도 무제한, 구간·티어별 지급 1회).
+    /// 6★ 만 예외로, 구간과 무관하게 그 주 `sixStarWeeklyClaimLimit`(2회)를 준다.
     ///
     /// 실제 지급액을 반환한다. 이미 받았으면 0 이고, 호출부는 그 값을 그대로 화면에 쓴다 —
     /// 지갑을 바꾸는 값은 창 안에 보이는 표면을 하나 가져야 한다(defect-log: 한 지갑에 지급하는
@@ -2884,7 +2898,13 @@ final class CompanionStore {
     @discardableResult
     func creditRaidReward(_ amount: Int, tier: RaidTier = .one) -> Int {
         guard amount > 0, !raidRewardClaimedToday(tier: tier) else { return 0 }
-        state[keyPath: Self.raidRewardDateKeyPath(tier)] = RaidBoss.periodKey(clock())
+        if tier == .six {
+            let weekKey = RaidBoss.weeklyPeriodKey(clock())
+            state.raidRewardCountTierSix = sixStarWeeklyRewardCount + 1
+            state.raidRewardDateTierSix = weekKey
+        } else {
+            state[keyPath: Self.raidRewardDateKeyPath(tier)] = RaidBoss.periodKey(clock())
+        }
         state.starPieces += amount
         save()
         return amount
@@ -2893,9 +2913,18 @@ final class CompanionStore {
     /// 현재 오전/오후, 1★ 레이드에서 이미 보스를 잡았나.
     var raidCatchClaimedToday: Bool { raidCatchClaimedToday(tier: .one) }
 
-    /// 티어별 판정(#270) — `raidRewardClaimedToday(tier:)` 와 같은 짝이다.
+    /// 티어별 판정(#270) — `raidRewardClaimedToday(tier:)` 와 같은 짝이다. 6★ 포획 추첨은 보상
+    /// 지급이 성공할 때만 도므로(`MultiplayerRoomCenter.applyRaidSettlement`), 이 원장도 보상과
+    /// 같은 주 한도를 따라야 한다 — 구간(오전/오후) 키로 남겨 두면 같은 주 안에서도 보상은
+    /// 두 번째가 열렸는데 포획만 "이미 오늘 잡음"으로 막히는 어긋난 조합이 생긴다.
     func raidCatchClaimedToday(tier: RaidTier) -> Bool {
-        state[keyPath: Self.raidCatchDateKeyPath(tier)] == RaidBoss.periodKey(clock())
+        if tier == .six { return sixStarWeeklyCatchCount >= Self.sixStarWeeklyClaimLimit }
+        return state[keyPath: Self.raidCatchDateKeyPath(tier)] == RaidBoss.periodKey(clock())
+    }
+
+    /// `sixStarWeeklyRewardCount` 와 같은 모양 — 이번 주 6★ 포획을 몇 번 받았나.
+    private var sixStarWeeklyCatchCount: Int {
+        state.raidCatchDateTierSix == RaidBoss.weeklyPeriodKey(clock()) ? state.raidCatchCountTierSix : 0
     }
 
     /// 이 티어의 오늘 포획 기회를 쓴다. 남아 있었으면 true 를 돌려주고 원장을 찍는다.
@@ -2905,7 +2934,13 @@ final class CompanionStore {
     @discardableResult
     func claimRaidCatch(tier: RaidTier = .one) -> Bool {
         guard !raidCatchClaimedToday(tier: tier) else { return false }
-        state[keyPath: Self.raidCatchDateKeyPath(tier)] = RaidBoss.periodKey(clock())
+        if tier == .six {
+            let weekKey = RaidBoss.weeklyPeriodKey(clock())
+            state.raidCatchCountTierSix = sixStarWeeklyCatchCount + 1
+            state.raidCatchDateTierSix = weekKey
+        } else {
+            state[keyPath: Self.raidCatchDateKeyPath(tier)] = RaidBoss.periodKey(clock())
+        }
         save()
         return true
     }

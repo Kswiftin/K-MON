@@ -2654,6 +2654,12 @@ struct CompanionState: Codable, Sendable {
     /// 5★ 전용 지급 원장 — `raidRewardDate` 와 같은 규칙, 다른 티어.
     var raidRewardDateTierFive = ""
     var raidRewardDateTierSix = ""
+    /// 6★ 는 보스가 그 주 내내 고정이라 위 값엔 **오전/오후 키가 아니라 주 키**가 들어간다 —
+    /// `raidRewardDateTierSix` 가 이번 주 키와 같으면 `raidRewardCountTierSix` 가 이번 주 받은
+    /// 횟수, 다르면(주가 바뀌면) 0 이다. 한도는 `CompanionStore.sixStarWeeklyClaimLimit`(2회) —
+    /// 오전/오후 구분 없이 그 주 승리 횟수로만 센다(아침에 두 판을 이겨도 둘 다 받을 수 있어야
+    /// 한다는 사용자 보고로 도입).
+    var raidRewardCountTierSix = 0
     /// 레이드 보스를 마지막으로 잡은 오전/오후 키 — **1★ 전용**. 구간당 한 마리의 멱등 가드이고
     /// 같은 이유로 서명 대상이다(`rc` 세그먼트).
     ///
@@ -2666,6 +2672,10 @@ struct CompanionState: Codable, Sendable {
     /// 5★ 전용 포획 원장 — `raidCatchDate` 와 같은 규칙, 다른 티어.
     var raidCatchDateTierFive = ""
     var raidCatchDateTierSix = ""
+    /// `raidRewardCountTierSix` 와 같은 주 키+카운트 모양 — 포획 추첨은 보상 지급이 성공할 때만
+    /// 도므로(`MultiplayerRoomCenter.applyRaidSettlement`), 이 원장도 보상과 같은 한도(주 2회)를
+    /// 따라야 한 주 안에서 오전에 두 번 이겨도 두 번째 포획이 막히지 않는다.
+    var raidCatchCountTierSix = 0
     /// 사파리존 하루 방문(참여) 원장 — `gymDefenseRewardDate`/`Today` 와 같은 날짜+카운트 모양.
     /// 방문 자체(걷기·볼)를 몇 번 할 수 있는지를 잠근다. 포획(보상) 원장과 분리하는 이유는
     /// `raidRewardDate` vs `raidCatchDate` 와 같다 — 하나로 합치면 "얼마나 노는지"와 "얼마나
@@ -2770,10 +2780,12 @@ struct CompanionState: Codable, Sendable {
         raidRewardDateTierThree = c.lenient(String.self, forKey: .raidRewardDateTierThree, default: "")
         raidRewardDateTierFive  = c.lenient(String.self, forKey: .raidRewardDateTierFive, default: "")
         raidRewardDateTierSix   = c.lenient(String.self, forKey: .raidRewardDateTierSix, default: "")
+        raidRewardCountTierSix  = c.lenient(Int.self, forKey: .raidRewardCountTierSix, default: 0)
         raidCatchDate      = c.lenient(String.self, forKey: .raidCatchDate, default: "")
         raidCatchDateTierThree  = c.lenient(String.self, forKey: .raidCatchDateTierThree, default: "")
         raidCatchDateTierFive   = c.lenient(String.self, forKey: .raidCatchDateTierFive, default: "")
         raidCatchDateTierSix    = c.lenient(String.self, forKey: .raidCatchDateTierSix, default: "")
+        raidCatchCountTierSix   = c.lenient(Int.self, forKey: .raidCatchCountTierSix, default: 0)
         safariZoneVisitDate     = c.lenient(String.self, forKey: .safariZoneVisitDate, default: "")
         safariZoneVisitsToday   = c.lenient(Int.self, forKey: .safariZoneVisitsToday, default: 0)
         safariZoneCatchDate     = c.lenient(String.self, forKey: .safariZoneCatchDate, default: "")

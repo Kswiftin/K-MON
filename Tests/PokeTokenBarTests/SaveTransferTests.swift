@@ -690,6 +690,9 @@ final class SaveTransferTests: XCTestCase {
                                           "raidRewardDateTierThree", "raidRewardDateTierFive",
                                           "raidCatchDateTierThree", "raidCatchDateTierFive",
                                           "raidRewardDateTierSix", "raidCatchDateTierSix",
+                                          // 6★ 는 주 단위 원장이라 "며칠에 몇 번 받았나"까지 필요하다
+                                          // — 위 날짜 필드와 같은 이유·같은 부류로 여기 함께 둔다.
+                                          "raidRewardCountTierSix", "raidCatchCountTierSix",
                                           // 사파리존 방문(참여)·포획(보상) 원장 — 레이드 지급·포획
                                           // 원장과 같은 이유로 따로 두고(서로 안 태우게) 병합한다.
                                           "safariZoneVisitDate", "safariZoneVisitsToday",
