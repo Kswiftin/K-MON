@@ -494,7 +494,7 @@ enum SaveTransfer {
         if !s.raidCatchDateTierThree.isEmpty { p.append("c3d\(s.raidCatchDateTierThree)") }
         if !s.raidCatchDateTierFive.isEmpty { p.append("c5d\(s.raidCatchDateTierFive)") }
         if !s.raidCatchDateTierSix.isEmpty { p.append("c6d\(s.raidCatchDateTierSix)") }
-        // 6★ 주 원장의 횟수 칸 — `r6d`/`c6d` 는 "이번 주인가"만 말하고 "이번 주에 몇 번 받았나"는
+        // 6★ 하루 원장의 횟수 칸 — `r6d`/`c6d` 는 "오늘인가"만 말하고 "오늘 몇 번 받았나"는
         // 이 칸이 말한다. 서명 밖에 두면 이 값만 0 으로 되돌려 두 번째·세 번째 보상을 계속 받는다.
         // 완전히 새 필드라(이전 배포에 존재한 적이 없다) 조건부 append, `integrityVersion` 은
         // 안 올린다 — 기존 세이브는 전부 0 이라 이 세그먼트 자체가 안 붙는다.
