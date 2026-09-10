@@ -8,6 +8,29 @@ import XCTest
 /// `MultiplayerRoomCenter.creditsRaceFinish` 가 같은 이유로 `nonisolated static` 인 것과 같다.
 final class RaidRoomTests: XCTestCase {
 
+    /// 8인으로 늘린 로비와 실제 소켓 상한이 같은 정원을 가리켜야 한다. 관전자 연결도 별도다.
+    func testRaidGuestConnectionLimitMatchesEightRunnersAndSpectators() {
+        XCTAssertEqual(MultiplayerRoomCenter.maxGuestConnections(activity: .raid),
+                       MultiplayerLobby.raidCapacity - 1 + MultiplayerLobby.spectatorCapacity)
+        XCTAssertEqual(MultiplayerLobby.raidCapacity, 8)
+    }
+
+    /// 한 판 뒤 나간 UUID가 명단에서 제거되면 같은 사용자가 같은 방에 다시 참가할 수 있다.
+    func testDepartedRaidRunnerCanRejoinWithTheSameID() throws {
+        let host = LobbyParticipant(id: UUID(), trainerName: "호스트", speciesID: 143,
+                                    team: .red, isReady: true, isHost: true)
+        let returningID = UUID()
+        let guest = LobbyParticipant(id: returningID, trainerName: "재참가", speciesID: 25,
+                                     team: .red, isReady: true, isHost: false)
+        var lobby = try MultiplayerLobby(host: host, capacity: MultiplayerLobby.raidCapacity,
+                                         activity: .raid)
+
+        try lobby.join(guest)
+        try lobby.leave(participantID: returningID)
+        XCTAssertNoThrow(try lobby.join(guest))
+        XCTAssertEqual(lobby.participants.filter { $0.id == returningID }.count, 1)
+    }
+
     // MARK: 고정 재료
 
     private func snapshot(level: Int = RaidBoss.partyLevel, def: Int = 100,
@@ -472,6 +495,19 @@ final class RaidRoomTests: XCTestCase {
         XCTAssertTrue(center.applyGuestRaidStart(seed: 11, fighters: [me, mate, todaysBoss(tier: .one)],
                                                  tier: .one))
         XCTAssertFalse(center.acceptsJoinWhileInPlay, "판이 도는 중에는 받지 않는다")
+    }
+
+    /// 시작 메시지에 내 전투원이 없으면 기술을 낼 수 없는 유령 참가자가 된다.
+    @MainActor
+    func testGuestRejectsRaidStartWhenItsOwnRunnerIsMissing() {
+        let store = stubStore(TestClock(), tag: "raid-missing-self")
+        let center = MultiplayerRoomCenter(companion: store)
+        let someoneElse = runner("다른 참가자")
+
+        XCTAssertFalse(center.applyGuestRaidStart(
+            seed: 11, fighters: [someoneElse, todaysBoss(tier: .one)], tier: .one))
+        XCTAssertEqual(center.phase, .idle)
+        XCTAssertEqual(center.lastError, store.l.raidBossMismatch)
     }
 
     /// 안 뽑힌 사람은 못 잡는다 — 그래도 정산은 그대로 받는다. 둘이 갈리지 않으면 방 전원이 잡는다.
