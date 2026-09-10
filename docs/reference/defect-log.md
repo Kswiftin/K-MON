@@ -3588,6 +3588,27 @@ read_when:
 - **절차 결함도 같이 남긴다**: 이 실패들은 PR CI 에 이미 떠 있었는데 **결과를 안 보고 머지**했다.
   로컬에서 `swift test` 를 못 돌리는 머신이면 PR CI 가 유일한 검증이다 — 머지 전에
   `gh run watch` 로 초록을 본다. (2026-09-01.)
+- **재발(2026-09-10)** — 같은 부류를 그대로 다시 밟았다, 이번엔 CI 도 못 잡았다. 6성 레이드
+  도전 횟수 제한을 없애며 `weeklyRaidAttemptDate`/`weeklyRaidAttemptsToday` 필드와 그 필드가
+  채우던 canonical 세그먼트(`r6a`)를 지우면서 `integrityVersion` 을 안 올렸다. **배포 후 실제로
+  사용자 세이브가 초기화됐다**(6성 레이드를 한 번이라도 시도해 그 필드가 채워져 있던 세이브
+  전원) — 문서에 적힌 사고가 그대로 재현된 것이다.
+  - **왜 CI 가 안 걸렀나**: 이 부류를 막는 가드(`testEveryConditionalCanonicalSegmentPrefixIsFrozen`)
+    가 있었지만, 그 가드의 `fullyPopulatedState()` fixture 가 애초에 `weeklyRaidAttemptDate`
+    를 채운 적이 없었다 — 그래서 `r6a` 세그먼트는 "지워지기 전에도" 동결 집합에 없었고, 지운
+    뒤에도 diff 가 안 보였다(`조건부 canonical 세그먼트를 fixture 가 안 켜면...` 항목과 같은
+    구멍). `fullyPopulatedState()` 를 넓게 훑어보면 `outf`·`szv`·`szc`·`szub`·`tm`·`hparty`·
+    `r3d`~`c6d` 등 실제 canonical 세그먼트 중 상당수가 이 fixture 에 없다 — 이 가드가 지금
+    지키는 범위는 생각보다 좁다. 전수 보강은 별도 작업으로 남긴다.
+  - **왜 필자(에이전트)가 못 걸렀나**: `SaveTransfer.swift` 의 `canonicalString` 을 편집하기
+    전에 이 defect-log 항목을 먼저 훑지 않았다. 바로 위 문단에 "지운 필드는 서명 어휘에서
+    세그먼트를 빼 버전 상향을 요구한다"고 명시돼 있었는데도, "새 필드는 안 올린다"는 반대
+    규칙만 기억한 채 "필드 제거"를 별개의 판단 없이 처리했다. **필드를 지우는 변경은 세이브
+    서명(`SaveTransfer.swift`)을 건드리는 변경과 같은 부류로 취급하고, 이 항목을 먼저 확인한다.**
+  - **처방**: `integrityVersion` 12 → 13. 회귀 가드(`testASaveSignedWithTheRemovedWeeklyRaidAttemptSegmentIsExempt`,
+    `RaidRoomTests.swift`)는 그 필드가 있던 시절의 canonical 문자열을 손으로 재현해 구버전
+    서명이 면제되는지 직접 확인한다 — 필드 자체가 타입에서 사라져 `fullyPopulatedState()` 로는
+    더 이상 재현할 수 없기 때문이다.
 
 ## 기절 뒤 **강제 교체**를 일반 교체 행동으로 재사용하면 새 포켓몬의 턴을 빼앗는다
 

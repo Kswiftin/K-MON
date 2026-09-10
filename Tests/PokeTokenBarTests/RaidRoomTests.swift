@@ -1237,6 +1237,45 @@ final class RaidRoomTests: XCTestCase {
         XCTAssertFalse(SaveTransfer.canonicalString(CompanionState()).contains("|rc"))
     }
 
+    /// [회귀] 6성 레이드 도전 횟수 제한(`weeklyRaidAttemptDate`/`weeklyRaidAttemptsToday`)을 없애며
+    /// 그 필드가 채우던 canonical 세그먼트(`r6a`)도 통째로 지웠다. **필드 제거는 필드 추가의 반대
+    /// 방향이라 "새 필드는 integrityVersion 을 안 올린다" 규칙이 적용되지 않는다** — 그 세그먼트가
+    /// 이미 서명에 들어 있던(6성 레이드를 한 번이라도 시도한) 기존 세이브는 새 코드가 그 세그먼트를
+    /// 다시 만들어 낼 수 없어 해시가 영원히 어긋난다. 실제로 배포 후 사용자 세이브가 초기화되는
+    /// 사고로 이어졌다(2026-09-10, `integrityVersion` 12→13 으로 대응).
+    func testASaveSignedWithTheRemovedWeeklyRaidAttemptSegmentIsExempt() {
+        // 그 필드가 있던 시절의 canonical 문자열을 손으로 재현한다 — `weeklyRaidAttemptDate`/
+        // `weeklyRaidAttemptsToday` 만 채워진 상태에서, 옛 코드는 "|eg0" 다음 "|ef0" 앞에
+        // "|r6a<date>:<count>" 를 끼워 넣었다(구 `canonicalString` 의 append 순서 — `eg` 직후,
+        // `ef` 직전. `c6d`~`wed` 사이 다른 조건부 세그먼트는 전부 비어 있어 안 끼었다).
+        let deviceSeed = "test-device"
+        let base = SaveTransfer.canonicalString(CompanionState(), deviceSeed: deviceSeed)
+        XCTAssertTrue(base.contains("|eg0|ef0"), "기준 문자열 형식이 바뀌었다 — 아래 스플라이스 위치를 다시 확인하라")
+        let legacyCanonical = base.replacingOccurrences(of: "|eg0|ef0", with: "|eg0|r6a2026-09-08:2|ef0")
+        let legacyHash = String(Self.fnv1aForTest(legacyCanonical), radix: 16)
+
+        var legacy = CompanionState()
+        legacy.integrityVersion = 12   // r6a 세그먼트가 있던 시절(11→12 상향 이후, 12→13 상향 이전)
+        legacy.integrity = legacyHash
+
+        XCTAssertFalse(SaveTransfer.isTampered(legacy, deviceSeed: deviceSeed),
+                       "r6a 세그먼트가 들어 있던 구서명이 조작으로 잡히면 그 세이브를 가진 사용자 전원이 초기화된다")
+
+        // 대조군 — 같은 해시에 현재 버전을 써 넣으면 실제로 안 맞는다(구버전 면제가 하는 일이지,
+        // 해시가 우연히 같아서 통과하는 게 아님을 보인다).
+        var claimingCurrentVersion = legacy
+        claimingCurrentVersion.integrityVersion = SaveTransfer.integrityVersion
+        XCTAssertTrue(SaveTransfer.isTampered(claimingCurrentVersion, deviceSeed: deviceSeed))
+    }
+
+    /// `SaveTransfer.fnv1a` 는 private 이라 여기서 같은 알고리즘을 그대로 재현한다 — 표준 FNV-1a
+    /// (64비트)라 구현이 갈릴 여지가 없다.
+    private static func fnv1aForTest(_ s: String) -> UInt64 {
+        var h: UInt64 = 0xcbf29ce484222325
+        for b in s.utf8 { h ^= UInt64(b); h = h &* 0x100000001b3 }
+        return h
+    }
+
     /// 계정 원장이다 — 더 최근 날짜를 안 남기면 맥 A 에서 잡고 내보내 맥 B 로 불러오는 것만으로
     /// 같은 날 두 마리가 된다(`raidRewardDate` 와 같은 부류·같은 이유).
     func testRebaseKeepsTheNewerRaidCatchDate() {
