@@ -3422,14 +3422,21 @@ final class CompanionStore {
     /// 포인트·주간 미션을 한 번에 받아내는 경로가 열려 있었다(개체는 박스에 버리면 그만이다).
     /// 그 경로로 온 개체는 면제 대상이 아니다.
     var canGraduate: Bool {
-        guard let a = state.active, let line = currentLine,
-              line.tree.node(withID: a.currentID)?.children.isEmpty == true else { return false }
+        guard let a = state.active, let line = currentLine else { return false }
+        return canGraduate(a, in: line)
+    }
+
+    /// `canGraduate` 의 판정 본체 — 활성 개체뿐 아니라 **임의의 개체**(박스 포함)에 같은 조건을
+    /// 적용한다. 로스터 카드가 "이 박스 개체가 졸업 가능한데 안 눌렀다"를 배지로 알리려면 활성
+    /// 개체 전제 없이 이 판정만 따로 불러야 한다 — 그래서 `mon`/`line` 을 받는 순수 함수로 뗐다.
+    func canGraduate(_ mon: MonState, in line: EvoLine) -> Bool {
+        guard line.tree.node(withID: mon.currentID)?.children.isEmpty == true else { return false }
         // 이미 졸업한 개체는 다시 졸업할 수 없다. 졸업해도 개체는 박스에 남으므로(#27) 박스에서
         // 다시 꺼내면 최종형·레벨 조건은 그대로 만족한다 — 이 검사가 없으면 졸업 → 스위치 → 졸업을
         // 반복해 알을 무한히 받아낼 수 있다. 도감 기록도 그 개체당 한 번이어야 한다.
-        guard !a.isGraduated else { return false }
-        let earnedExemption = a.totalForms > 1 && !grewIntoFinalByItem(a, in: line)
-        return earnedExemption || a.level >= PokemonBalance.graduationRequiredLevel
+        guard !mon.isGraduated else { return false }
+        let earnedExemption = mon.totalForms > 1 && !grewIntoFinalByItem(mon, in: line)
+        return earnedExemption || mon.level >= PokemonBalance.graduationRequiredLevel
     }
 
     /// 졸업까지 채워야 하는 레벨 — **관문에 걸려 있을 때만** 값이 있다.

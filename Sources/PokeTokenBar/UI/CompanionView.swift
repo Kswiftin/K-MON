@@ -1380,7 +1380,6 @@ private struct RelearnCandidateRow: View {
 private struct MoveLearningCard: View {
     let store: CompanionStore
     let prompt: CompanionStore.MoveLearningPrompt
-    @State private var profile: PokemonBattleProfile?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 7) {
@@ -1388,7 +1387,9 @@ private struct MoveLearningCard: View {
             Label(learningTitle, systemImage: learningIcon)
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(prompt.origin == .heartScale ? Color.pink : Color.purple)
-            if let s = profile?.stats {
+            // 종족값이 아니라 `CompanionStore.currentStats` — 이 개체의 레벨·성격을 먹인 실제
+            // 능력치다(종족값을 그대로 띄우지 않는 이유는 그 프로퍼티의 주석과 같다).
+            if let s = store.currentStats {
                 HStack(spacing: 5) {
                     learningStat("HP", s.hp)
                     learningStat("공격", s.atk)
@@ -1461,10 +1462,6 @@ private struct MoveLearningCard: View {
         }
         .padding(9)
         .background(Color.purple.opacity(0.09), in: RoundedRectangle(cornerRadius: 9))
-        .task(id: store.currentSpeciesID) {
-            guard let id = store.currentSpeciesID else { profile = nil; return }
-            profile = try? await PokeAPIClient.shared.battleProfile(speciesID: id)
-        }
     }
 
     private var learningTitle: String {

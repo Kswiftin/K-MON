@@ -1848,6 +1848,17 @@ read_when:
   이 거절하고 재고가 그대로) + `testHeartScaleCopyExistsInAllThreeLanguages`(설명이 빈 문자열이면 실패).
   설명 누락은 화면을 봐야 아는 결함이라 문구 테스트가 세 언어 전부를 훑는 편이 싸다.
   (`CompanionModel.swift` · `Localization.swift` · `BagView.swift`, 2026-08-21.)
+- 같은 부류가 알림 라우팅에도 있었다. `PopoverNavigation.destination(forNotificationID:)` 의
+  `return .battle` 은 "배틀 신청류"를 뜻하는 기본값이었는데, 레이드 알림("⚔️ N★ 레이드가
+  열렸어요" = `raid-room-*`, 보스 교체 = `raid-hatch-*`)을 분류하지 않아 그대로 이 기본값에
+  떨어졌다. 그런데 레이드 방은 친구 탭(`.battle`)의 콘텐츠가 아니라 `nav.showRaid` 오버레이다
+  (`goToRaid()` 가 이미 있었는데 알림 경로가 안 불렀다) — 사용자가 알림을 눌러도 친구 탭만 열리고
+  레이드 방은 안 보였다(사용자 리포트, 2026-09-10).
+- **처방**: `raid-room-`/`raid-hatch-` 접두를 `.raid` 로 분류해 `goToRaid()` 로 보낸다.
+  회귀 가드는 두 접두 모두 `.raid` 를 반환하는지 직접 확인하고
+  (`testRaidNotificationsOpenTheRaidScreen`), 기존 "나머지는 배틀 탭" 테스트에서는 두 접두를
+  빼 재발 시 실패하게 했다(`PopoverNavigationTests`).
+  (`PopoverView.swift` · `PokeTokenBarApp.swift`, 2026-09-10.)
 ## `.task(id:)` 의 id 에 없는 값이 바뀌면 화면은 옛 데이터로 남는다
 
 - 기술 목록은 `.task(id: "\(개체 id)-\(레벨)")` 로 다시 읽는다. 지금까지 무브셋이 바뀌는 유일한 경로가
