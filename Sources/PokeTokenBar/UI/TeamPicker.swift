@@ -306,7 +306,7 @@ struct TeamPicker: View {
                     Spacer(minLength: 2)
                     Text(value.map { "\($0)" } ?? "—").bold()
                 }
-                .font(.system(size: 9))
+                .font(.system(size: 10))
                 .padding(.horizontal, 4).padding(.vertical, 2)
                 .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 4))
                 .opacity(value == nil ? 0.35 : 1)
