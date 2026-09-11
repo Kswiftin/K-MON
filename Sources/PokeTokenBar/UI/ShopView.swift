@@ -9,9 +9,10 @@ struct ShopView: View {
     @State private var category: ShopCategory = .general
     @State private var machineQuery = ""
     @State private var machineNames: [Int: String] = [:]
-    /// 카드가 조회를 끝내야 채워진다(`TechnicalMachineShopCard.task`) — 검색어(`machineQuery`)가
-    /// `machineNames` 를 쓰는 것과 같은 모양·같은 한계다. 타입/습득 필터를 켠 채 위에서 아래로
-    /// 스크롤하면 아직 안 지난 카드는 필터에 걸리지 않다가, 스크롤이 닿는 순간 나타난다.
+    /// `prefetchMachineFilterData()` 가 도감 전체를 카드 노출과 무관하게 채운다 — 예전엔 보이는
+    /// 카드만 채워서, 필터가 아직 안 보인 카드를 걸러내고 그 카드는 걸러졌으니 영원히 안 보이는
+    /// 순환이 있었다(2026-09-11 결함 — "기술머신 필터가 안됨"). 검색어(`machineQuery`)의
+    /// 현지화 이름 매칭(`machineNames`)만 이 한계가 남아 있다 — 슬러그·TM 번호로는 늘 찾긴 한다.
     @State private var machineTypes: [Int: PokemonType] = [:]
     @State private var machineLearnable: [Int: Bool] = [:]
     @State private var machineTypeFilter: PokemonType?
@@ -63,21 +64,31 @@ struct ShopView: View {
                     EggCard(store: store, nav: nav, tier: tier)
                 }
             case .machines:
-                TextField("기술명 또는 TM 번호 검색",
-                          text: $machineQuery)
-                    .textFieldStyle(.roundedBorder)
-                machineFilterBar
-                if filteredMachines.isEmpty {
-                    ContentUnavailableView.search(text: machineQuery)
+                Group {
+                    TextField("기술명 또는 TM 번호 검색",
+                              text: $machineQuery)
+                        .textFieldStyle(.roundedBorder)
+                    machineFilterBar
+                    if filteredMachines.isEmpty {
+                        ContentUnavailableView.search(text: machineQuery)
+                    }
+                    ForEach(filteredMachines) { machine in
+                        TechnicalMachineShopCard(store: store, machine: machine, onResolveName: { name in
+                            machineNames[machine.moveID] = name
+                        }, onResolveType: { type in
+                            machineTypes[machine.moveID] = type
+                        }, onResolveLearnable: { learnable in
+                            machineLearnable[machine.moveID] = learnable
+                        })
+                    }
                 }
-                ForEach(filteredMachines) { machine in
-                    TechnicalMachineShopCard(store: store, machine: machine, onResolveName: { name in
-                        machineNames[machine.moveID] = name
-                    }, onResolveType: { type in
-                        machineTypes[machine.moveID] = type
-                    }, onResolveLearnable: { learnable in
-                        machineLearnable[machine.moveID] = learnable
-                    })
+                // 타입·습득 필터가 보는 값을 카드 노출과 무관하게 전체 도감(95종) 기준으로 미리
+                // 채운다. 카드가 보일 때만 채우면(TechnicalMachineShopCard.task) 필터가 카드
+                // 노출을 정하는데 카드 노출은 필터가 정해서, 한 번도 안 보인 항목은 영원히 필터를
+                // 못 통과하는 순환이 생긴다 — 필터를 켜는 순간 목록이 거의 비어 보이던 원인이다
+                // (2026-09-11 사용자 보고 — "기술머신 필터가 안됨").
+                .task(id: store.currentSpeciesID ?? 0) {
+                    await prefetchMachineFilterData()
                 }
             case .outfits:
                 // 상점 판매분만(`shopPrice != nil`) — 업적 보상 의상은 옷장에서 잠금으로 보인다.
@@ -104,6 +115,33 @@ struct ShopView: View {
             let matchesType = machineTypeFilter == nil || machineTypes[machine.moveID] == machineTypeFilter
             let matchesLearnable = !learnableOnlyFilter || machineLearnable[machine.moveID] == true
             return matchesQuery && matchesType && matchesLearnable
+        }
+    }
+
+    /// `machineTypes`/`machineLearnable` 을 도감 전체 기준으로 채운다 — 보이는 카드에만 맡기면
+    /// (`TechnicalMachineShopCard.task`) 필터가 카드 노출을 정하고 카드 노출이 필터값을 채우는
+    /// 순환이 생긴다. `PokeAPIClient` 가 조회 결과를 캐싱하므로 카드가 나중에 같은 조회를
+    /// 다시 해도 네트워크가 추가로 들지 않는다.
+    private func prefetchMachineFilterData() async {
+        let speciesID = store.currentSpeciesID
+        await withTaskGroup(of: (Int, PokemonType?, Bool).self) { group in
+            for machine in TechnicalMachine.catalog {
+                group.addTask {
+                    let type = await PokeAPIClient.shared.moveDetail(id: machine.moveID)?.type
+                    let learnable: Bool
+                    if let speciesID {
+                        learnable = await PokeAPIClient.shared.canLearnMachine(speciesID: speciesID,
+                                                                               moveID: machine.moveID)
+                    } else {
+                        learnable = false
+                    }
+                    return (machine.moveID, type, learnable)
+                }
+            }
+            for await (moveID, type, learnable) in group {
+                if let type { machineTypes[moveID] = type }
+                machineLearnable[moveID] = learnable
+            }
         }
     }
 

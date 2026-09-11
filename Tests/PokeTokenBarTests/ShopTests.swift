@@ -178,6 +178,27 @@ final class ShopTests: XCTestCase {
                       "'도구' 탭이 지닌물건을 그대로 두고 있다 — 두 탭에 겹쳐 뜬다")
     }
 
+    // MARK: 기술머신 필터 — 카드 노출과 데이터 조회의 순환 차단
+
+    /// **회귀.** 타입/습득 필터가 보는 `machineTypes`/`machineLearnable` 을 보이는 카드에만
+    /// 맡기면(`TechnicalMachineShopCard.task`) 필터가 카드 노출을 정하고 카드 노출이 그 값을
+    /// 채우는 순환이 생긴다 — 필터를 켜는 순간 아직 한 번도 안 보인 항목은 영원히 필터를 못
+    /// 통과해 목록이 거의 비어 보였다(2026-09-11 사용자 보고 — "기술머신 필터가 안됨").
+    ///
+    /// 뷰 상태/비동기 조회라 순수 함수로 못 재서 소스에서 본다 — 전체 도감을 카드 노출과
+    /// 무관하게 미리 채우는 자리(`prefetchMachineFilterData`)가 여전히 있는지 확인한다.
+    func testMachineFilterDataIsPrefetchedIndependentlyOfCardVisibility() throws {
+        let source = try SourceScan.sources().first { $0.name.contains("ShopView") }
+        let code = try XCTUnwrap(source?.code)
+        XCTAssertTrue(code.contains("func prefetchMachineFilterData"),
+                      "필터 데이터를 미리 채우는 자리가 없다 — 카드 노출에만 의존하면 순환이 되돌아온다")
+        XCTAssertTrue(code.contains("for machine in TechnicalMachine.catalog"),
+                      "미리 채우는 자리가 필터링된 목록이 아니라 전체 도감을 도는지 확인한다")
+        XCTAssertTrue(code.contains(".task(id: store.currentSpeciesID ?? 0)")
+                      && code.contains("await prefetchMachineFilterData()"),
+                      "미리 채우는 자리가 실제로 화면에 연결돼 있는지 확인한다")
+    }
+
     // MARK: 정렬 (가격 저렴한 순)
 
     /// 상점 목록은 가격 오름차순.
