@@ -87,7 +87,7 @@ Pokédoro는 집중하는 동안 포켓몬 파트너를 모험에 보내고, 수
 <h3>작업과 업데이트 설정</h3>
 설정에서 방해금지, 알림, 로그인 시 실행, 플로팅 펫, 업데이트 확인을 관리합니다. 상단 창을 열고 닫는 전역 단축키도 여기서 지정합니다(기본값은 설정 안 함). 업데이트로 버전이 올라가면 다음 실행에 새로워진 점을 한 번 보여 주며, 이 창은 설정에서 끌 수 있습니다.
 </td>
-<td width="45%" align="center"><img src="assets/settings-ko.png" width="180" alt="설정"></td>
+<td width="45%" align="center"><img src="assets/settings.png" width="180" alt="설정"></td>
 </tr>
 <tr>
 <td width="45%" align="center"><img src="assets/screenshot-outfit-ko.png" width="180" alt="꾸미기"><br><br><img src="assets/screenshot-run-double-ko.png" width="180" alt="웨이브 런 2대2 전투"><br><br><img src="assets/screenshot-run-ko.png" width="180" alt="웨이브 런 보상 선택"><br><br><img src="assets/screenshot-run-catch-ko.png" width="180" alt="웨이브 런 포획"></td>
@@ -196,7 +196,7 @@ pokedoro help                 전체 명령 목록
 
 <p align="center"><img src="assets/screenshot-terminal-tui.png" width="360" alt="협동 레이드 방과 기술 배우기 명령을 보여 주는 터미널"></p>
 
-협동 레이드 방을 찾으면 티어·방장과 함께 보스 이름·도감 번호를 입장 전에 확인하고 참가·준비까지 진행할 수 있으며, `learn`으로 하트비늘 후보와 기술머신을 포함한 기술 배우기를 끝까지 처리할 수 있습니다.
+협동 레이드 방을 찾고 참가·준비까지 진행하며, `learn`으로 하트비늘 후보와 기술머신을 포함한 기술 배우기를 끝까지 처리할 수 있습니다.
 
 tmux 상태줄에 붙이는 예입니다.
 
