@@ -102,7 +102,11 @@ final class Scanner: NSObject, CBCentralManagerDelegate {
     private var manager: CBCentralManager!
     private let output: FileHandle?
     private let deadline: Date
+    /// CoreBluetooth 가 "세기를 못 읽었다" 를 알리는 값. 측정값이 아니라 센티넬이다.
+    static let rssiUnavailable = 127
+
     private var samples = 0
+    private var dropped = 0
     private var peers = Set<String>()
     private var marks = 0
     private let startedAt = Date()
@@ -136,6 +140,11 @@ final class Scanner: NSObject, CBCentralManagerDelegate {
 
     func centralManager(_ central: CBCentralManager, didDiscover peripheral: CBPeripheral,
                         advertisementData: [String: Any], rssi RSSI: NSNumber) {
+        // 센티넬을 그대로 적으면 평균·표준편차가 통째로 망가진다 — 60초 표본에 2개가 섞여
+        // sd 가 4 에서 29 로 튀었고, 그 값이 #342 의 중단 판정에 그대로 들어갔다.
+        // **`ble-probe-report.sh` 도 같은 값을 거른다** — CSV 가 두 도구의 계약이라
+        // 한쪽만 바꾸면 조용히 어긋난다.
+        guard RSSI.intValue != Self.rssiUnavailable else { dropped += 1; return }
         let peer = String(peripheral.identifier.uuidString.prefix(8))
         let name = (advertisementData[CBAdvertisementDataLocalNameKey] as? String) ?? ""
         samples += 1
@@ -164,8 +173,9 @@ final class Scanner: NSObject, CBCentralManagerDelegate {
             let elapsed = Date().timeIntervalSince(startedAt)
             if Date() >= deadline {
                 timer.invalidate()
-                print(String(format: "끝 — %.1fs samples=%d peers=%d marks=%d",
-                             elapsed, samples, peers.count, marks))
+                // 버린 표본을 숨기지 않는다 — 수가 크면 측정이 아니라 장비를 의심해야 한다.
+                print(String(format: "끝 — %.1fs samples=%d peers=%d marks=%d dropped=%d",
+                             elapsed, samples, peers.count, marks, dropped))
                 manager.stopScan()
                 try? output?.close()
                 exit(0)
