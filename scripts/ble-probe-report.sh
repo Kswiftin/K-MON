@@ -21,6 +21,10 @@ CSV="${1:-}"
 awk -F, -v window=2000 -v guard=1000 '
 NR == 1 { next }                       # 헤더
 $2 == "MARK" { marks[++markCount] = $1; next }
+# CoreBluetooth 는 세기를 못 읽으면 127 을 준다 — 측정값이 아니라 센티넬이다. 평균에 섞이면
+# 한두 개로도 표준편차가 통째로 뒤집힌다(실측: sd 4 → 29). Tools/BLEProbe 가 이미 같은 값을
+# 버리지만, 그 전에 찍은 CSV 가 남아 있어 여기서도 막는다. **양쪽 규칙이 같아야 한다.**
+$4 == 127 { sentinel++; next }
 {
   n++
   ts[n] = $1; peer[n] = $2; name[n] = $3; rssi[n] = $4
@@ -50,7 +54,9 @@ END {
     }
   }
 
-  printf "구간 %.1fs · 표본 %d · 노드 %d · 마크 %d\n\n", span, n, length(seen), markCount
+  printf "구간 %.1fs · 표본 %d · 노드 %d · 마크 %d", span, n, length(seen), markCount
+  if (sentinel > 0) printf " · 버린 센티넬 %d", sentinel
+  printf "\n\n"
   printf "%-10s %8s %8s %7s %8s %8s %s\n", "노드", "rate/s", "mean", "sd", "drop", "n/창", "판정"
 
   for (p in seen) {

@@ -102,7 +102,11 @@ final class Scanner: NSObject, CBCentralManagerDelegate {
     private var manager: CBCentralManager!
     private let output: FileHandle?
     private let deadline: Date
+    /// CoreBluetooth 가 "세기를 못 읽었다" 를 알리는 값. 측정값이 아니라 센티넬이다.
+    static let rssiUnavailable = 127
+
     private var samples = 0
+    private var dropped = 0
     private var peers = Set<String>()
     private var marks = 0
     private let startedAt = Date()
@@ -136,6 +140,11 @@ final class Scanner: NSObject, CBCentralManagerDelegate {
 
     func centralManager(_ central: CBCentralManager, didDiscover peripheral: CBPeripheral,
                         advertisementData: [String: Any], rssi RSSI: NSNumber) {
+        // 센티넬을 그대로 적으면 평균·표준편차가 통째로 망가진다 — 60초 표본에 2개가 섞여
+        // sd 가 4 에서 29 로 튀었고, 그 값이 #342 의 중단 판정에 그대로 들어갔다.
+        // **`ble-probe-report.sh` 도 같은 값을 거른다** — CSV 가 두 도구의 계약이라
+        // 한쪽만 바꾸면 조용히 어긋난다.
+        guard RSSI.intValue != Self.rssiUnavailable else { dropped += 1; return }
         let peer = String(peripheral.identifier.uuidString.prefix(8))
         let name = (advertisementData[CBAdvertisementDataLocalNameKey] as? String) ?? ""
         samples += 1
@@ -164,8 +173,9 @@ final class Scanner: NSObject, CBCentralManagerDelegate {
             let elapsed = Date().timeIntervalSince(startedAt)
             if Date() >= deadline {
                 timer.invalidate()
-                print(String(format: "끝 — %.1fs samples=%d peers=%d marks=%d",
-                             elapsed, samples, peers.count, marks))
+                // 버린 표본을 숨기지 않는다 — 수가 크면 측정이 아니라 장비를 의심해야 한다.
+                print(String(format: "끝 — %.1fs samples=%d peers=%d marks=%d dropped=%d",
+                             elapsed, samples, peers.count, marks, dropped))
                 manager.stopScan()
                 try? output?.close()
                 exit(0)
@@ -182,13 +192,18 @@ final class Scanner: NSObject, CBCentralManagerDelegate {
 // MARK: 진입점
 
 let options = parseOptions()
+
+// 전역에 붙잡아야 한다. `case` 안의 지역 `let` 은 그 블록이 끝나면 ARC 가 바로 풀어버리고
+// (`_ = x` 는 마지막 사용일 뿐 수명을 늘리지 않는다), 그러면 CoreBluetooth 매니저가 함께
+// 죽어 콜백이 한 번도 안 온다. 상태 타이머까지 `[weak self]` 라 첫 발화에서 스스로
+// invalidate 해, 에러 없이 표본 0인 채 런루프만 도는 모습이 된다.
+var keepAlive: AnyObject?
+
 switch options.mode {
 case "advertise":
-    let advertiser = Advertiser(localName: options.name)
-    _ = advertiser
+    keepAlive = Advertiser(localName: options.name)
 case "scan":
-    let scanner = Scanner(seconds: options.seconds, csvPath: options.csvPath)
-    _ = scanner
+    keepAlive = Scanner(seconds: options.seconds, csvPath: options.csvPath)
 default:
     fail("모르는 모드")
 }

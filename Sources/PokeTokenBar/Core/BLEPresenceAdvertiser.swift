@@ -25,9 +25,13 @@ final class BLEPresenceAdvertiser: NSObject, CBPeripheralManagerDelegate {
         super.init()
     }
 
-    /// 설정이 켜져 있을 때만 부른다. `CBPeripheralManager` 를 만드는 순간 macOS 가 블루투스를
-    /// 물을 수 있어, 이 기능을 안 쓰는 사용자는 그 창을 영영 보지 않아야 한다
-    /// (`battleInvitesEnabled` 가 로컬 네트워크 권한에 대해 하는 일과 같다).
+    /// 설정이 켜져 있을 때만 부른다 — `CBPeripheralManager` 를 만드는 순간 macOS 가 블루투스를
+    /// 묻기 때문에, 토글을 끈 사용자는 그 창을 보지 않아야 한다. 기본값은 켜짐이라
+    /// (`battleInvitesEnabled` 와 같다) 대부분은 첫 실행에서 한 번 보게 된다.
+    ///
+    /// **거부는 되돌리기 어렵다.** macOS 는 한 번 거부하면 다시 묻지 않고, 사용자가 시스템 설정에서
+    /// 직접 켜야 한다. 그래서 이 창이 뜨는 시점에 화면이 이유를 설명하고 있어야 한다 — 맥락 없이
+    /// 물으면 거부가 쌓이고, 나중에 근접 발견(#342 1번)을 붙여도 그 사용자에게는 이미 막혀 있다.
     func start() {
         guard manager == nil else { return }
         isEnabled = true
