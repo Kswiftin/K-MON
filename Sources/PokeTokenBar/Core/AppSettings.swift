@@ -158,7 +158,7 @@ final class AppSettings {
                                  FocusChainRules.goalRange.lowerBound),
                              FocusChainRules.goalRange.upperBound)
         battleInvitesEnabled = defaults.object(forKey: "battleInvitesEnabled") as? Bool ?? true
-        blePresenceEnabled = defaults.object(forKey: "blePresenceEnabled") as? Bool ?? false
+        blePresenceEnabled = defaults.object(forKey: "blePresenceEnabled") as? Bool ?? true
         if let value = defaults.string(forKey: "memoryHomeLANPeerID"), let id = UUID(uuidString: value) {
             memoryHomeLANPeerID = id
         } else {
