@@ -81,7 +81,7 @@ struct PokedoroRequestExecutor {
         case .playerGymAI(let enabled): return playerGymAI(request, enabled: enabled)
         case .playerGymResign: return playerGymResign(request)
         case .playerGymTakeover: return playerGymTakeover(request)
-        case .raidStatus: return raidStatus(request)
+        case .raidStatus: return await raidStatus(request)
         case .raidCreate(let tier): return raidCreate(request, tier: tier)
         case .raidJoin(let number, let role): return raidJoin(request, number: number, role: role)
         case .raidMon(let number): return raidMon(request, number: number)
@@ -838,7 +838,7 @@ struct PokedoroRequestExecutor {
 
     // MARK: 협동 레이드 모집
 
-    private func raidStatus(_ request: PokedoroRequest) -> PokedoroReply {
+    private func raidStatus(_ request: PokedoroRequest) async -> PokedoroReply {
         guard let control = room else { return noRoom(request) }
         let state = control.terminalState
         var lines = ["협동 레이드 · \(roomPhaseName(state.phase))"]
@@ -851,7 +851,11 @@ struct PokedoroRequestExecutor {
         if rooms.isEmpty {
             lines.append(control.terminalRaidBrowsing ? "근처에 열린 레이드 방이 없다." : "LAN 방 검색이 꺼져 있다.")
         } else {
-            lines += rooms.map { "\($0.number). \($0.tier.rawValue)★  \($0.trainerName)" }
+            for room in rooms {
+                let boss = await companion.resolveSpeciesName(room.bossSpeciesID)
+                let identity = boss == "#\(room.bossSpeciesID)" ? boss : "\(boss) (#\(room.bossSpeciesID))"
+                lines.append("\(room.number). \(room.tier.rawValue)★  \(room.trainerName)  · 보스 \(identity)")
+            }
             lines.append("참가: pokedoro raid join <방 번호>")
         }
         if let error = control.terminalRaidError { lines.append("오류  \(error)") }
