@@ -504,14 +504,28 @@ final class RaidRoomTests: XCTestCase {
         XCTAssertEqual(other.creditRaidReward(500), 500)
     }
 
+    /// `stubStore(TestClock())` 가 쓰는 시각. 센터가 이제 **스토어의 시계**로 오늘의 보스를 고르므로,
+    /// 테스트가 세우는 보스도 같은 시각에서 뽑아야 한다 — 여기서 벽시계(`Date()`)를 쓰면 방의 보스와
+    /// 오늘의 보스가 갈려 게스트 검증이 막는다.
+    static let stubClockNow = Date(timeIntervalSince1970: 1_755_000_000)
+
+    /// 이벤트 창 한가운데(2026-09-11 12:00, 기기 로컬 시간). `LiveEventWindow` 가 로컬 달력으로
+    /// 판정하므로 시각도 로컬로 만든다 — UTC 로 만들면 러너 시간대에 따라 창 밖으로 떨어진다.
+    private static let liveEventNoon: Date = {
+        var components = DateComponents()
+        components.year = 2026; components.month = 9; components.day = 11; components.hour = 12
+        return Calendar.current.date(from: components)!
+    }()
+
     // MARK: 포획 배선 — 방이 추첨을 돌려 한 명에게만 넣는다
 
     /// 뽑고 싶은 사람이 뽑히는 시드를 찾는다. 추첨이 시드 함수라 테스트가 결과를 고를 수 있다 —
     /// 못 고르면 "누군가는 뽑힌다" 만 재게 되고, 뽑힌 쪽·안 뽑힌 쪽을 갈라서 못 본다.
     private func seedDrawing(_ target: UUID, from ids: [UUID], finishedRound: Int, tier: RaidTier = .three,
+                             at date: Date = RaidRoomTests.stubClockNow,
                              file: StaticString = #filePath, line: UInt = #line) -> UInt64 {
         let runners = ids.map { runner("runner", id: $0) }
-        let species = RaidBoss.speciesID(at: Date(), tier: tier)
+        let species = RaidBoss.speciesID(at: date, tier: tier)
         for seed in UInt64(0)..<100_000 {
             let caught = RaidBoss.catchAttempts(runners: runners, speciesID: species, tier: tier, seed: seed,
                                                 finishedRound: finishedRound).filter(\.succeeded).map(\.id)
@@ -792,6 +806,42 @@ final class RaidRoomTests: XCTestCase {
         XCTAssertTrue(center.raidCatchAttempts.isEmpty)
     }
 
+    /// **회귀**: 이벤트 창(9/11 08~20시) 동안은 같은 구간의 **두 번째 승리도** 포획 추첨을 돌린다.
+    ///
+    /// 이 분기가 여태 테스트 밖에 있었던 이유가 시계다 — 센터가 `Date()` 를 직접 읽어서, 창 안의
+    /// 동작을 재려면 CI 가 우연히 그 12시간에 도는 수밖에 없었다. 반대로 창이 실제로 열린 동안에는
+    /// 형제 테스트 둘(`testASecondWinOfTheDayDrawsNoCatcher`·`testAnAlreadyClaimedCatcherIsNever
+    /// ToldTheyEscaped`)이 평소와 다른 경로를 밟아 빨개졌다. 이제 센터는 세이브 스토어의 주입된
+    /// 시계를 지나므로 양쪽을 테스트가 고른다.
+    @MainActor
+    func testDuringTheLiveEventASecondWinStillDrawsACatcher() async {
+        let noonOfTheEvent = Self.liveEventNoon
+        let store = stubStore(TestClock(noonOfTheEvent), tag: "raid-catch-event-second-win")
+        await store.hatch(baseID: 20)
+        XCTAssertTrue(store.isLiveEventActive, "테스트 전제: 스토어 시계가 이벤트 창 안이다")
+
+        let center = MultiplayerRoomCenter(companion: store)
+        let me = runner("나", id: center.myID)
+        let mate = runner("동료")
+        let boss = todaysBoss(tier: .three, at: noonOfTheEvent)
+        let seed = seedDrawing(me.id, from: [me.id, mate.id], finishedRound: 1, at: noonOfTheEvent)
+        XCTAssertTrue(center.applyGuestRaidStart(seed: seed, fighters: [me, mate, boss], tier: .three))
+
+        var downedBoss = boss
+        downedBoss.side.hp = 0
+        center.applyGuestResolvedRound(round: 1, fighters: [me, mate, downedBoss], events: [])
+        // 첫 승리로 그 구간의 별의조각 원장을 채운다 — 평소라면 두 번째 승리가 추첨을 못 돌린다.
+        center.applyGuestRaidSettlement([me.id: 800, mate.id: 800])
+        await center.debugAwaitRaidCatch()
+        XCTAssertFalse(center.raidCatchAttempts.isEmpty, "첫 승리는 원래 추첨을 돌린다")
+
+        center.applyGuestRaidSettlement([me.id: 800, mate.id: 800])
+        await center.debugAwaitRaidCatch()
+
+        XCTAssertFalse(center.raidCatchAttempts.isEmpty,
+                       "이벤트 창 동안은 두 번째 승리도 추첨을 돌린다 — 원장을 아예 안 본다")
+    }
+
     /// **회귀**: 오늘 이미 한 마리를 잡았는데 이번 판 주사위가 실패로 나오면, "놓쳤다"가 아니라
     /// 여전히 "이미 진행했다"로 남아야 한다. 주사위부터 보면 방금 실패한 것으로 읽힌다.
     @MainActor
@@ -867,7 +917,8 @@ final class RaidRoomTests: XCTestCase {
     /// 잡던 개체는 그대로 잡는다 — 그건 내 세이브에 들어가는 값이라 방을 떠나는 것과 무관하다.
     @MainActor
     func testALeftRoomNeverShowsTheCatchResult() async {
-        let species = RaidBoss.speciesID(at: Date(), tier: .three)
+        // 스토어 시계와 같은 시각에서 뽑는다 — 센터가 그 시계로 오늘의 보스를 고른다.
+        let species = RaidBoss.speciesID(at: Self.stubClockNow, tier: .three)
         let provider = RaidSuspendedLineProvider(species: species)
         let store = CompanionStore(provider: provider, clock: TestClock().closure,
                                    fileURL: storeStateURL("raid-catch-stale"), rng: SeededRNG(seed: 7))
@@ -1027,9 +1078,9 @@ final class RaidRoomTests: XCTestCase {
     // MARK: 게스트 시점 — 호스트와 갈라지는 축
 
     /// 오늘의 보스 한 마리. 게스트 검증(`validRaidStart`)을 통과하려면 종이 오늘의 종이어야 한다.
-    private func todaysBoss(tier: RaidTier = .one) -> MultiplayerFighter {
+    private func todaysBoss(tier: RaidTier = .one, at date: Date = RaidRoomTests.stubClockNow) -> MultiplayerFighter {
         var todays = snapshot(level: tier.bossLevel, moves: [move(id: 33, power: 40)])
-        todays.speciesID = RaidBoss.speciesID(at: Date(), tier: tier)
+        todays.speciesID = RaidBoss.speciesID(at: date, tier: tier)
         return RaidBoss.bossFighter(tier: tier, snapshot: todays)
     }
 

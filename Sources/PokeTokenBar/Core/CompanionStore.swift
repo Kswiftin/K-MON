@@ -227,6 +227,11 @@ final class CompanionStore {
 
     private let provider: any PokeProviding
     private let clock: () -> Date
+    /// 일간 미션을 기기마다 다르게 배정하는 씨앗. **주입받는다** — 기본값(`DeviceID`)을 코드가 직접
+    /// 읽으면 배정이 실행 기기에 따라 달라져, 같은 테스트가 어떤 맥에서는 초록이고 어떤 맥에서는
+    /// 빨강이 된다(2026-09-11 실측: `missions=0/3` 을 기대한 테스트가 이 맥에서만 1/3 이었다).
+    /// `SaveTransfer` 의 `deviceSeed` 와 같은 처방이다.
+    private let missionSeed: String
     private let fileURL: URL
     /// 진행 중인 웨이브 런 파일 — 상태 파일 옆이다(`CompanionStorageLocations`).
     private let waveRunURL: URL
@@ -250,7 +255,9 @@ final class CompanionStore {
          chatStore: PokemonChatStore? = nil,
          rng: any RandomNumberGenerator = SystemRandomNumberGenerator(),
          dittoDisguiseRollingEnabled: Bool = AppEnv.isBundledApp,
-         isReadOnly: Bool = false) {
+         isReadOnly: Bool = false,
+         missionSeed: String = DeviceID.stableIdentifier()) {
+        self.missionSeed = missionSeed
         self.isReadOnly = isReadOnly
         self.provider = provider
         self.clock = clock
@@ -1702,7 +1709,7 @@ final class CompanionStore {
         let now = clock()
         let done = state.missions.record(event, amount,
                                         dayKey: Self.dayKey(now), weekKey: Self.weekKey(now),
-                                        assignmentSeed: DeviceID.stableIdentifier())
+                                        assignmentSeed: missionSeed)
             .map { (name: l.missionName($0), reward: $0.reward) }
         guard let merged = Self.mergedCompletion(done) else { return 0 }
         let granted = addStoredEggs(merged.reward)
@@ -1751,7 +1758,7 @@ final class CompanionStore {
         let now = clock()
         let day = Self.dayKey(now), week = Self.weekKey(now)
         let before = state.missions
-        let assigned = state.missions.currentDailyMissions(dayKey: day, seed: DeviceID.stableIdentifier())
+        let assigned = state.missions.currentDailyMissions(dayKey: day, seed: missionSeed)
         if state.missions != before { save() }
         return assigned.map {
             ($0, state.missions.progress($0, dayKey: day, weekKey: week))
@@ -2971,6 +2978,16 @@ final class CompanionStore {
         save()
         return amount
     }
+
+    /// 이벤트 창이 지금 열려 있는가. **판정의 정본이다** — 센터·화면이 각자 `LiveEventWindow`
+    /// 를 기본 인자(`Date()`)로 부르면 그 경로만 벽시계를 읽어 테스트가 시계를 못 잡는다.
+    /// 그러면 창이 실제로 열린 12시간 동안에만 조용히 빨개진다(2026-09-11 실측: 레이드 포획
+    /// 회귀 테스트 둘이 KST 08~20시에만 실패했고, UTC 러너라 CI 는 오전 내내 초록이었다).
+    var isLiveEventActive: Bool { LiveEventWindow.isActive(clock()) }
+
+    /// 이벤트 배너가 "몇 시간 남았다" 를 그릴 때 쓰는 종료 시각. `isLiveEventActive` 와 같은 이유로
+    /// 여기를 지난다 — 화면이 달력을 직접 만지면 같은 부류가 다시 생긴다.
+    var liveEventEndDate: Date? { LiveEventWindow.endDate(clock()) }
 
     /// 현재 오전/오후, 1★ 레이드에서 이미 보스를 잡았나.
     var raidCatchClaimedToday: Bool { raidCatchClaimedToday(tier: .one) }
