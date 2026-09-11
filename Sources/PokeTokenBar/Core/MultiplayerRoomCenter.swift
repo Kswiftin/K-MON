@@ -1,6 +1,7 @@
 import Foundation
 import Network
 import Observation
+import os
 import UserNotifications
 
 struct MultiplayerRoomPeer: Identifiable, Equatable {
@@ -23,6 +24,11 @@ final class MultiplayerRoomCenter {
     enum Phase: Equatable { case idle, creating, hosting, joining(String), joined, battling, pokeathlon, pokemonQuiz, tournament }
     nonisolated static let serviceType = "_kmonroom._tcp"
     private nonisolated static let maxMessageBytes: UInt32 = 1_000_000
+    /// 라운드가 안 넘어갈 때 원인을 콘솔에서 바로 볼 수 있게 한다 — 레이드에서 참가자 전원이
+    /// 눌렀는데도 "다른 참가자를 기다리는 중"이 한동안 이어진 사용자 보고(2026-09-11)를 계기로
+    /// 뺐다. 30초 마감 타이머가 결국 채워 넘기므로 데이터 손실은 없지만, 그 행동이 왜 호스트에
+    /// 반영되지 않았는지는 지금까지 아무 흔적도 안 남았다.
+    private nonisolated static let logger = Logger(subsystem: "io.github.chattymin.poketokenbar", category: "raid")
 
     private(set) var phase: Phase = .idle
     /// 방 하나의 수명 번호. `leaveRoom()` 이 올린다.
@@ -1888,7 +1894,14 @@ final class MultiplayerRoomCenter {
                 self.tournamentPools.removeValue(forKey: pid)
                 self.tournamentTeams.removeValue(forKey: pid)
                 connection.cancel(); self.broadcastLobby(); return
-            case .action(let round, let action) where action.attackerID == id && round == self.combatRound:
+            case .action(let round, let action):
+                // 라운드가 어긋나면(지연 도착·재연결 등) 조용히 버리던 자리다 — 그러면 이 행동은
+                // 유실된 채 30초 마감 타이머만 라운드를 넘긴다. 원인을 콘솔에 남긴다.
+                guard action.attackerID == id, round == self.combatRound else {
+                    Self.logger.warning(
+                        "행동 거절 — attacker=\(action.attackerID, privacy: .public) 보낸이=\(String(describing: id), privacy: .public) 받은라운드=\(round) 현재라운드=\(self.combatRound)")
+                    break
+                }
                 if let id { self.acceptAction(action, from: id) }
             case .chat(let message) where message.senderID == id:
                 if let id { self.acceptChat(message, from: id) }
@@ -2019,8 +2032,11 @@ final class MultiplayerRoomCenter {
     }
 
     private func acceptAction(_ action: MultiplayerAction, from participantID: UUID) {
-        guard phase == .battling, action.attackerID == participantID,
-              pendingActions[participantID] == nil else { return }
+        guard phase == .battling, action.attackerID == participantID else { return }
+        guard pendingActions[participantID] == nil else {
+            Self.logger.warning("행동 거절 — 이미 제출됨 participant=\(participantID, privacy: .public)")
+            return
+        }
         pendingActions[participantID] = action
         finishRoundIfReady()
     }

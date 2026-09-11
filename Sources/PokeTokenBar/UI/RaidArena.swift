@@ -86,6 +86,10 @@ struct RaidArenaView: View {
     let acceptsInput: Bool
     /// 판이 끝났나 — 화면이 할 말이 입력 가능 여부와 다른 축이라 따로 받는다.
     let isFinished: Bool
+    /// 아직 안 낸 참가자를 30초 마감 타이머가 대신 채우는 시각 — "다른 참가자의 행동을 기다리는
+    /// 중" 화면에 남은 시간을 보여준다. 정상적인 대기와 멈춘 화면을 구분 못 해 "멈췄다" 로 오인한
+    /// 사용자 보고(2026-09-11)를 계기로 더했다.
+    let turnEndsAt: Date?
     let onMove: (Int) -> Void
 
     /// 파티 칸 스프라이트. 두 칸이 나란히 서므로 웨이브 런의 좁은 카드와 같은 치수를 쓴다.
@@ -250,9 +254,21 @@ struct RaidArenaView: View {
                 Text("탈락 — 파티를 응원하고 있습니다.")
                     .font(.caption).foregroundStyle(.secondary).frame(maxWidth: .infinity)
             case .waitingForOthers:
-                HStack { ProgressView().controlSize(.small)
-                    Text("다른 참가자의 행동을 기다리는 중…") }
-                    .font(.caption).foregroundStyle(.secondary).frame(maxWidth: .infinity)
+                HStack {
+                    ProgressView().controlSize(.small)
+                    Text("다른 참가자의 행동을 기다리는 중…")
+                    // 남은 시간을 보여야 "멈췄다" 와 "정상적으로 기다리는 중" 이 구분된다 — 0 에
+                    // 닿으면 마감 타이머가 미제출자를 대신 채워 라운드가 넘어간다.
+                    if let turnEndsAt {
+                        TimelineView(.periodic(from: .now, by: 1)) { context in
+                            let secondsLeft = max(0, Int(turnEndsAt.timeIntervalSince(context.date)))
+                            Text("\(secondsLeft)s")
+                                .font(.caption.monospacedDigit().bold())
+                                .foregroundStyle(secondsLeft <= 5 ? .red : .orange)
+                        }
+                    }
+                }
+                .font(.caption).foregroundStyle(.secondary).frame(maxWidth: .infinity)
             case .chooseMove:
                 // 대상 고르기가 없다 — 때릴 것은 보스 하나다. 상성 힌트는 1v1 과 같은 자리에 붙는다.
                 let struggling = me.side.mustStruggle
