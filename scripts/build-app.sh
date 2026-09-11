@@ -65,6 +65,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
     <key>SUEnableAutomaticChecks</key><false/>
     <key>SUAllowsAutomaticUpdates</key><$UPDATER_ALLOWED/>
     <key>SUAutomaticallyUpdate</key><$UPDATER_ALLOWED/>
+    <key>NSBluetoothAlwaysUsageDescription</key><string>근처에 있는 다른 트레이너의 기기에 신호만 내보냅니다. 설정에서 끌 수 있습니다.</string>
     <key>NSLocalNetworkUsageDescription</key><string>Discover nearby Memory Homes, trainers, trades, and Pokéathlon rooms on your local network.</string>
     <key>NSBonjourServices</key>
     <array>

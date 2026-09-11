@@ -106,6 +106,10 @@ final class AppSettings {
     /// 리스너가 뜨는 순간 macOS 가 로컬 네트워크 권한을 묻는다 — 배틀을 안 하는 사용자가 그 창을
     /// 영영 안 보게 하는 유일한 스위치다. 기본값은 기존 동작(켜짐)이다.
     var battleInvitesEnabled: Bool { didSet { defaults.set(battleInvitesEnabled, forKey: "battleInvitesEnabled") } }
+    /// 근처 노드에게 BLE 광고를 띄운다 (#342 0단계 측정용). **기본값은 꺼짐이다** — 광고는
+    /// 로컬 네트워크와 달리 서브넷이라는 울타리가 없어 벽 너머 아무 앱이나 읽는다. 켜는 것은
+    /// 사용자의 명시적 선택이어야 하고, 끈 사용자는 블루투스 권한 창도 보지 않아야 한다.
+    var blePresenceEnabled: Bool { didSet { defaults.set(blePresenceEnabled, forKey: "blePresenceEnabled") } }
     /// Random installation identity for Memory Home LAN access controls.  It is intentionally not
     /// DeviceID: reinstalling/resetting preferences creates a new identity and clears old blocks.
     let memoryHomeLANPeerID: UUID
@@ -154,6 +158,7 @@ final class AppSettings {
                                  FocusChainRules.goalRange.lowerBound),
                              FocusChainRules.goalRange.upperBound)
         battleInvitesEnabled = defaults.object(forKey: "battleInvitesEnabled") as? Bool ?? true
+        blePresenceEnabled = defaults.object(forKey: "blePresenceEnabled") as? Bool ?? false
         if let value = defaults.string(forKey: "memoryHomeLANPeerID"), let id = UUID(uuidString: value) {
             memoryHomeLANPeerID = id
         } else {
@@ -167,6 +172,9 @@ final class AppSettings {
     /// LAN 탐색을 시작해도 되는가. 설정값을 읽는 자리와 리스너를 올리는 자리가 각각 판정하면
     /// 한쪽만 바뀌어도 아무 테스트가 안 깨진다 — 판정은 여기 한 곳이다.
     var shouldStartLANDiscovery: Bool { battleInvitesEnabled }
+
+    /// BLE 광고를 띄워도 되는가. `shouldStartLANDiscovery` 와 같은 이유로 판정을 한 곳에 둔다.
+    var shouldStartBLEPresence: Bool { blePresenceEnabled }
 
     /// Opt-in only, local-only aggregate. No companion, memory, or chat content is retained here.
     func recordMemoryHomeEntry() {

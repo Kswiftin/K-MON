@@ -50,6 +50,11 @@ LOGIC_CORE=(
   # 광고 이름의 바이트 예산. 네 LAN 센터가 전부 이 한 함수를 지나므로 여기가 무테스트면 부류가
   # 통째로 무테스트다 — 이전엔 `PlayerGymRoomName` 안에 숨어 있어 커버리지에서 보이지 않았다.
   "Sources/PokeTokenBar/Core/LANServiceName.swift"
+  # BLE 광고 이름도 같은 부류의 바이트 예산이다 — 31바이트 payload 에서 이름 몫이 8바이트라,
+  # 한 글자만 넘쳐도 macOS 가 이름을 scan response 로 밀어내 도착 주기가 달라진다(#342 0단계의
+  # 측정 대상이 그 주기다). 광고를 띄우는 쪽(BLEPresenceAdvertiser)은 CoreBluetooth 라 단위
+  # 테스트가 안 닿으므로, 순수한 이름 계산만 파일로 갈라 여기 넣는다.
+  "Sources/PokeTokenBar/Core/BLEPresenceName.swift"
   # 어떤 방을 목록에 보여 줄지 정하는 판정. 접두가 개설과 갈리면 만든 방이 어느 목록에도 안 뜨고
   # (#209 가 그 상태였다), 내 방을 안 거르면 눌러도 아무 일이 없는 버튼이 남는다. 여섯 활동의
   # 표가 여기 한 곳뿐이라 배열 밖에 두면 그 표 전체가 커버리지에서 빠진다.
