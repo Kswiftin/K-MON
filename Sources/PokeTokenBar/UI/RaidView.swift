@@ -329,7 +329,8 @@ struct RaidView: View {
                         isAlive: fighters.first { $0.id == center.myID }?.isAlive ?? false,
                         isFinished: center.isBattleFinished,
                         isReplaying: animator.overlay.isPlaying),
-                    isFinished: center.isBattleFinished
+                    isFinished: center.isBattleFinished,
+                    turnEndsAt: center.turnEndsAt
                 ) { index in
                     center.submitAction(targetID: RaidBoss.bossID, moveIndex: index)
                 }
