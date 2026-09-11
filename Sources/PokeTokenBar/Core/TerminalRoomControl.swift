@@ -5,6 +5,8 @@ struct TerminalRaidRoom: Equatable, Sendable {
     var number: Int
     var trainerName: String
     var tier: RaidTier
+    /// 방을 연 티어와 오늘 날짜로 이미 결정된 보스. 입장 전 선택 판단에도 필요하다.
+    var bossSpeciesID: Int
 }
 
 /// 터미널이 LAN 방에 닿는 **좁은 창구.** 근거는 `TerminalBattleControl` 과 같다 — 센터를 그대로
@@ -63,7 +65,9 @@ extension MultiplayerRoomCenter: TerminalRoomControl {
 
     var terminalRaidRooms: [TerminalRaidRoom] {
         visibleTerminalRaidPeers.enumerated().map { index, pair in
-            TerminalRaidRoom(number: index + 1, trainerName: pair.1.trainerName, tier: pair.1.tier)
+            let tier = pair.1.tier
+            return TerminalRaidRoom(number: index + 1, trainerName: pair.1.trainerName, tier: tier,
+                                    bossSpeciesID: todaysRaidSpeciesID(tier: tier))
         }
     }
 

@@ -70,10 +70,13 @@ struct RoomExecutorTests {
         let store = makeStore(in: directory)
 
         let listed = FakeRoomControl(RoomTerminalState(phase: .idle, myID: UUID()))
-        listed.terminalRaidRooms = [TerminalRaidRoom(number: 1, trainerName: "이웃", tier: .three)]
+        listed.terminalRaidRooms = [TerminalRaidRoom(number: 1, trainerName: "이웃", tier: .three,
+                                                      bossSpeciesID: 25)]
         let status = await execute(.raidStatus, on: store, room: listed)
         #expect(status.succeeded)
         #expect(status.message.contains("1. 3★"))
+        #expect(status.message.contains("보스 ") && status.message.contains("25"),
+                "이름 조회 성공·실패와 무관하게 입장 전에 보스 종을 식별할 수 있다")
 
         let creator = FakeRoomControl(RoomTerminalState(phase: .idle, myID: UUID()))
         #expect(await execute(.raidCreate(tier: .three), on: store, room: creator).succeeded)
