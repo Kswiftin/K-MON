@@ -45,6 +45,21 @@ final class HeartScaleTests: XCTestCase {
         XCTAssertTrue(store(scales: 1).canUseHeartScale)
     }
 
+    // MARK: 홈 헤더 바로가기
+
+    /// 홈 헤더의 하트비늘 버튼은 **가방과 같은 판정**(`canUseHeartScale`)으로 나타나야 한다 —
+    /// 이상한사탕 바로가기와 같은 이유(`RareCandyTests.testHomeCandyShortcutSharesTheBagsEligibility
+    /// Check`)다. 뷰 계층이라 순수 함수로 못 재서 소스에서 본다.
+    func testHomeHeartScaleShortcutSharesTheBagsEligibilityCheck() throws {
+        let root = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let home = try String(contentsOf: root.appendingPathComponent("Sources/PokeTokenBar/UI/CompanionView.swift"),
+                              encoding: .utf8)
+        XCTAssertTrue(home.contains("store.canUseHeartScale"),
+                      "재고·조회 중 판정을 여기서 다시 쓰면 가방과 갈린다")
+        XCTAssertTrue(home.contains("store.useHeartScale()"), "실제 조회 시작은 스토어가 한다")
+    }
+
     // MARK: 소모 시점 — "무브셋이 실제로 바뀔 때만"
 
     func testAcceptingRelearnConsumesOneScale() {
