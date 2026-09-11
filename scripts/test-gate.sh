@@ -378,6 +378,27 @@ if [[ -n "$ORPHANED" ]]; then
 fi
 echo "✓ 없음"
 
+# 런루프로 사는 CLI 도구(`Tools/*/main.swift`)는 델리게이트를 가진 객체를 **전역**에 붙잡아야
+# 한다. `case` 블록 안 지역 `let` 은 블록이 끝나는 순간 ARC 가 풀고, `_ = x` 는 마지막 사용일
+# 뿐이라 수명을 못 늘린다. 그러면 CoreBluetooth 매니저가 함께 죽어 콜백이 아예 안 오는데,
+# 에러도 로그도 없이 런루프만 계속 돌아 "권한 문제"처럼 보인다(ble-probe 가 이 모습으로
+# 표본 0을 냈다).
+echo "▶ 런루프 CLI 도구의 소유권 스윕"
+DROPPED_OWNER=""
+while IFS= read -r FILE; do
+  [[ -z "$FILE" ]] && continue
+  grep -qF 'RunLoop.main.run()' "$FILE" || continue
+  HITS=$(grep -nE '^[[:space:]]*_ = [a-zA-Z_]' "$FILE" || true)
+  [[ -n "$HITS" ]] && DROPPED_OWNER+="$FILE"$'\n'"$HITS"$'\n'
+done < <(find Tools -name main.swift -not -path '*/.build/*' | sort)
+if [[ -n "$DROPPED_OWNER" ]]; then
+  echo "✗ 런루프 도구가 객체를 지역 스코프에 두고 '_ =' 로만 붙잡고 있습니다 —" \
+       "ARC 가 즉시 해제해 델리게이트 콜백이 오지 않습니다. 전역 변수에 대입하세요." >&2
+  echo "$DROPPED_OWNER" >&2
+  exit 1
+fi
+echo "✓ 없음"
+
 # `lastError` 는 화면에 닿아야 존재한다. `MemoryHomeVisitCenter` 는 권한 거부(`NoAuth`)를 위한
 # 3개국어 안내 문구까지 만들어 두고도 그 값을 어느 화면도 읽지 않아, 모든 실패가 "주변 홈을 찾는
 # 중이에요…" 한 줄로 뭉개진 채 릴리스됐다 — 사용자에게는 원인 없는 무동작이다.

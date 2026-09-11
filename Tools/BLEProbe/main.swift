@@ -182,13 +182,18 @@ final class Scanner: NSObject, CBCentralManagerDelegate {
 // MARK: 진입점
 
 let options = parseOptions()
+
+// 전역에 붙잡아야 한다. `case` 안의 지역 `let` 은 그 블록이 끝나면 ARC 가 바로 풀어버리고
+// (`_ = x` 는 마지막 사용일 뿐 수명을 늘리지 않는다), 그러면 CoreBluetooth 매니저가 함께
+// 죽어 콜백이 한 번도 안 온다. 상태 타이머까지 `[weak self]` 라 첫 발화에서 스스로
+// invalidate 해, 에러 없이 표본 0인 채 런루프만 도는 모습이 된다.
+var keepAlive: AnyObject?
+
 switch options.mode {
 case "advertise":
-    let advertiser = Advertiser(localName: options.name)
-    _ = advertiser
+    keepAlive = Advertiser(localName: options.name)
 case "scan":
-    let scanner = Scanner(seconds: options.seconds, csvPath: options.csvPath)
-    _ = scanner
+    keepAlive = Scanner(seconds: options.seconds, csvPath: options.csvPath)
 default:
     fail("모르는 모드")
 }
