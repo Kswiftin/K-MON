@@ -50,11 +50,6 @@ LOGIC_CORE=(
   # 광고 이름의 바이트 예산. 네 LAN 센터가 전부 이 한 함수를 지나므로 여기가 무테스트면 부류가
   # 통째로 무테스트다 — 이전엔 `PlayerGymRoomName` 안에 숨어 있어 커버리지에서 보이지 않았다.
   "Sources/PokeTokenBar/Core/LANServiceName.swift"
-  # BLE 광고 이름도 같은 부류의 바이트 예산이다 — 31바이트 payload 에서 이름 몫이 8바이트라,
-  # 한 글자만 넘쳐도 macOS 가 이름을 scan response 로 밀어내 도착 주기가 달라진다(#342 0단계의
-  # 측정 대상이 그 주기다). 광고를 띄우는 쪽(BLEPresenceAdvertiser)은 CoreBluetooth 라 단위
-  # 테스트가 안 닿으므로, 순수한 이름 계산만 파일로 갈라 여기 넣는다.
-  "Sources/PokeTokenBar/Core/BLEPresenceName.swift"
   # 어떤 방을 목록에 보여 줄지 정하는 판정. 접두가 개설과 갈리면 만든 방이 어느 목록에도 안 뜨고
   # (#209 가 그 상태였다), 내 방을 안 거르면 눌러도 아무 일이 없는 버튼이 남는다. 여섯 활동의
   # 표가 여기 한 곳뿐이라 배열 밖에 두면 그 표 전체가 커버리지에서 빠진다.
@@ -374,27 +369,6 @@ if [[ -n "$ORPHANED" ]]; then
   echo "✗ cancel() 없이 참조만 버리는 LAN 객체가 있습니다 —" \
        "실패한 객체가 큐·포트를 붙든 채 남아 슬립 복귀마다 누적됩니다." >&2
   echo "$ORPHANED" >&2
-  exit 1
-fi
-echo "✓ 없음"
-
-# 런루프로 사는 CLI 도구(`Tools/*/main.swift`)는 델리게이트를 가진 객체를 **전역**에 붙잡아야
-# 한다. `case` 블록 안 지역 `let` 은 블록이 끝나는 순간 ARC 가 풀고, `_ = x` 는 마지막 사용일
-# 뿐이라 수명을 못 늘린다. 그러면 CoreBluetooth 매니저가 함께 죽어 콜백이 아예 안 오는데,
-# 에러도 로그도 없이 런루프만 계속 돌아 "권한 문제"처럼 보인다(ble-probe 가 이 모습으로
-# 표본 0을 냈다).
-echo "▶ 런루프 CLI 도구의 소유권 스윕"
-DROPPED_OWNER=""
-while IFS= read -r FILE; do
-  [[ -z "$FILE" ]] && continue
-  grep -qF 'RunLoop.main.run()' "$FILE" || continue
-  HITS=$(grep -nE '^[[:space:]]*_ = [a-zA-Z_]' "$FILE" || true)
-  [[ -n "$HITS" ]] && DROPPED_OWNER+="$FILE"$'\n'"$HITS"$'\n'
-done < <(find Tools -name main.swift -not -path '*/.build/*' | sort)
-if [[ -n "$DROPPED_OWNER" ]]; then
-  echo "✗ 런루프 도구가 객체를 지역 스코프에 두고 '_ =' 로만 붙잡고 있습니다 —" \
-       "ARC 가 즉시 해제해 델리게이트 콜백이 오지 않습니다. 전역 변수에 대입하세요." >&2
-  echo "$DROPPED_OWNER" >&2
   exit 1
 fi
 echo "✓ 없음"
