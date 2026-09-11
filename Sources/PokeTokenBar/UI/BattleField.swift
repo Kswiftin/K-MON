@@ -898,6 +898,9 @@ struct MoveGridView: View {
         .disabled(!selectable)
         // 잠긴 칸의 툴팁은 **잠금 사유**다 — 기술 설명이 그대로면 왜 못 누르는지 알 수 없다.
         .help(lock.map { L().moveSelectionLockReason($0) } ?? move.flavorText ?? move.name)
+        // 네 칸을 넘는 폼(변화기 교체 등)이 없어 1~4 로 고정한다 — 잠기거나 PP 가 마른 칸은
+        // `.disabled` 가 이미 누름을 막으므로 단축키도 같이 무시된다.
+        .modifier(NumberKeyShortcut(index: index))
     }
 
     private func effectivenessHint(_ move: MoveSpec) -> (text: String, color: Color)? {
@@ -908,6 +911,21 @@ struct MoveGridView: View {
         if multiplier > 1 { return (l.battleSuperEffective, .green) }
         if multiplier < 1 { return (l.battleNotVeryEffective, .orange) }
         return nil
+    }
+}
+
+/// 기술 칸 0~3 을 키보드 1~4 에 묶는다. 그 밖의 인덱스(있을 수 없지만)는 단축키를 안 건다.
+private struct NumberKeyShortcut: ViewModifier {
+    let index: Int
+
+    private static let keys: [KeyEquivalent] = ["1", "2", "3", "4"]
+
+    func body(content: Content) -> some View {
+        if Self.keys.indices.contains(index) {
+            content.keyboardShortcut(Self.keys[index], modifiers: [])
+        } else {
+            content
+        }
     }
 }
 
