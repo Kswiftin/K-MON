@@ -1526,9 +1526,14 @@ final class PokemonChatToolTests: XCTestCase {
     private func makeCompanionStore(line: EvoLine? = nil, clock: TestClock? = nil) -> CompanionStore {
         let line = line ?? EvoLine(baseID: 25, tree: EvoNode(speciesID: 25, children: []), rarity: .common,
                                    names: [25: ["ko": "피카츄", "en": "Pikachu"]])
+        // 미션 배정 씨앗을 고정한다. 기본값은 기기 식별자라 두면 맥마다 다른 미션이 배정되고,
+        // 그중 `dailyDexRegistration` 이 뽑힌 기기에서는 `hatch` 만으로 하나가 끝나 "missions=0/3"
+        // 이 깨진다(2026-09-11 실측: CI 는 초록, 이 맥은 1/3). 이 씨앗은 도감 등록이 배정되지
+        // 않는 조합을 고른 값이다.
         let store = CompanionStore(provider: ToolLineProvider(line: line),
                                    clock: clock?.closure ?? { Date(timeIntervalSince1970: 1_000) },
-                                   fileURL: temporaryURL(), rng: SeededRNG(seed: 1))
+                                   fileURL: temporaryURL(), rng: SeededRNG(seed: 1),
+                                   missionSeed: "chat-tool-tests-2")
         return store
     }
 }

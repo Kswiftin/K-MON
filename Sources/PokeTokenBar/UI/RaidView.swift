@@ -112,7 +112,7 @@ struct RaidView: View {
     /// 사용자 보고 — "이거 봐선 적용이 된 건지 안 된 건지 모르겠다"). 분 단위로만 갱신한다
     /// (`TimelineView(.periodic(by: 60))`) — 몇 시간짜리 창에 초 단위 갱신은 과하다.
     @ViewBuilder private var liveEventBanner: some View {
-        if LiveEventWindow.isActive() {
+        if store.isLiveEventActive {
             TimelineView(.periodic(from: .now, by: 60)) { _ in
                 VStack(alignment: .leading, spacing: 2) {
                     Label("한정 이벤트 진행 중", systemImage: "sparkles")
@@ -132,7 +132,7 @@ struct RaidView: View {
     /// "N시간 M분" — 창이 끝나는 20:00까지 남은 시간. `endDate` 가 nil(이론상 `isActive` 와
     /// 같은 순간에 계산하니 일어나지 않는다)이면 빈 문자열로 접어 배너가 어색하게 안 뜨게 한다.
     private var eventRemainingText: String {
-        guard let end = LiveEventWindow.endDate() else { return "" }
+        guard let end = store.liveEventEndDate else { return "" }
         let remaining = max(0, Int(end.timeIntervalSinceNow))
         let hours = remaining / 3600
         let minutes = (remaining % 3600) / 60

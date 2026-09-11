@@ -428,8 +428,11 @@ final class MultiplayerRoomCenter {
     }
 
     /// 오늘의 보스 — 티어마다 다른 종이다(#270). 방을 열기 전 화면이 티어별로 미리 그린다.
-    nonisolated func todaysRaidSpeciesID(tier: RaidTier) -> Int {
-        RaidBoss.speciesID(at: Date(), tier: tier)
+    ///
+    /// `nonisolated` 를 뗀다 — 시각을 세이브 스토어의 주입된 시계에서 읽기 때문이다. 부르는 곳은
+    /// 둘 다 화면(`RaidView`)이라 메인 액터다.
+    func todaysRaidSpeciesID(tier: RaidTier) -> Int {
+        RaidBoss.speciesID(at: companion.now, tier: tier)
     }
 
     /// 호스트가 판을 연다 — 러너를 파티 레벨로 눕히고 오늘의 보스를 세운다.
@@ -440,7 +443,7 @@ final class MultiplayerRoomCenter {
     func startRaid() {
         guard isHost, let lobby, lobby.activity == .raid, lobby.canStart,
               let tier = raidTier else { return }
-        let dayKey = RaidBoss.bossKey(at: Date(), tier: tier)
+        let dayKey = RaidBoss.bossKey(at: companion.now, tier: tier)
         let epoch = sessionEpoch
         Task {
             guard let bossSnapshot = await raidBossSnapshot(tier: tier, dayKey: dayKey) else {
@@ -598,9 +601,10 @@ final class MultiplayerRoomCenter {
         // 이미 끝난 판(`raidPayout == 0`)에서도 추첨을 돌린다. `drawRaidCatcher` → `catchRaidBoss`
         // 가 이벤트 동안 원장을 안 보므로, 이 게이트를 열어도 원장 없는 무한 지급이 되진 않는다 —
         // 위에서 되돌렸던 "게이트를 없앤" 수정과 달리, 이번엔 원장 쪽도 같이 이벤트로 열었다.
-        // 판정을 `RaidBoss.shouldDrawRaidCatcher` 로 뽑아낸 이유는 이 클래스가 시계를 주입받지
-        // 않아서다 — 여기 `||` 로만 남기면 이벤트 쪽 분기가 CI 에서 한 번도 안 도는 죽은 줄이 된다.
-        if RaidBoss.shouldDrawRaidCatcher(payoutSucceeded: (raidPayout ?? 0) > 0) {
+        // 시각은 **세이브 스토어의 주입된 시계**(`companion.now`)를 지난다. 여기서 `Date()` 를
+        // 읽으면 이벤트 분기를 테스트가 고정할 수 없어, 창이 실제로 열린 12시간에만 조용히
+        // 빨개진다(2026-09-11 실측 — UTC 러너라 CI 는 초록인데 로컬만 빨강이었다).
+        if RaidBoss.shouldDrawRaidCatcher(payoutSucceeded: (raidPayout ?? 0) > 0, at: companion.now) {
             drawRaidCatcher(runners: runners, tier: tier)
         }
     }
@@ -639,7 +643,7 @@ final class MultiplayerRoomCenter {
         // 마침 실패가 나온 경우 "놓쳤다"로 보여 방금 기회를 날린 것처럼 읽힌다 — 사실은 애초에
         // 오늘 몫을 다 썼을 뿐이다(#270 뒤 사용자 지적). 이벤트 창 동안은 이 원장 자체를 안 본다
         // (`catchRaidBoss` 와 같은 예외 — 무제한 포획 이벤트).
-        guard LiveEventWindow.isActive() || !companion.raidCatchClaimedToday(tier: tier) else {
+        guard companion.isLiveEventActive || !companion.raidCatchClaimedToday(tier: tier) else {
             raidCatchResult = .claimedToday
             // 비동기 경로(아래 `catchRaidBoss`)의 `.claimedToday` 분기와 같은 안내를 띄운다 —
             // 여기서 빼먹으면 이 이른 반환만 결과는 맞는데 화면에 이유가 안 뜬다.
@@ -679,7 +683,7 @@ final class MultiplayerRoomCenter {
                              periodKey: String? = nil) -> Bool {
         // **오늘의 보스가 맞는지 내가 직접 확인한다.** 보상은 내 지갑에 내가 넣으므로,
         // 호스트를 믿으면 조작된 방이 약한 보스에 5★ 딱지를 붙여 방 전원에게 5★ 를 뿌린다.
-        let expectedKey = RaidBoss.bossKey(at: Date(), tier: tier)
+        let expectedKey = RaidBoss.bossKey(at: companion.now, tier: tier)
         let receivedKey = periodKey ?? expectedKey
         guard receivedKey == expectedKey,
               RaidBoss.validRaidStart(fighters: fighters, tier: tier, dayKey: receivedKey),
