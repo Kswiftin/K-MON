@@ -61,13 +61,17 @@ struct SafariVisit: Sendable {
     /// **그 자리에서 방문을 끝낸다** — 볼·걸음이 남아 있어도 더 걸을 이유가 없다.
     mutating func advance(dt: Double, heldKeys: Set<SafariDirectionKey>, catchesRemainingToday: Int) {
         guard !hasEnded, currentEncounter == nil else { return }
+        // 볼을 다 쓰면 더 걸을 이유가 없다 — 걸음이 남아 있어도 여기서 바로 끝낸다. 예전엔 이
+        // 판정이 없어 걸음이 0이 될 때까지 계속 걸어야만 요약 화면으로 나갈 수 있었다
+        // (2026-09-11 사용자 보고).
+        guard balls > 0 else { hasEnded = true; return }
         guard walker.tick(dt: dt, heldKeys: heldKeys, bounds: SafariFieldBounds.standard,
                           obstacles: SafariZone.obstacles(for: zone)) else { return }
         stepsRemaining = max(0, stepsRemaining - 1)
         guard stepsRemaining > 0 else { hasEnded = true; return }
         let catchesRemainingThisVisit = SafariZone.catchesPerVisitCap - catchesThisVisit
         guard min(catchesRemainingThisVisit, catchesRemainingToday) > 0 else { hasEnded = true; return }
-        guard balls > 0, Int(rng.next() % 100) < SafariZone.stepEncounterPercent else { return }
+        guard Int(rng.next() % 100) < SafariZone.stepEncounterPercent else { return }
         let speciesID = SafariZone.chooseEncounter(zone: zone, rng: &rng)
         let rarity = SafariZone.rarity(speciesID: speciesID, zone: zone)
         currentEncounter = SafariEncounter(speciesID: speciesID, rarity: rarity)

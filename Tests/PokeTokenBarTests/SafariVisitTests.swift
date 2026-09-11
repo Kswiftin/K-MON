@@ -102,14 +102,16 @@ final class SafariVisitTests: XCTestCase {
     }
 
     /// 볼이 없으면(포획 여유는 남아 있어도) 새 조우가 안 생긴다 — 잡을 방법이 없는 조우는
-    /// 의미가 없다.
+    /// 의미가 없다. **그리고 걸음이 남아 있어도 그 자리에서 바로 방문이 끝나야 한다** — 예전엔
+    /// 이 판정이 없어 볼을 다 써도 걸음이 0이 될 때까지 계속 걸어야만 나갈 수 있었다
+    /// (2026-09-11 사용자 보고).
     func testAdvanceDoesNotStartEncounterWithoutBalls() {
         for seed: UInt64 in 0..<500 {
             var visit = makeVisit(balls: 0, stepsRemaining: 4, seed: seed)
-            for _ in 0..<4 {
-                visit.advance(dt: 0.1, heldKeys: [.down], catchesRemainingToday: SafariZone.dailyCatchCap)
-            }
+            visit.advance(dt: 0.1, heldKeys: [.down], catchesRemainingToday: SafariZone.dailyCatchCap)
             XCTAssertNil(visit.currentEncounter, "seed \(seed): 볼이 없는데 조우가 생겼다")
+            XCTAssertTrue(visit.hasEnded, "seed \(seed): 볼이 없으면 걸음이 남아 있어도 바로 끝나야 한다")
+            XCTAssertEqual(visit.stepsRemaining, 4, "걸음을 소모하지 않고 바로 끝나야 한다")
         }
     }
 
