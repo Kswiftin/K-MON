@@ -406,14 +406,16 @@ final class VariableDamageTests: XCTestCase {
     // MARK: 엔진 — 한 턴
 
     private func attack(_ move: MoveSpec, _ attacker: BattleSide, _ defender: BattleSide,
-                        seed: UInt64 = 42) -> (dealt: Int, events: [BattleEvent], attacker: BattleSide) {
+                        seed: UInt64 = 42, defenderIsBoss: Bool = false
+    ) -> (dealt: Int, events: [BattleEvent], attacker: BattleSide) {
         var mine = attacker, theirs = defender
         let before = theirs.hp
         var rng = SplitMix64(seed: seed)
         var field = BattleField()
         let events = BattleEngine.applyAttack(attacker: &mine, defender: &theirs,
                                               attackerActor: .a, defenderActor: .b,
-                                              move: move, field: &field, rng: &rng)
+                                              move: move, field: &field,
+                                              defenderIsBoss: defenderIsBoss, rng: &rng)
         return (before - theirs.hp, events, mine)
     }
 
@@ -444,6 +446,17 @@ final class VariableDamageTests: XCTestCase {
     func testAOneHitKOFailsAgainstAHigherLevelAndSaysSo() {
         let fissure = spec(VariableDamage.MoveID.fissure, type: .ground, accuracy: 30)
         let blocked = attack(fissure, side([.ground], level: 50), side([.normal], level: 80))
+        XCTAssertEqual(blocked.dealt, 0)
+        XCTAssertTrue(blocked.events.contains { if case .immune = $0 { return true }; return false },
+                      "실패도 줄을 남겨야 한다")
+    }
+
+    /// 레이드 보스에게는 **레벨이 같거나 낮아도** 통하지 않는다 — 보스 HP 는 절대값(400~2,800)이라
+    /// 한 방에 비면 여러 턴 협동으로 깎는다는 레이드의 전제가 깨진다(2026-09-11 사용자 보고).
+    func testAOneHitKOFailsAgainstARaidBossEvenAtEqualLevel() {
+        let hornDrill = spec(VariableDamage.MoveID.hornDrill, type: .normal, accuracy: 30)
+        let blocked = attack(hornDrill, side([.normal], level: 50), side([.normal], level: 50),
+                             defenderIsBoss: true)
         XCTAssertEqual(blocked.dealt, 0)
         XCTAssertTrue(blocked.events.contains { if case .immune = $0 { return true }; return false },
                       "실패도 줄을 남겨야 한다")

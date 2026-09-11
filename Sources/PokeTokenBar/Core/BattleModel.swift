@@ -2398,6 +2398,7 @@ enum BattleEngine {
                               field: BattleField = BattleField(),
                               attackerTeam: BattleTeamSlot = .a,
                               defenderTeam: BattleTeamSlot = .b,
+                              defenderIsBoss: Bool = false,
                               rng: inout SplitMix64) -> AttackOutcome {
         // 독 타입이 쓰는 맹독은 명중·회피 랭크를 포함한 명중 판정을 건너뛴다.
         let poisonTypeToxic = move.id == MoveSpec.toxicMoveID && attacker.activeTypes.contains(.poison)
@@ -2418,7 +2419,8 @@ enum BattleEngine {
         for index in 0..<requestedHits where remaining > 0 {
             let one = resolveSingleHit(attacker: attacker, defender: defender, move: move,
                                        hit: index, field: field, attackerTeam: attackerTeam,
-                                       defenderTeam: defenderTeam, rng: &rng)
+                                       defenderTeam: defenderTeam, defenderIsBoss: defenderIsBoss,
+                                       rng: &rng)
             total += one.damage
             remaining -= one.damage
             actualHits += 1
@@ -2446,13 +2448,15 @@ enum BattleEngine {
                                          move: MoveSpec, hit: Int, field: BattleField,
                                          attackerTeam: BattleTeamSlot,
                                          defenderTeam: BattleTeamSlot,
+                                         defenderIsBoss: Bool,
                                          rng: inout SplitMix64) -> AttackOutcome {
         // PokéAPI 가 `power: null` 로 주는 공격기 — 위력을 여기서 뽑는다. `move.power` 는 0 이라
         // 그대로 쓰면 아래 식이 데미지를 0 으로 접는다(그게 이 기술들이 죽어 있던 원인이다).
         var power = move.power
         switch VariableDamage.from(move, attacker: attacker, defender: defender, hit: hit,
                                    field: field, attackerTeam: attackerTeam,
-                                   defenderTeam: defenderTeam, rng: &rng) {
+                                   defenderTeam: defenderTeam, defenderIsBoss: defenderIsBoss,
+                                   rng: &rng) {
         case .power(let computed):  power = computed
         case .fixedHP(let amount):  return fixedOutcome(amount, move: move, defender: defender)
         case .oneHitKO:             return fixedOutcome(defender.hp, move: move, defender: defender)
@@ -3313,6 +3317,7 @@ extension BattleEngine {
                             attackerActor: BattleActor, defenderActor: BattleActor,
                             move: MoveSpec, field: inout BattleField,
                             attackerTeam: BattleTeamSlot = .a, defenderTeam: BattleTeamSlot = .b,
+                            defenderIsBoss: Bool = false,
                             rng: inout SplitMix64) -> [BattleEvent] {
         // 랭크에 답하는 물건(허브 3종)은 **기술이 끝난 뒤** 한 자리에서 본다. 랭크를 만지는 자리가
         // 여럿이라(2차효과·저주·필드) 자리마다 물으면 새 자리가 늘 때 그 경로에서만 허브가 죽는다.
@@ -3322,7 +3327,8 @@ extension BattleEngine {
         var events = resolveAttackAction(attacker: &attacker, defender: &defender,
                                          attackerActor: attackerActor, defenderActor: defenderActor,
                                          move: move, field: &field, attackerTeam: attackerTeam,
-                                         defenderTeam: defenderTeam, rng: &rng)
+                                         defenderTeam: defenderTeam, defenderIsBoss: defenderIsBoss,
+                                         rng: &rng)
         events += settleStageItems(&attacker, actor: attackerActor,
                                    foeStagesBefore: defenderStagesBefore, foeStagesAfter: defender.stages)
         events += settleStageItems(&defender, actor: defenderActor,
@@ -3419,6 +3425,7 @@ extension BattleEngine {
                                             move: MoveSpec, field: inout BattleField,
                                             attackerTeam: BattleTeamSlot,
                                             defenderTeam: BattleTeamSlot,
+                                            defenderIsBoss: Bool,
                                             rng: inout SplitMix64) -> [BattleEvent] {
         var events: [BattleEvent] = []
         guard beginAttack(attacker: &attacker, actor: attackerActor, move: move,
@@ -3511,7 +3518,7 @@ extension BattleEngine {
         events += applyHit(attacker: &attacker, defender: &defender,
                            attackerActor: attackerActor, defenderActor: defenderActor,
                            move: move, field: field, attackerTeam: attackerTeam,
-                           defenderTeam: defenderTeam, rng: &rng)
+                           defenderTeam: defenderTeam, defenderIsBoss: defenderIsBoss, rng: &rng)
         events += faintFromSelfDestruct(move, attacker: &attacker, actor: attackerActor)
         return events
     }
@@ -3681,6 +3688,7 @@ extension BattleEngine {
                          field: BattleField = BattleField(),
                          attackerTeam: BattleTeamSlot = .a,
                          defenderTeam: BattleTeamSlot = .b,
+                         defenderIsBoss: Bool = false,
                          rng: inout SplitMix64) -> [BattleEvent] {
         // 상대가 이번 턴 몸을 지켰으면 여기서 끝난다 — 명중·데미지·상태·랭크 전부 건너뛴다.
         //
@@ -3711,7 +3719,8 @@ extension BattleEngine {
         }
         let outcome = resolveAttack(attacker: attacker, defender: defender, move: move,
                                     field: field, attackerTeam: attackerTeam,
-                                    defenderTeam: defenderTeam, rng: &rng)
+                                    defenderTeam: defenderTeam, defenderIsBoss: defenderIsBoss,
+                                    rng: &rng)
         // 미클열매의 필중은 **기술 하나짜리**다 — 명중 판정을 지난 지금 끈다(빗나갈 수 있었는지와
         // 무관하다: 필중 기술에 쓴 턴도 그 한 번으로 끝나는 것이 본가와 같다).
         attacker.nextMoveNeverMisses = false
