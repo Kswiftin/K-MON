@@ -534,6 +534,19 @@ struct CompanionHeader: View {
         .accessibilityLabel(store.l.itemName(.rareCandy))
     }
 
+    /// 이름 옆 하트비늘 — 이상한사탕과 같은 자리, 같은 이유(가방까지 안 가도 홈에서 바로).
+    ///
+    /// 사탕과 달리 확인창이 없다 — `useHeartScale()` 은 후보 목록만 띄우고 **아무것도 소모하지
+    /// 않는다**(소모는 후보를 실제로 고를 때). 되돌릴 수 없는 소비가 아니라 가방과 같은 확인
+    /// 규칙이 적용되지 않는다.
+    private var heartScaleButton: some View {
+        Button { store.useHeartScale() } label: {
+            ItemIconView(kind: .heartScale, size: 14)
+        }
+        .buttonStyle(.borderless).controlSize(.mini)
+        .accessibilityLabel(store.l.itemName(.heartScale))
+    }
+
     @ViewBuilder
     private var adventurePartySection: some View {
         if store.hasActive, store.ownedMons.count > 1 {
@@ -681,9 +694,10 @@ struct CompanionHeader: View {
                             .accessibilityLabel("포켓몬과 대화")
                         }
                         // 쓸 수 있을 때만 나온다 — 재고가 0 이거나 알 상태면 자리조차 잡지 않는다.
-                        // `canUseRareCandy` 는 가방이 보는 것과 **같은 판정**이다. 여기서 조건을
-                        // 다시 쓰면 가방에선 회색인데 여기선 눌리는 두 화면이 생긴다.
+                        // `canUseRareCandy`/`canUseHeartScale` 은 가방이 보는 것과 **같은 판정**이다.
+                        // 여기서 조건을 다시 쓰면 가방에선 회색인데 여기선 눌리는 두 화면이 생긴다.
                         if store.canUseRareCandy, !editingName { rareCandyButton }
+                        if store.canUseHeartScale, !editingName { heartScaleButton }
                     }
                     if store.hasActive {
                         // 단계 + 성격(부화 시 확정된 개체 아이덴티티)

@@ -252,6 +252,7 @@ struct TeamPicker: View {
         HStack(spacing: 6) {
             ForEach(slice, id: \.id) { mon in
                 TeamPickChip(mon: mon, name: displayName(mon),
+                             types: monTypes[mon.currentID] ?? [],
                              width: Self.chipWidth,
                              pickedIndex: selection.firstIndex(of: mon.id),
                              onTap: { toggle(mon.id) })
@@ -456,16 +457,20 @@ private struct PickedSlot: View {
     }
 }
 
-/// 출전 팀 칩 하나 — 스프라이트·이름·레벨. 고른 것에는 출전 순서를 배지로 얹는다.
+/// 출전 팀 칩 하나 — 스프라이트·이름·레벨·타입. 고른 것에는 출전 순서를 배지로 얹는다.
 struct TeamPickChip: View {
     let mon: MonState
     let name: String
+    /// 조회가 아직 안 끝났으면 빈 배열 — 그 프레임엔 타입 줄 없이 그린다(칩 높이는 고정이라
+    /// 나중에 채워져도 흔들리지 않는다).
+    let types: [PokemonType]
     let width: CGFloat
     let pickedIndex: Int?
     let onTap: () -> Void
 
-    /// 칩 높이 — 빈 자리도 같은 높이로 채워야 줄 높이가 흔들리지 않는다.
-    static let height: CGFloat = 74
+    /// 칩 높이 — 빈 자리도 같은 높이로 채워야 줄 높이가 흔들리지 않는다. 타입 줄 한 칸이 늘어난
+    /// 만큼(74 → 85) 기존 상수를 올렸다.
+    static let height: CGFloat = 85
 
     var body: some View {
         Button(action: onTap) {
@@ -481,6 +486,18 @@ struct TeamPickChip: View {
                 }
                 Text(name).font(.system(size: 10, weight: .semibold)).lineLimit(1)
                 Text("Lv.\(mon.level)").font(.system(size: 10)).foregroundStyle(.secondary)
+                // 칩 폭(70)이 좁아 `TypeBadge` 그대로 쓰면 두 타입일 때 넘친다 — 로스터 카드가
+                // 쓰는 것과 같은 부류의 축소 배지를 여기서도 쓴다.
+                HStack(spacing: 3) {
+                    ForEach(types, id: \.self) { type in
+                        Text(type.name)
+                            .font(PokedoroTheme.badgeFont(size: 7, weight: .heavy))
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 3).padding(.vertical, 1)
+                            .background(type.battleColor, in: Capsule())
+                    }
+                }
+                .frame(height: 11)
             }
             .frame(width: width, height: Self.height)
         }
