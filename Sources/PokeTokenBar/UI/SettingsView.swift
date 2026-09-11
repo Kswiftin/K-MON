@@ -442,6 +442,15 @@ struct SettingsView: View {
                 Spacer()
                 Toggle("", isOn: $settings.battleInvitesEnabled).labelsHidden()
             }
+            groupRow {
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("근처 기기에 내 존재 알리기 (실험)")
+                    Text("블루투스로 신호만 내보냅니다. 데이터도 이름도 싣지 않고, 받지도 않습니다. 적용은 재시작 후.")
+                        .font(.caption2).foregroundStyle(.secondary)
+                }
+                Spacer()
+                Toggle("", isOn: $settings.blePresenceEnabled).labelsHidden()
+            }
         }
     }
 

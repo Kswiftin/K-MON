@@ -47,6 +47,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, UNU
     private var pokopiaPresenter: PokopiaTownPresenter!
     private let focusTimer = FocusTimer()
     private var floatingPet: FloatingPetController!
+    /// #342 0단계 측정용 BLE 광고. 이름은 실행마다 새로 뽑는 토큰이라 인스턴스를 다시 만들면
+    /// 스캐너 쪽에서 다른 노드로 보인다 — 그래서 한 번만 만들고 켜고 끄기만 한다.
+    private let blePresence = BLEPresenceAdvertiser()
     private let navigation = PopoverNavigation()
     private let popoverShortcut = GlobalHotKey()
 
@@ -119,6 +122,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, UNU
         // 팝오버가 닫혀 있어도 배틀 신청을 받아 알림을 쏠 수 있게 상시 수신. 다만 리스너를 올리는
         // 순간 macOS 가 로컬 네트워크 권한을 묻기 때문에, 배틀을 끈 사용자에게는 시작하지 않는다.
         if settings.shouldStartLANDiscovery { battleCenter.start() }
+        // 광고는 연결을 받지 않지만, 매니저를 만드는 순간 블루투스 권한을 물을 수 있다 —
+        // 위 LAN 과 같은 이유로 설정이 켜진 사용자에게만 시작한다.
+        if settings.shouldStartBLEPresence { blePresence.start() }
         // 배틀 신청은 팝오버가 닫힌(=앱 실행 중) 상태에서 오는 게 정상이라, 알림 표시가 핵심이다.
         // ① delegate 없으면 foreground(accessory 앱은 항상 그렇다) 알림이 억제돼 배너가 안 뜬다.
         // ② 권한을 팝오버 첫 오픈 때만 요청하면 팝오버를 안 연 사용자는 권한이 없어 알림이 안 온다 → 기동 시 요청.
@@ -819,6 +825,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, UNU
         displayAwake = awake
         syncMenuAnimation()
         floatingPet.setDisplayAwake(awake)   // 슬립 중엔 펫 호스팅 트리 해제(GIF 루프 정지)
+        blePresence.setDisplayAwake(awake)   // 자리를 뜬 맥이 계속 떠들지 않게 광고도 멈춘다
     }
 
     /// menuShouldAnimate 상태에 맞춰 애니메이션을 재개/정지한다(멱등 — 중복 호출 안전).
