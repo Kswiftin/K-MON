@@ -34,6 +34,7 @@ enum VariableDamage: Equatable, Sendable {
     static func from(_ move: MoveSpec, attacker: BattleSide, defender: BattleSide,
                      hit: Int = 0, field: BattleField = BattleField(),
                      attackerTeam: BattleTeamSlot = .a, defenderTeam: BattleTeamSlot = .b,
+                     defenderIsBoss: Bool = false,
                      rng: inout SplitMix64) -> VariableDamage? {
         switch move.id {
         case MoveID.electroBall:
@@ -137,7 +138,10 @@ enum VariableDamage: Equatable, Sendable {
         case MoveID.finalGambit:  return .fixedHP(attacker.hp)
 
         case MoveID.guillotine, MoveID.hornDrill, MoveID.fissure, MoveID.sheerCold:
-            // 레벨이 높은 상대에게는 통하지 않는다.
+            // 레벨이 높은 상대에게는 통하지 않는다. **레이드 보스에게는 레벨과 무관하게 안 통한다**
+            // — 보스 HP 는 종족값이 아니라 티어가 정하는 절대값(400~2,800)이라 한 방에 비면
+            // 여러 턴에 걸쳐 협동으로 깎는다는 레이드의 기본 전제가 깨진다(2026-09-11 사용자 보고).
+            guard !defenderIsBoss else { return .noEffect }
             return defender.snapshot.level > attacker.snapshot.level ? .noEffect : .oneHitKO
 
         default: return nil

@@ -508,6 +508,32 @@ final class RaidTests: XCTestCase {
         XCTAssertEqual(bossHP - boss.side.hp, dealt, "누적 합이 실제로 깎인 HP 와 같아야 한다")
     }
 
+    /// 일격필살(뿔드릴 등)은 보스에게 안 통해야 한다 — 보스 HP 는 종족값이 아니라 티어가 정하는
+    /// 절대값(400~2,800)이라, 한 방에 비면 여러 턴에 걸쳐 협동으로 깎는다는 레이드의 전제가
+    /// 깨진다(2026-09-11 사용자 보고).
+    func testOneHitKOMovesFailAgainstTheRaidBoss() throws {
+        let hornDrill = MoveSpec(id: VariableDamage.MoveID.hornDrill, names: ["ko": "뿔드릴"],
+                                 type: .normal, power: 0, damageClass: .physical,
+                                 accuracy: 100, pp: 5)
+        var snapshot = tank()
+        snapshot.moves = [hornDrill]
+        let participant = LobbyParticipant(id: UUID(), trainerName: "공격수",
+                                           speciesID: snapshot.speciesID, team: .red,
+                                           isReady: true, isHost: false)
+        let attacker = MultiplayerFighter(participant: participant, snapshot: snapshot)
+        let bossID = RaidBoss.bossID
+        let bossHPBefore = boss().side.hp
+
+        var battle = try MultiplayerBattle(fighters: [attacker, boss()], mode: .coopBoss, seed: 1)
+        _ = try battle.resolveRound([
+            MultiplayerAction(attackerID: attacker.id, targetID: bossID, moveIndex: 0),
+            MultiplayerAction(attackerID: bossID, targetID: attacker.id, moveIndex: 0)
+        ])
+
+        let bossAfter = try XCTUnwrap(battle.fighters.first { $0.id == bossID })
+        XCTAssertEqual(bossAfter.side.hp, bossHPBefore, "일격필살은 보스에게 데미지를 넣으면 안 된다")
+    }
+
     // MARK: 로비
 
     /// 이슈의 요구 하나 — 1★는 혼자 열어 혼자 시작할 수 있어야 한다.

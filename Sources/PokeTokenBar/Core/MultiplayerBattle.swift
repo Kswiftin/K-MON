@@ -735,12 +735,16 @@ struct MultiplayerBattle: Sendable {
             var attacker = fighters[ai].side
             var target = fighters[ti].side
             let targetHPBefore = target.hp
+            // 일격필살(뿔드릴 등)이 보스에게는 안 통해야 한다 — 보스 HP 는 절대값(400~2,800)이라
+            // 한 방에 비면 여러 턴 협동으로 깎는다는 레이드의 기본 전제가 깨진다(2026-09-11 사용자 보고).
+            let targetIsBoss = mode == .coopBoss && fighters[ti].team == .blue
             roundEvents += BattleEngine.applyAttack(attacker: &attacker, defender: &target,
                                                     attackerActor: .fighter(fighters[ai].id),
                                                     defenderActor: .fighter(fighters[ti].id),
                                                     move: move, field: &field,
                                                     attackerTeam: fighters[ai].teamSlot,
-                                                    defenderTeam: fighters[ti].teamSlot, rng: &rng)
+                                                    defenderTeam: fighters[ti].teamSlot,
+                                                    defenderIsBoss: targetIsBoss, rng: &rng)
             // **방어측을 먼저 쓰고 공격측을 나중에 쓴다.** 자기에게 거는 기술은 둘이 같은 자리라
             // (따라와·대타출동·방어), 순서가 반대면 시전 **전에** 뜬 방어측 사본이 방금 붙은
             // 상태를 통째로 덮어쓴다 — 그 기술이 아무 일도 하지 않은 턴이 된다.
@@ -748,7 +752,7 @@ struct MultiplayerBattle: Sendable {
             fighters[ai].side = attacker
             // 보스에게 들어간 몫만 센다 — 러너끼리 때릴 수는 없지만, 보스가 러너를 때린 것을
             // 기여도로 세면 정산이 보스에게 보상을 배정한다.
-            if mode == .coopBoss, fighters[ti].team == .blue {
+            if targetIsBoss {
                 damageDealt[fighters[ai].id, default: 0] += max(0, targetHPBefore - fighters[ti].side.hp)
             }
         }
