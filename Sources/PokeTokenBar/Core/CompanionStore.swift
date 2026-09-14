@@ -2181,12 +2181,33 @@ final class CompanionStore {
         return true
     }
 
-    /// 상대가 이미 졸업시킨 개체는 수신자 쪽에도 졸업 조건을 충족한 채 도착한다. 상대 도감의
-    /// 행은 전송되지 않으므로 여기서 내 도감에 새로 기록하고, 직접 졸업했을 때와 같이 보관 알
-    /// 하나와 새로 넘은 도감 목표 보상을 즉시 지급한다. 같은 개체를 되받아도 record ID가 같아
-    /// 재지급되지 않는다. 미졸업 개체는 소유 도감에만 보이며 직접 졸업해야 보상을 받는다.
+    /// 교환받은 개체도 원래 보유한 개체와 **같은 졸업 조건**으로 판정한다. 상대가 이미 졸업시킨
+    /// 개체는 즉시 처리하고, 아직 표식이 없는 개체는 진화 라인을 조회한 뒤 `canGraduate(_:in:)`를
+    /// 그대로 통과시킨다. 따라큐처럼 진화하지 않는 Lv.30 이상 개체도 이 경로에서 빠지지 않는다.
+    /// 같은 개체를 되받아도 record ID가 같아 보상은 재지급되지 않는다.
     private func registerCompletedTradeReceipt(_ received: MonState) {
-        guard received.isGraduated else { return }
+        if received.isGraduated {
+            grantCompletedTradeReceipt(received)
+            return
+        }
+        Task { await registerTradeReceiptWhenEligible(received.id) }
+    }
+
+    private func registerTradeReceiptWhenEligible(_ monID: UUID) async {
+        guard let received = ownedMons.first(where: { $0.id == monID }),
+              let line = try? await provider.line(baseSpeciesID: received.baseID),
+              let latest = ownedMons.first(where: { $0.id == monID }),
+              canGraduate(latest, in: line) else { return }
+        grantCompletedTradeReceipt(latest)
+        if state.active?.id == monID {
+            state.active?.isGraduated = true
+        } else if let index = state.boxedMons.firstIndex(where: { $0.id == monID }) {
+            state.boxedMons[index].isGraduated = true
+        }
+        save()
+    }
+
+    private func grantCompletedTradeReceipt(_ received: MonState) {
         let goalsBefore = DexGoals.completed(in: state.dex)
         guard appendTradeDexRecord(for: received) else { return }
         state.collectedFinals.insert("\(received.baseID):\(received.currentID)")
