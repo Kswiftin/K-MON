@@ -860,6 +860,66 @@ final class CompanionStoreTests: XCTestCase {
         XCTAssertEqual(s.state.dex.last?.chainOrder, [1])
     }
 
+    /// 상대가 졸업시킨 개체에는 `isGraduated` 가 실려 오지만 상대의 도감 행은 오지 않는다.
+    /// 수령 즉시 내 도감에 기록하고 졸업 알을 지급하며, 같은 개체를 되받아도 재지급하지 않는다.
+    func testReceivedGraduatedPokemonIsRegisteredAndImmediatelyAwardsAnEgg() async throws {
+        let s = store(linear3)
+        await s.hatch(baseID: 1)
+        let offered = try XCTUnwrap(s.state.active)
+        let received = MonState(baseID: 20, pathIDs: [20], stageIndex: 0, usedAtStage: 0,
+                                rarity: .common, totalForms: 1,
+                                names: [20: ["ko": "포20", "en": "P20"]], isGraduated: true)
+        let eggsBefore = s.focusEggCount
+
+        XCTAssertTrue(s.performTrade(offeredID: offered.id, received: received))
+        XCTAssertEqual(s.focusEggCount, eggsBefore + 1)
+        XCTAssertTrue(s.state.dex.contains { $0.id == "traded-\(received.id.uuidString)"
+            && $0.chainOrder == [20] })
+        XCTAssertTrue(s.state.collectedFinals.contains("20:20"))
+
+        let next = MonState(baseID: 30, pathIDs: [30], stageIndex: 0, usedAtStage: 0,
+                            rarity: .common, totalForms: 1,
+                            names: [30: ["ko": "포30", "en": "P30"]])
+        XCTAssertTrue(s.performTrade(offeredID: received.id, received: next))
+        XCTAssertEqual(s.state.dex.filter { $0.id == "traded-\(received.id.uuidString)" }.count, 1)
+        XCTAssertEqual(s.focusEggCount, eggsBefore + 1, "같은 졸업 개체 기록으로 알을 재지급하지 않는다")
+        XCTAssertTrue(s.dexSpecies.contains { $0.id == 20 })
+    }
+
+    /// 박스 포켓몬끼리 교환하는 분기는 동행 교환과 별도라 같은 졸업 등록·알 지급을 직접 밟는다.
+    func testGraduatedPokemonReceivedIntoBoxIsRegisteredAndAwardsAnEgg() async throws {
+        let s = store(linear3)
+        await s.hatch(baseID: 1)
+        let boxed = MonState(baseID: 10, pathIDs: [10], stageIndex: 0, usedAtStage: 0,
+                             rarity: .common, totalForms: 1)
+        s.debugSetBoxedMons([boxed])
+        let received = MonState(baseID: 20, pathIDs: [20], stageIndex: 0, usedAtStage: 0,
+                                rarity: .common, totalForms: 1,
+                                names: [20: ["ko": "포20", "en": "P20"]], isGraduated: true)
+        let eggsBefore = s.focusEggCount
+
+        XCTAssertTrue(s.performTrade(offeredID: boxed.id, received: received))
+        XCTAssertEqual(s.focusEggCount, eggsBefore + 1)
+        XCTAssertTrue(s.state.dex.contains { $0.id == "traded-\(received.id.uuidString)"
+            && $0.chainOrder == [20] })
+        XCTAssertTrue(s.dexSpecies.contains { $0.id == 20 })
+    }
+
+    /// 아직 졸업 조건을 완료하지 않은 교환 개체는 보유 도감에만 보이고 알을 미리 받지 않는다.
+    func testReceivedUngradutatedPokemonDoesNotAwardGraduationEgg() async throws {
+        let s = store(linear3)
+        await s.hatch(baseID: 1)
+        let offered = try XCTUnwrap(s.state.active)
+        let received = MonState(baseID: 20, pathIDs: [20], stageIndex: 0, usedAtStage: 0,
+                                rarity: .common, totalForms: 1, isGraduated: false)
+        let eggsBefore = s.focusEggCount
+
+        XCTAssertTrue(s.performTrade(offeredID: offered.id, received: received))
+        XCTAssertEqual(s.focusEggCount, eggsBefore)
+        XCTAssertFalse(s.state.dex.contains { $0.id == "traded-\(received.id.uuidString)" })
+        XCTAssertTrue(s.dexSpecies.contains { $0.id == 20 && $0.isRaising })
+    }
+
     // MARK: 알 등급 보증
 
     /// 상점은 보증 알을 팔지 않는다(`shopTiers` 가 `[nil]`). `canBuyEgg` 가 그걸 강제하므로

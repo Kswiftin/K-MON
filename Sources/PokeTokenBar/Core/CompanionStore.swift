@@ -2058,6 +2058,7 @@ final class CompanionStore {
             memoryAlbum.deleteAll(for: sent.id)
             chatStore.deleteSession(for: sent.id)
             state.active = received
+            registerCompletedTradeReceipt(received)
             settleReceived(received, incomingMemories: incomingMemories)
             pruneFavorites()
             activeGeneration += 1
@@ -2077,6 +2078,7 @@ final class CompanionStore {
         memoryAlbum.deleteAll(for: sent.id)
         chatStore.deleteSession(for: sent.id)
         state.boxedMons[index] = received
+        registerCompletedTradeReceipt(received)
         settleReceived(received, incomingMemories: incomingMemories)
         pruneFavorites()
         save()
@@ -2103,6 +2105,7 @@ final class CompanionStore {
         } else {
             state.boxedMons.append(received)
         }
+        registerCompletedTradeReceipt(received)
         settleReceived(received, incomingMemories: incomingMemories)
         save()
         return true
@@ -2159,13 +2162,37 @@ final class CompanionStore {
     /// 이미 졸업한 개체는 같은 기록이 state.dex에 있으므로 중복 추가하지 않는다.
     private func preserveDexRecord(for mon: MonState) {
         guard !mon.isGraduated else { return }
+        _ = appendTradeDexRecord(for: mon)
+    }
+
+    /// 교환 개체의 영구 도감 행을 한 번만 만든다. 받은 졸업 개체는 상대 쪽 도감에만 기록돼
+    /// 있으므로 `isGraduated` 여부와 무관하게 이 원시 삽입 경로를 쓴다.
+    @discardableResult
+    private func appendTradeDexRecord(for mon: MonState) -> Bool {
         let reached = Array(mon.pathIDs.prefix(mon.stageIndex + 1))
-        guard let finalID = reached.last else { return }
+        guard let finalID = reached.last else { return false }
+        let recordID = "traded-\(mon.id.uuidString)"
+        guard !state.dex.contains(where: { $0.id == recordID }) else { return false }
         state.dex.append(DexEntry(
-            id: "traded-\(mon.id.uuidString)", baseID: mon.baseID, finalID: finalID,
+            id: recordID, baseID: mon.baseID, finalID: finalID,
             chainOrder: reached, rarity: mon.rarity, caughtAt: clock(),
             isShiny: mon.dittoDisguise != nil && !mon.dittoRevealed ? false : mon.isShiny,
             nature: mon.nature, names: mon.names))
+        return true
+    }
+
+    /// 상대가 이미 졸업시킨 개체는 수신자 쪽에도 졸업 조건을 충족한 채 도착한다. 상대 도감의
+    /// 행은 전송되지 않으므로 여기서 내 도감에 새로 기록하고, 직접 졸업했을 때와 같이 보관 알
+    /// 하나와 새로 넘은 도감 목표 보상을 즉시 지급한다. 같은 개체를 되받아도 record ID가 같아
+    /// 재지급되지 않는다. 미졸업 개체는 소유 도감에만 보이며 직접 졸업해야 보상을 받는다.
+    private func registerCompletedTradeReceipt(_ received: MonState) {
+        guard received.isGraduated else { return }
+        let goalsBefore = DexGoals.completed(in: state.dex)
+        guard appendTradeDexRecord(for: received) else { return }
+        state.collectedFinals.insert("\(received.baseID):\(received.currentID)")
+        _ = addStoredEggs(1)
+        let paid = grantNewlyCompletedDexGoals(before: goalsBefore)
+        if paid > 0 { announcePayout(paid, .graduation) }
     }
 
     /// 체육관 방어팀은 동행으로 올릴 수 없다 — **육성 차단이 이 한 줄로 끝난다.** 박스 개체는
