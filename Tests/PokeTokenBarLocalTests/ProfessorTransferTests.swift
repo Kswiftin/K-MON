@@ -6,8 +6,7 @@ import Testing
 @Suite("Professor transfer")
 struct ProfessorTransferTests {
     private func store(_ name: String) -> CompanionStore {
-        let url = FileManager.default.temporaryDirectory
-            .appendingPathComponent("pokedoro-professor-\(name)-\(UUID().uuidString).json")
+        let url = storeFixtureStateURL("professor-\(name)")
         return CompanionStore(clock: { Date(timeIntervalSince1970: 2_000_000_000) }, fileURL: url)
     }
 
@@ -39,8 +38,7 @@ struct ProfessorTransferTests {
 
     @Test("remainder and egg reward survive relaunch")
     func persistence() {
-        let url = FileManager.default.temporaryDirectory
-            .appendingPathComponent("pokedoro-professor-persist-\(UUID().uuidString).json")
+        let url = storeFixtureStateURL("professor-persist")
         let first = CompanionStore(clock: { Date(timeIntervalSince1970: 2_000_000_000) }, fileURL: url)
         let mons = [mon(1), mon(2), mon(3), mon(4)]
         first.debugSetBoxedMons(mons)
