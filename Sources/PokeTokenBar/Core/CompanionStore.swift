@@ -304,6 +304,7 @@ final class CompanionStore {
         self.memoryAlbum.initializeMemoryHomePublicNickname(from: state.trainerName)
         migrateAchievementRoomStyleUnlocks()
         backfillFirstMeetingDates()
+        reconcileUnrecordedGraduationFlags()
         claimSafariZoneUpdateBonusIfNeeded()
         reconcileStoredEggDates()
         // 정산 없이 앱이 죽은 랭크전은 여기서 패배로 마감한다(에스크로는 이미 빠져나가 있다).
@@ -323,6 +324,29 @@ final class CompanionStore {
         ]
         for (track, style) in tickets where state.achievements.tier(track) >= 1 {
             memoryAlbum.unlockRoomStyle(style)
+        }
+    }
+
+    /// 교환 구버전은 상대의 `isGraduated` 표식만 가져오고 내 영구 도감 행은 만들지 않았다. 이 상태는
+    /// `canGraduate`를 영구히 막아 Lv.30을 넘긴 최종형도 등록 버튼이 사라진다. 실제 도감 기록이
+    /// 하나도 없는 졸업 표식만 되돌려, 기존 포켓몬과 같은 수동 등록 흐름으로 복구한다.
+    private func reconcileUnrecordedGraduationFlags() {
+        func hasRecord(_ mon: MonState) -> Bool {
+            state.dex.contains { $0.baseID == mon.baseID && $0.finalID == mon.currentID }
+        }
+        var changed = false
+        if let active = state.active, active.isGraduated, !hasRecord(active) {
+            state.active?.isGraduated = false
+            changed = true
+        }
+        for index in state.boxedMons.indices
+        where state.boxedMons[index].isGraduated && !hasRecord(state.boxedMons[index]) {
+            state.boxedMons[index].isGraduated = false
+            changed = true
+        }
+        if changed {
+            AppLog.write("repaired graduated pokemon without a permanent dex record")
+            save()
         }
     }
 
@@ -2044,6 +2068,9 @@ final class CompanionStore {
         let offeredSpecies = state.active?.id == offeredID
             ? state.active?.currentID : state.boxedMons.first(where: { $0.id == offeredID })?.currentID
         var received = incoming
+        // 졸업은 트레이너별 도감 등록 액션이다. 상대의 표식을 그대로 가져오면 내 화면에서는 등록
+        // 버튼이 사라지므로, 받은 개체는 내 기존 포켓몬과 같은 미등록 상태에서 다시 판정한다.
+        received.isGraduated = false
         // 첫 만남은 **상대가 부르는 값이라 아예 안 쓴다.** 나와 이 개체가 함께 보낸 날은 0일이다.
         //
         // 창으로 자르는 것만으로는 부족했다: 상한이 3650일인데 `closenessHearts` 는 120일이면
@@ -2058,7 +2085,6 @@ final class CompanionStore {
             memoryAlbum.deleteAll(for: sent.id)
             chatStore.deleteSession(for: sent.id)
             state.active = received
-            registerCompletedTradeReceipt(received)
             settleReceived(received, incomingMemories: incomingMemories)
             pruneFavorites()
             activeGeneration += 1
@@ -2078,7 +2104,6 @@ final class CompanionStore {
         memoryAlbum.deleteAll(for: sent.id)
         chatStore.deleteSession(for: sent.id)
         state.boxedMons[index] = received
-        registerCompletedTradeReceipt(received)
         settleReceived(received, incomingMemories: incomingMemories)
         pruneFavorites()
         save()
@@ -2092,6 +2117,7 @@ final class CompanionStore {
               !ownedMons.contains(where: { $0.id == incoming.id }) else { return false }
         var received = incoming
         received.firstMetAt = clock()
+        received.isGraduated = false
         if state.active == nil {
             state.active = received
             activeGeneration += 1
@@ -2105,7 +2131,6 @@ final class CompanionStore {
         } else {
             state.boxedMons.append(received)
         }
-        registerCompletedTradeReceipt(received)
         settleReceived(received, incomingMemories: incomingMemories)
         save()
         return true
@@ -2179,41 +2204,6 @@ final class CompanionStore {
             isShiny: mon.dittoDisguise != nil && !mon.dittoRevealed ? false : mon.isShiny,
             nature: mon.nature, names: mon.names))
         return true
-    }
-
-    /// 교환받은 개체도 원래 보유한 개체와 **같은 졸업 조건**으로 판정한다. 상대가 이미 졸업시킨
-    /// 개체는 즉시 처리하고, 아직 표식이 없는 개체는 진화 라인을 조회한 뒤 `canGraduate(_:in:)`를
-    /// 그대로 통과시킨다. 따라큐처럼 진화하지 않는 Lv.30 이상 개체도 이 경로에서 빠지지 않는다.
-    /// 같은 개체를 되받아도 record ID가 같아 보상은 재지급되지 않는다.
-    private func registerCompletedTradeReceipt(_ received: MonState) {
-        if received.isGraduated {
-            grantCompletedTradeReceipt(received)
-            return
-        }
-        Task { await registerTradeReceiptWhenEligible(received.id) }
-    }
-
-    private func registerTradeReceiptWhenEligible(_ monID: UUID) async {
-        guard let received = ownedMons.first(where: { $0.id == monID }),
-              let line = try? await provider.line(baseSpeciesID: received.baseID),
-              let latest = ownedMons.first(where: { $0.id == monID }),
-              canGraduate(latest, in: line) else { return }
-        grantCompletedTradeReceipt(latest)
-        if state.active?.id == monID {
-            state.active?.isGraduated = true
-        } else if let index = state.boxedMons.firstIndex(where: { $0.id == monID }) {
-            state.boxedMons[index].isGraduated = true
-        }
-        save()
-    }
-
-    private func grantCompletedTradeReceipt(_ received: MonState) {
-        let goalsBefore = DexGoals.completed(in: state.dex)
-        guard appendTradeDexRecord(for: received) else { return }
-        state.collectedFinals.insert("\(received.baseID):\(received.currentID)")
-        _ = addStoredEggs(1)
-        let paid = grantNewlyCompletedDexGoals(before: goalsBefore)
-        if paid > 0 { announcePayout(paid, .graduation) }
     }
 
     /// 체육관 방어팀은 동행으로 올릴 수 없다 — **육성 차단이 이 한 줄로 끝난다.** 박스 개체는
