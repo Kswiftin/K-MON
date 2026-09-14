@@ -860,6 +860,46 @@ final class CompanionStoreTests: XCTestCase {
         XCTAssertEqual(s.state.dex.last?.chainOrder, [1])
     }
 
+    /// 받은 개체를 소유 중일 때만 화면에 합성하면 다시 내보내는 순간 등록이 사라지고, 영구
+    /// 도감을 보는 일일 미션에도 잡히지 않는다. 수령 시점에 바로 기록하며 재교환은 중복 기록을
+    /// 만들지 않아야 한다.
+    func testReceivedPokemonIsImmediatelyAndPermanentlyRegisteredInDex() async throws {
+        let s = store(linear3)
+        await s.hatch(baseID: 1)
+        let offered = try XCTUnwrap(s.state.active)
+        let received = MonState(baseID: 20, pathIDs: [20], stageIndex: 0, usedAtStage: 0,
+                                rarity: .common, totalForms: 1,
+                                names: [20: ["ko": "포20", "en": "P20"]])
+
+        XCTAssertTrue(s.performTrade(offeredID: offered.id, received: received))
+        XCTAssertTrue(s.state.dex.contains { $0.id == "traded-\(received.id.uuidString)"
+            && $0.chainOrder == [20] })
+
+        let next = MonState(baseID: 30, pathIDs: [30], stageIndex: 0, usedAtStage: 0,
+                            rarity: .common, totalForms: 1,
+                            names: [30: ["ko": "포30", "en": "P30"]])
+        XCTAssertTrue(s.performTrade(offeredID: received.id, received: next))
+        XCTAssertEqual(s.state.dex.filter { $0.id == "traded-\(received.id.uuidString)" }.count, 1)
+        XCTAssertTrue(s.dexSpecies.contains { $0.id == 20 })
+    }
+
+    /// 박스 포켓몬끼리 교환하는 분기는 동행 교환과 별도라 같은 등록 규칙을 직접 밟는다.
+    func testPokemonReceivedIntoBoxIsRegisteredInDex() async throws {
+        let s = store(linear3)
+        await s.hatch(baseID: 1)
+        let boxed = MonState(baseID: 10, pathIDs: [10], stageIndex: 0, usedAtStage: 0,
+                             rarity: .common, totalForms: 1)
+        s.debugSetBoxedMons([boxed])
+        let received = MonState(baseID: 20, pathIDs: [20], stageIndex: 0, usedAtStage: 0,
+                                rarity: .common, totalForms: 1,
+                                names: [20: ["ko": "포20", "en": "P20"]])
+
+        XCTAssertTrue(s.performTrade(offeredID: boxed.id, received: received))
+        XCTAssertTrue(s.state.dex.contains { $0.id == "traded-\(received.id.uuidString)"
+            && $0.chainOrder == [20] })
+        XCTAssertTrue(s.dexSpecies.contains { $0.id == 20 })
+    }
+
     // MARK: 알 등급 보증
 
     /// 상점은 보증 알을 팔지 않는다(`shopTiers` 가 `[nil]`). `canBuyEgg` 가 그걸 강제하므로

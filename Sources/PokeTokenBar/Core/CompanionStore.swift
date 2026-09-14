@@ -2052,12 +2052,14 @@ final class CompanionStore {
         // "너와 이 포켓몬" 을 뜻하지 "이 포켓몬과 누군가" 를 뜻하지 않는다.
         received.firstMetAt = clock()
         if let offeredSpecies { Self.applyPairedTradeEvolution(to: &received, counterpartSpeciesID: offeredSpecies) }
+        let receivedWasRegistered = isSpeciesAlreadyOwned(received.currentID)
         if state.active?.id == offeredID {
             guard let sent = state.active else { return false }
             preserveDexRecord(for: sent)
             memoryAlbum.deleteAll(for: sent.id)
             chatStore.deleteSession(for: sent.id)
             state.active = received
+            registerTradeReceipt(received, wasRegistered: receivedWasRegistered)
             settleReceived(received, incomingMemories: incomingMemories)
             pruneFavorites()
             activeGeneration += 1
@@ -2077,6 +2079,7 @@ final class CompanionStore {
         memoryAlbum.deleteAll(for: sent.id)
         chatStore.deleteSession(for: sent.id)
         state.boxedMons[index] = received
+        registerTradeReceipt(received, wasRegistered: receivedWasRegistered)
         settleReceived(received, incomingMemories: incomingMemories)
         pruneFavorites()
         save()
@@ -2090,6 +2093,7 @@ final class CompanionStore {
               !ownedMons.contains(where: { $0.id == incoming.id }) else { return false }
         var received = incoming
         received.firstMetAt = clock()
+        let receivedWasRegistered = isSpeciesAlreadyOwned(received.currentID)
         if state.active == nil {
             state.active = received
             activeGeneration += 1
@@ -2103,6 +2107,7 @@ final class CompanionStore {
         } else {
             state.boxedMons.append(received)
         }
+        registerTradeReceipt(received, wasRegistered: receivedWasRegistered)
         settleReceived(received, incomingMemories: incomingMemories)
         save()
         return true
@@ -2161,11 +2166,22 @@ final class CompanionStore {
         guard !mon.isGraduated else { return }
         let reached = Array(mon.pathIDs.prefix(mon.stageIndex + 1))
         guard let finalID = reached.last else { return }
+        let recordID = "traded-\(mon.id.uuidString)"
+        guard !state.dex.contains(where: { $0.id == recordID }) else { return }
         state.dex.append(DexEntry(
-            id: "traded-\(mon.id.uuidString)", baseID: mon.baseID, finalID: finalID,
+            id: recordID, baseID: mon.baseID, finalID: finalID,
             chainOrder: reached, rarity: mon.rarity, caughtAt: clock(),
             isShiny: mon.dittoDisguise != nil && !mon.dittoRevealed ? false : mon.isShiny,
             nature: mon.nature, names: mon.names))
+    }
+
+    /// 받은 포켓몬은 소유 목록 합성에만 기대지 않고 즉시 영구 도감에 기록한다. 그래야 다시
+    /// 교환하거나 박사에게 보내도 등록이 사라지지 않고, 최초 등록 일일 미션도 포획과 같은
+    /// 규칙으로 진행된다. `preserveDexRecord` 의 개체 ID 중복 가드 덕분에 나중에 내보낼 때
+    /// 같은 기록을 두 번 만들지 않는다.
+    private func registerTradeReceipt(_ received: MonState, wasRegistered: Bool) {
+        preserveDexRecord(for: received)
+        if !wasRegistered { recordMission(.dexRegistrations, 1) }
     }
 
     /// 체육관 방어팀은 동행으로 올릴 수 없다 — **육성 차단이 이 한 줄로 끝난다.** 박스 개체는
