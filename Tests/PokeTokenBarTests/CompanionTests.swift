@@ -900,6 +900,32 @@ final class CompanionStoreTests: XCTestCase {
         XCTAssertTrue(s.dexSpecies.contains { $0.id == 20 })
     }
 
+    /// 오늘 배정된 미션에 도감 등록이 있다면 교환 수령도 포획·부화와 같은 완료 이벤트다.
+    /// 완료 보상은 수령 버튼 없이 즉시 보관 알로 들어간다.
+    func testFirstDexRegistrationByTradeImmediatelyAwardsMissionEgg() throws {
+        let day = CompanionStore.dayKey(fixedNow)
+        let missionSeed = try XCTUnwrap((0..<100).map(String.init).first { seed in
+            MissionBoard.assignedDailyMissions(dayKey: day, seed: seed)
+                .contains { $0.id == "dailyDexRegistration" }
+        })
+        let s = CompanionStore(provider: StubProvider(value: linear3), clock: { fixedNow },
+                               fileURL: storeStateURL(), rng: SeededRNG(seed: 7),
+                               missionSeed: missionSeed)
+        let offered = MonState(baseID: 10, pathIDs: [10], stageIndex: 0, usedAtStage: 0,
+                               rarity: .common, totalForms: 1)
+        s.debugSetBoxedMons([offered])
+        let received = MonState(baseID: 20, pathIDs: [20], stageIndex: 0, usedAtStage: 0,
+                                rarity: .common, totalForms: 1,
+                                names: [20: ["ko": "포20", "en": "P20"]])
+        let eggsBefore = s.focusEggCount
+
+        XCTAssertTrue(s.performTrade(offeredID: offered.id, received: received))
+        XCTAssertEqual(s.focusEggCount, eggsBefore + 1,
+                       "교환으로 처음 등록한 종도 도감 등록 미션의 알을 즉시 지급해야 한다")
+        let dexMission = try XCTUnwrap(s.missionRows.first { $0.mission.id == "dailyDexRegistration" })
+        XCTAssertEqual(dexMission.progress, dexMission.mission.target)
+    }
+
     // MARK: 알 등급 보증
 
     /// 상점은 보증 알을 팔지 않는다(`shopTiers` 가 `[nil]`). `canBuyEgg` 가 그걸 강제하므로
