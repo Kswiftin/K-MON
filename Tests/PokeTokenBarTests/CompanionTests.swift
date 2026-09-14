@@ -920,6 +920,25 @@ final class CompanionStoreTests: XCTestCase {
         XCTAssertTrue(s.dexSpecies.contains { $0.id == 20 && $0.isRaising })
     }
 
+    /// 따라큐 같은 무진화 포켓몬은 `isGraduated` 표식이 없어도 Lv.30이면 기존 보유 개체와 같은
+    /// 졸업 조건을 충족한다. 교환 수신 경로가 표식만 보면 이런 고레벨 개체의 도감·알이 빠진다.
+    func testReceivedGraduationReadySingleStagePokemonAwardsAnEgg() async throws {
+        let s = store(noEvo)
+        await s.hatch(baseID: 20)
+        let offered = try XCTUnwrap(s.state.active)
+        var received = MonState(baseID: 20, pathIDs: [20], stageIndex: 0, usedAtStage: 0,
+                                rarity: .common, totalForms: 1,
+                                names: [20: ["ko": "따라큐", "en": "Mimikyu"]])
+        received.levelExperience = 32 * PokemonBalance.experiencePerLevel // Lv.33
+        let eggsBefore = s.focusEggCount
+
+        XCTAssertTrue(s.performTrade(offeredID: offered.id, received: received))
+        let rewarded = await waitUntil { s.focusEggCount == eggsBefore + 1 }
+        XCTAssertTrue(rewarded)
+        XCTAssertTrue(s.state.dex.contains { $0.id == "traded-\(received.id.uuidString)" })
+        XCTAssertEqual(s.state.active?.isGraduated, true)
+    }
+
     // MARK: 알 등급 보증
 
     /// 상점은 보증 알을 팔지 않는다(`shopTiers` 가 `[nil]`). `canBuyEgg` 가 그걸 강제하므로
