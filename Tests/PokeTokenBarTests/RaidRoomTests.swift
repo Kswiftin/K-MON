@@ -144,6 +144,15 @@ final class RaidRoomTests: XCTestCase {
         XCTAssertEqual(parsed.tier, .five)
         XCTAssertEqual(parsed.idTag, "ABC123")
         XCTAssertEqual(parsed.trainerName, "지우")
+        XCTAssertEqual(parsed.status, .recruiting)
+
+        let running = RaidRoomName.make(trainerName: "지우", idTag: "ABC123", tier: .five,
+                                        status: .inProgress)
+        XCTAssertEqual(RaidRoomName.parse(running)?.status, .inProgress)
+
+        let legacy = "RAID · 5 · 지우#ABC123"
+        XCTAssertEqual(RaidRoomName.parse(legacy)?.status, .recruiting,
+                       "상태 필드가 없는 구버전 방은 모집 중으로 호환한다")
 
         XCTAssertFalse(RaidRoomName.isRaidRoomName("GYM · 지우#ABC123"))
         XCTAssertNil(RaidRoomName.parse("GYM · 1 · v15 · 지우#ABC123"), "남의 방 이름은 파싱하지 않는다")
@@ -184,6 +193,12 @@ final class RaidRoomTests: XCTestCase {
         let second = RaidRoomName.make(trainerName: "이웃2", idTag: "OTHER2", tier: .three)
         XCTAssertEqual(MultiplayerRoomCenter.newlyVisibleRaidRooms(
             previous: [theirs], current: [theirs, second], myIDTag: "MYTAG1"), [second])
+
+        let running = RaidRoomName.make(trainerName: "이웃3", idTag: "OTHER3", tier: .five,
+                                        status: .inProgress)
+        XCTAssertTrue(MultiplayerRoomCenter.newlyVisibleRaidRooms(
+            previous: [], current: [running], myIDTag: "MYTAG1").isEmpty,
+            "진행 중인 방은 참가할 수 없으므로 새 모집 알림을 보내지 않는다")
     }
 
     // MARK: 보스 교체(정오·자정) 알림 시각

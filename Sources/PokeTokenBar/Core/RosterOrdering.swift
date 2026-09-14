@@ -17,12 +17,18 @@ enum RosterSort: String, CaseIterable, Sendable {
 /// 뷰가 미리 해석해 넘긴다(여기서 네트워크를 타지 않는다).
 enum RosterOrdering {
 
-    /// 같은 진화 계보의 개체가 둘 이상인 계보 번호. 파이리와 리자몽처럼 현재 모습이 달라도
-    /// `baseID` 가 같으면 한 가족이다. 필터 결과에서 다시 세면 검색어나 타입을 바꿀 때마다 중복
-    /// 판정 자체가 달라지므로, 반드시 소유 목록 전체를 받아 계산한다.
-    static func duplicateEvolutionFamilyIDs(in mons: [MonState]) -> Set<Int> {
-        let counts = Dictionary(grouping: mons, by: \.baseID).mapValues(\.count)
-        return Set(counts.compactMap { $0.value > 1 ? $0.key : nil })
+    /// 같은 **선택 진화 경로**의 개체가 둘 이상일 때 그 개체 ID를 돌려준다.
+    ///
+    /// `baseID`만 묶으면 랄토스에서 갈라지는 가디안과 엘레이드까지 중복으로 오인한다. 반대로
+    /// 파이리와 리자몽처럼 같은 경로의 서로 다른 단계는 계속 중복으로 보여야 한다. 부화 때 정한
+    /// 전체 경로(`plannedPathIDs`)를 키로 쓰고, 구버전·포획 개체처럼 계획이 비어 있으면 실제 경로로
+    /// 접는다. 필터 결과가 아니라 소유 목록 전체를 받아야 검색·타입 필터에 따라 중복 판정이
+    /// 흔들리지 않는다.
+    static func duplicateEvolutionRouteMonIDs(in mons: [MonState]) -> Set<UUID> {
+        let groups = Dictionary(grouping: mons) { mon in
+            mon.plannedPathIDs.isEmpty ? mon.pathIDs : mon.plannedPathIDs
+        }
+        return Set(groups.values.filter { $0.count > 1 }.flatMap { $0.map(\.id) })
     }
 
     /// 영구 도감에 아직 기록되지 않은 현재 모습만 남긴다. 소유 개체로 합성한 도감 목록을 넘기면

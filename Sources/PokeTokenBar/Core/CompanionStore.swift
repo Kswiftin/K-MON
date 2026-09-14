@@ -1284,7 +1284,9 @@ final class CompanionStore {
             memberIDsByBase[base] = members
         }
         for entry in state.dex { collect(entry.chainOrder) }
-        if let active = state.active { collect(Array(active.pathIDs.prefix(active.stageIndex + 1))) }
+        // 설정의 "표시할 포켓몬" 목록도 도감 목록과 같은 출처를 써야 한다. 활성 개체만 더하면
+        // 박스에 있는 미졸업 포켓몬은 `dexSpecies`에는 보이는데 이 묶음에서는 빠져 목록이 뒤틀린다.
+        for entry in livingDexEntries { collect(entry.chainOrder) }
 
         return memberIDsByBase.keys.sorted().compactMap { base in
             let members = (memberIDsByBase[base] ?? []).compactMap { speciesByID[$0] }

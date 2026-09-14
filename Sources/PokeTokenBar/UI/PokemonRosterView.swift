@@ -78,7 +78,7 @@ struct PokemonRosterView: View {
 
     var body: some View {
         let owned = store.ownedMons
-        let duplicateFamilies = RosterOrdering.duplicateEvolutionFamilyIDs(in: owned)
+        let duplicateMons = RosterOrdering.duplicateEvolutionRouteMonIDs(in: owned)
         // `store.dexSpecies` 는 소유 중인 개체까지 합성하므로 쓰지 않는다. 영구 도감만 보아야
         // 아직 졸업·교환으로 기록하지 않은 소유 포켓몬을 찾을 수 있다.
         let registeredSpecies = Set(store.state.dex.flatMap(\.chainOrder))
@@ -93,7 +93,7 @@ struct PokemonRosterView: View {
             PokemonNameSearch.matches(searchText, names: PokemonNameSearch.names(
                 for: $0, resolvedSpeciesName: names[$0.presentationID]))
             && (!favoritesOnly || store.isFavorite($0.id))
-            && (!duplicatesOnly || duplicateFamilies.contains($0.baseID))
+            && (!duplicatesOnly || duplicateMons.contains($0.id))
             && (!unregisteredOnly || unregisteredIDs.contains($0.id))
             && (!graduateReadyOnly || graduateReadyIDs.contains($0.id))
         }
