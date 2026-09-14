@@ -42,6 +42,11 @@ struct PokemonRosterView: View {
     @State private var releaseTarget: MonState?
     @State private var infoTarget: MonState?
     @State private var searchText = ""
+    /// 박사 전송은 되돌릴 수 없는 다중 선택 동작이라 평소 카드 탭(동행 교체)과 모드를 분리한다.
+    @State private var isProfessorSelecting = false
+    @State private var professorSelection: Set<UUID> = []
+    @State private var professorConfirmation = false
+    @State private var professorResultMessage: String?
     @Environment(PokemonChatPresenter.self) private var chatPresenter
 
     /// 이름·타입·진화 트리를 `store` 의 캐시로 미리 채운다 — 탭을 나갔다 들어와 이 뷰가 통째로
@@ -116,7 +121,7 @@ struct PokemonRosterView: View {
                 pager(current: current, pageCount: pageCount)
             }
             grid(slice)
-            footer()
+            footer(owned: owned)
         }
         .frame(height: Self.contentHeight, alignment: .top)
         // 상세정보 팝오버를 탭 오른쪽에 고정한다. 카드마다 다른 위치(그 카드의 정보 아이콘)에
@@ -144,6 +149,16 @@ struct PokemonRosterView: View {
         } message: {
             Text("놓아준 포켓몬은 돌아오지 않습니다. 졸업해 도감에 기록된 개체라면 도감 기록은 남습니다.")
         }
+        .confirmationDialog(professorQuestion, isPresented: $professorConfirmation,
+                            titleVisibility: .visible) {
+            Button("박사에게 보내기", role: .destructive) { confirmProfessorTransfer() }
+            Button("취소", role: .cancel) {}
+        } message: {
+            Text("보낸 포켓몬은 돌아오지 않습니다. 알의 희귀도는 부화할 때 무작위로 결정됩니다.")
+        }
+        .alert("박사에게 보내기", isPresented: professorResultBinding) {
+            Button("확인", role: .cancel) { professorResultMessage = nil }
+        } message: { Text(professorResultMessage ?? "") }
     }
 
     private var infoTargetIsPresented: Binding<Bool> {
@@ -206,10 +221,14 @@ struct PokemonRosterView: View {
                             RosterMonCard(store: store, mon: mon, isActive: mon.id == store.activeMonID,
                                           isGymDeployed: store.gymDefenseMonIDs.contains(mon.id),
                                           isFavorite: store.isFavorite(mon.id),
+                                          isProfessorSelecting: isProfessorSelecting,
+                                          isProfessorSelected: professorSelection.contains(mon.id),
+                                          canSendToProfessor: store.canSendToProfessor(mon),
                                           graduateReady: graduateReady,
                                           name: names[mon.presentationID] ?? "",
                                           types: types[mon.presentationID] ?? [],
                                           infoTarget: $infoTarget,
+                                          onToggleProfessor: { toggleProfessorSelection(mon.id) },
                                           onRelease: { releaseTarget = mon },
                                           onChat: { chatPresenter.open(companionID: mon.id) })
                                 .frame(maxWidth: .infinity)
@@ -247,15 +266,69 @@ struct PokemonRosterView: View {
 
     /// 하단 한 줄 — 모아둔 알. 알이 없을 때도 이 줄을 항상 예약한다(도감과 같은 규칙) —
     /// 알을 얻는 순간 격자 높이가 흔들리지 않게.
-    private func footer() -> some View {
+    private func footer(owned: [MonState]) -> some View {
         HStack(spacing: 8) {
-            if store.focusEggCount > 0 {
-                Text("🥚 × \(store.focusEggCount)").font(.caption.bold())
+            if isProfessorSelecting {
+                Text("누적 \(store.professorTransferProgress)/3 · 선택 \(professorSelection.count)마리")
+                    .font(.caption.bold())
+                Spacer(minLength: 4)
+                Button("취소") { endProfessorSelection() }
+                    .buttonStyle(.borderless).controlSize(.mini)
+                Button(professorSendButtonTitle) { professorConfirmation = true }
+                    .buttonStyle(.borderedProminent).controlSize(.mini)
+                    .disabled(professorSelection.isEmpty)
+            } else {
+                if store.focusEggCount > 0 {
+                    Text("🥚 × \(store.focusEggCount)").font(.caption.bold())
+                }
+                Spacer(minLength: 4)
+                Button {
+                    isProfessorSelecting = true
+                    professorSelection.removeAll()
+                } label: {
+                    Label("박사에게 보내기", systemImage: "graduationcap.fill")
+                }
+                .buttonStyle(.borderless).controlSize(.mini)
+                .disabled(!owned.contains(where: store.canSendToProfessor))
             }
-            Spacer(minLength: 4)
         }
         .font(.system(size: 11, weight: .semibold))
         .frame(height: 18)
+    }
+
+    private var professorSendButtonTitle: String {
+        let eggs = (store.professorTransferProgress + professorSelection.count) / 3
+        return eggs > 0 ? "보내기 · 알 \(eggs)개" : "보내기"
+    }
+
+    private var professorQuestion: String {
+        let total = store.professorTransferProgress + professorSelection.count
+        return "선택한 \(professorSelection.count)마리를 보내고 알 \(total / 3)개를 받을까요? (누적 \(total % 3)/3)"
+    }
+
+    private var professorResultBinding: Binding<Bool> {
+        Binding(get: { professorResultMessage != nil },
+                set: { if !$0 { professorResultMessage = nil } })
+    }
+
+    private func toggleProfessorSelection(_ id: UUID) {
+        if !professorSelection.insert(id).inserted { professorSelection.remove(id) }
+    }
+
+    private func endProfessorSelection() {
+        isProfessorSelecting = false
+        professorSelection.removeAll()
+    }
+
+    private func confirmProfessorTransfer() {
+        guard let result = store.sendToProfessor(professorSelection) else {
+            professorResultMessage = "전송할 수 없습니다. 알 보관함이 가득 찼거나 선택한 포켓몬이 잠겨 있는지 확인해 주세요."
+            return
+        }
+        endProfessorSelection()
+        professorResultMessage = result.eggs > 0
+            ? "\(result.sent)마리를 보내 알 \(result.eggs)개를 받았습니다. 다음 알까지 \(3 - result.progress)마리 남았습니다."
+            : "\(result.sent)마리를 보냈습니다. 다음 알까지 \(3 - result.progress)마리 남았습니다."
     }
 }
 
@@ -269,6 +342,9 @@ private struct RosterMonCard: View {
     /// 즐겨찾기는 표시가 아니라 자물쇠다 — 켜져 있으면 놓아주기·경매 출품이 막힌다. 카드가 잠금
     /// 사유를 직접 그려야 "놓아주기가 왜 없지" 가 고장으로 읽히지 않는다.
     let isFavorite: Bool
+    let isProfessorSelecting: Bool
+    let isProfessorSelected: Bool
+    let canSendToProfessor: Bool
     /// 최종 진화형에 닿았고 아직 졸업 버튼을 안 눌렀다(`CompanionStore.canGraduate(_:in:)`).
     /// 활성 개체는 홈 탭에 "다음 포켓몬으로 넘어가기" 카드가 따로 뜨지만, 박스에 놔둔 채 잊은
     /// 개체는 그 카드를 다시 볼 방법이 없다 — 활성으로 되돌리기 전까진 여기서만 알 수 있다.
@@ -280,6 +356,7 @@ private struct RosterMonCard: View {
     /// 상세정보 팝오버가 지금 누구를 보여주는지 — 팝오버 자체는 탭 오른쪽 고정 앵커에 하나만
     /// 붙어 있다(`PokemonRosterView.body`). 이 카드는 눌렸을 때 자기 개체로 바꿔 쓰기만 한다.
     @Binding var infoTarget: MonState?
+    let onToggleProfessor: () -> Void
     /// 방생 요청 — 확인 대화상자는 부모가 띄운다(카드는 격자 칸이라 대화상자를 붙일 자리가 아니다).
     let onRelease: () -> Void
     let onChat: () -> Void
@@ -310,6 +387,10 @@ private struct RosterMonCard: View {
 
     private var card: some View {
         Button {
+            if isProfessorSelecting {
+                onToggleProfessor()
+                return
+            }
             store.markPokemonSeen(mon.id)
             if !isActive, !isGymDeployed { store.switchCompanion(to: mon.id) }
         } label: {
@@ -354,12 +435,14 @@ private struct RosterMonCard: View {
                     .foregroundStyle(isGymDeployed ? .orange : graduateReady ? .green : .clear)
             }.frame(maxWidth: .infinity).padding(4)
         }
-        .buttonStyle(.plain).disabled(isActive || isGymDeployed)
+        .buttonStyle(.plain)
+        .disabled(isProfessorSelecting ? !canSendToProfessor : (isActive || isGymDeployed))
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous)
-            .strokeBorder(isGymDeployed ? Color.orange.opacity(0.55)
+            .strokeBorder(isProfessorSelected ? Color.accentColor
+                          : isGymDeployed ? Color.orange.opacity(0.55)
                           : isActive ? PokedoroTheme.mint.opacity(0.45) : Color.primary.opacity(0.075),
-                          lineWidth: 1)
+                          lineWidth: isProfessorSelected ? 2 : 1)
             .allowsHitTesting(false))
         .overlay(alignment: .topTrailing) {
             HStack(spacing: 0) {
@@ -392,6 +475,14 @@ private struct RosterMonCard: View {
                     .padding(3)
                     .help("\(store.l.heldItemSectionTitle): \(store.l.itemName(held))")
                     .accessibilityLabel("\(store.l.heldItemSectionTitle) \(store.l.itemName(held))")
+            }
+        }
+        .overlay(alignment: .bottomTrailing) {
+            if isProfessorSelecting {
+                Image(systemName: isProfessorSelected ? "checkmark.circle.fill" : "circle")
+                    .font(.system(size: 14, weight: .bold))
+                    .foregroundStyle(isProfessorSelected ? Color.accentColor : .secondary)
+                    .padding(4)
             }
         }
         .overlay(alignment: .topLeading) {
