@@ -105,6 +105,10 @@ struct PokemonRosterView: View {
         let current = min(page, pageCount - 1)
         let slice = Array(arranged.dropFirst(current * Self.pageSize).prefix(Self.pageSize))
         VStack(alignment: .leading, spacing: 6) {
+            // 되돌릴 수 없는 박사 전송의 진입점은 목록 아래에 두지 않는다. 팝오버의 유효 높이가
+            // 달라지거나 마지막 격자 행이 늘어날 때 footer 가 잘리면 버튼이 보였다 사라진 것처럼
+            // 보인다. 포켓몬 탭의 첫 줄 왼쪽에 항상 같은 자리를 예약해 선택 중 조작까지 유지한다.
+            professorToolbar(owned: owned)
             // zIndex — 필터 버튼 설명이 마우스를 올리면 아래 검색창·페이저 줄 위로 그려져야 한다.
             // 기본 순서(먼저 쓴 자식이 아래)로는 바로 다음 줄이 설명 말풍선을 덮어버린다.
             RosterHeader(shownCount: arranged.count, ownedCount: owned.count, owned: owned,
@@ -121,7 +125,6 @@ struct PokemonRosterView: View {
                 pager(current: current, pageCount: pageCount)
             }
             grid(slice)
-            footer(owned: owned)
         }
         .frame(height: Self.contentHeight, alignment: .top)
         // 상세정보 팝오버를 탭 오른쪽에 고정한다. 카드마다 다른 위치(그 카드의 정보 아이콘)에
@@ -264,9 +267,9 @@ struct PokemonRosterView: View {
         }
     }
 
-    /// 하단 한 줄 — 모아둔 알. 알이 없을 때도 이 줄을 항상 예약한다(도감과 같은 규칙) —
-    /// 알을 얻는 순간 격자 높이가 흔들리지 않게.
-    private func footer(owned: [MonState]) -> some View {
+    /// 포켓몬 탭의 첫 줄. 박사 전송 진입점은 항상 왼쪽 위의 같은 자리에 있고, 알이 없거나
+    /// 전송 가능한 개체가 없어도 줄 자체는 사라지지 않는다.
+    private func professorToolbar(owned: [MonState]) -> some View {
         HStack(spacing: 8) {
             if isProfessorSelecting {
                 Text("누적 \(store.professorTransferProgress)/3 · 선택 \(professorSelection.count)마리")
@@ -278,10 +281,6 @@ struct PokemonRosterView: View {
                     .buttonStyle(.borderedProminent).controlSize(.mini)
                     .disabled(professorSelection.isEmpty)
             } else {
-                if store.focusEggCount > 0 {
-                    Text("🥚 × \(store.focusEggCount)").font(.caption.bold())
-                }
-                Spacer(minLength: 4)
                 Button {
                     isProfessorSelecting = true
                     professorSelection.removeAll()
@@ -290,6 +289,10 @@ struct PokemonRosterView: View {
                 }
                 .buttonStyle(.borderless).controlSize(.mini)
                 .disabled(!owned.contains(where: store.canSendToProfessor))
+                Spacer(minLength: 4)
+                if store.focusEggCount > 0 {
+                    Text("🥚 × \(store.focusEggCount)").font(.caption.bold())
+                }
             }
         }
         .font(.system(size: 11, weight: .semibold))
