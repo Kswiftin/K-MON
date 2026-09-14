@@ -860,49 +860,48 @@ final class CompanionStoreTests: XCTestCase {
         XCTAssertEqual(s.state.dex.last?.chainOrder, [1])
     }
 
-    /// 상대가 졸업시킨 개체에는 `isGraduated` 가 실려 오지만 상대의 도감 행은 오지 않는다.
-    /// 수령 즉시 내 도감에 기록하고 졸업 알을 지급하며, 같은 개체를 되받아도 재지급하지 않는다.
-    func testReceivedGraduatedPokemonIsRegisteredAndImmediatelyAwardsAnEgg() async throws {
-        let s = store(linear3)
-        await s.hatch(baseID: 1)
+    /// 상대의 졸업 표식은 내 도감 수령 여부가 아니다. 받은 뒤에는 기존 포켓몬처럼 조건을 확인하고
+    /// 사용자가 등록 버튼을 눌렀을 때만 도감과 알 보상이 생긴다.
+    func testReceivedGraduatedPokemonUsesMyManualGraduationFlow() async throws {
+        let s = store(noEvo)
+        await s.hatch(baseID: 20)
         let offered = try XCTUnwrap(s.state.active)
-        let received = MonState(baseID: 20, pathIDs: [20], stageIndex: 0, usedAtStage: 0,
-                                rarity: .common, totalForms: 1,
-                                names: [20: ["ko": "포20", "en": "P20"]], isGraduated: true)
+        var received = MonState(baseID: 20, pathIDs: [20], stageIndex: 0, usedAtStage: 0,
+                                rarity: .common, totalForms: 1, isGraduated: true)
+        received.levelExperience = 32 * PokemonBalance.experiencePerLevel
         let eggsBefore = s.focusEggCount
 
         XCTAssertTrue(s.performTrade(offeredID: offered.id, received: received))
-        XCTAssertEqual(s.focusEggCount, eggsBefore + 1)
-        XCTAssertTrue(s.state.dex.contains { $0.id == "traded-\(received.id.uuidString)"
-            && $0.chainOrder == [20] })
-        XCTAssertTrue(s.state.collectedFinals.contains("20:20"))
+        let loaded = await waitUntil { s.currentLine != nil }
+        XCTAssertTrue(loaded)
+        XCTAssertEqual(s.state.active?.isGraduated, false)
+        XCTAssertTrue(s.canGraduate, "기존 포켓몬과 같은 등록 버튼 조건")
+        XCTAssertEqual(s.focusEggCount, eggsBefore, "버튼을 누르기 전에는 자동 지급하지 않는다")
 
-        let next = MonState(baseID: 30, pathIDs: [30], stageIndex: 0, usedAtStage: 0,
-                            rarity: .common, totalForms: 1,
-                            names: [30: ["ko": "포30", "en": "P30"]])
-        XCTAssertTrue(s.performTrade(offeredID: received.id, received: next))
-        XCTAssertEqual(s.state.dex.filter { $0.id == "traded-\(received.id.uuidString)" }.count, 1)
-        XCTAssertEqual(s.focusEggCount, eggsBefore + 1, "같은 졸업 개체 기록으로 알을 재지급하지 않는다")
-        XCTAssertTrue(s.dexSpecies.contains { $0.id == 20 })
+        XCTAssertTrue(s.graduateCompanion())
+        XCTAssertEqual(s.focusEggCount, eggsBefore + 1)
+        XCTAssertTrue(s.state.dex.contains { $0.baseID == 20 && $0.finalID == 20 })
     }
 
-    /// 박스 포켓몬끼리 교환하는 분기는 동행 교환과 별도라 같은 졸업 등록·알 지급을 직접 밟는다.
-    func testGraduatedPokemonReceivedIntoBoxIsRegisteredAndAwardsAnEgg() async throws {
-        let s = store(linear3)
-        await s.hatch(baseID: 1)
+    /// 박스로 받은 개체도 상대 졸업 표식을 버린다. 홈 포켓몬으로 꺼낸 뒤 같은 버튼으로 등록한다.
+    func testGraduatedPokemonReceivedIntoBoxBecomesManuallyGraduatable() async throws {
+        let s = store(noEvo)
+        await s.hatch(baseID: 20)
         let boxed = MonState(baseID: 10, pathIDs: [10], stageIndex: 0, usedAtStage: 0,
                              rarity: .common, totalForms: 1)
         s.debugSetBoxedMons([boxed])
-        let received = MonState(baseID: 20, pathIDs: [20], stageIndex: 0, usedAtStage: 0,
-                                rarity: .common, totalForms: 1,
-                                names: [20: ["ko": "포20", "en": "P20"]], isGraduated: true)
+        var received = MonState(baseID: 20, pathIDs: [20], stageIndex: 0, usedAtStage: 0,
+                                rarity: .common, totalForms: 1, isGraduated: true)
+        received.levelExperience = 32 * PokemonBalance.experiencePerLevel
         let eggsBefore = s.focusEggCount
 
         XCTAssertTrue(s.performTrade(offeredID: boxed.id, received: received))
-        XCTAssertEqual(s.focusEggCount, eggsBefore + 1)
-        XCTAssertTrue(s.state.dex.contains { $0.id == "traded-\(received.id.uuidString)"
-            && $0.chainOrder == [20] })
-        XCTAssertTrue(s.dexSpecies.contains { $0.id == 20 })
+        XCTAssertEqual(s.focusEggCount, eggsBefore)
+        XCTAssertEqual(s.state.boxedMons.first(where: { $0.id == received.id })?.isGraduated, false)
+        s.switchCompanion(to: received.id)
+        let loaded = await waitUntil { s.currentLine != nil }
+        XCTAssertTrue(loaded)
+        XCTAssertTrue(s.canGraduate)
     }
 
     /// 아직 졸업 조건을 완료하지 않은 교환 개체는 보유 도감에만 보이고 알을 미리 받지 않는다.
@@ -920,23 +919,23 @@ final class CompanionStoreTests: XCTestCase {
         XCTAssertTrue(s.dexSpecies.contains { $0.id == 20 && $0.isRaising })
     }
 
-    /// 따라큐 같은 무진화 포켓몬은 `isGraduated` 표식이 없어도 Lv.30이면 기존 보유 개체와 같은
-    /// 졸업 조건을 충족한다. 교환 수신 경로가 표식만 보면 이런 고레벨 개체의 도감·알이 빠진다.
-    func testReceivedGraduationReadySingleStagePokemonAwardsAnEgg() async throws {
-        let s = store(noEvo)
-        await s.hatch(baseID: 20)
-        let offered = try XCTUnwrap(s.state.active)
-        var received = MonState(baseID: 20, pathIDs: [20], stageIndex: 0, usedAtStage: 0,
-                                rarity: .common, totalForms: 1,
-                                names: [20: ["ko": "따라큐", "en": "Mimikyu"]])
-        received.levelExperience = 32 * PokemonBalance.experiencePerLevel // Lv.33
-        let eggsBefore = s.focusEggCount
+    /// 구버전 교환으로 `isGraduated=true`만 남고 영구 도감 행은 없는 개체를 기동 시 복구한다.
+    func testRelaunchRepairsGraduatedFlagWithoutDexRecord() async {
+        let url = storeStateURL("orphan-graduation")
+        let original = CompanionStore(provider: StubProvider(value: noEvo), clock: { fixedNow },
+                                      fileURL: url, rng: SeededRNG(seed: 7))
+        var mimikyu = MonState(baseID: 20, pathIDs: [20], stageIndex: 0, usedAtStage: 0,
+                               rarity: .common, totalForms: 1, isGraduated: true)
+        mimikyu.levelExperience = 32 * PokemonBalance.experiencePerLevel
+        original.debugSetBoxedMons([mimikyu])
 
-        XCTAssertTrue(s.performTrade(offeredID: offered.id, received: received))
-        let rewarded = await waitUntil { s.focusEggCount == eggsBefore + 1 }
-        XCTAssertTrue(rewarded)
-        XCTAssertTrue(s.state.dex.contains { $0.id == "traded-\(received.id.uuidString)" })
-        XCTAssertEqual(s.state.active?.isGraduated, true)
+        let reloaded = CompanionStore(provider: StubProvider(value: noEvo), clock: { fixedNow },
+                                      fileURL: url, rng: SeededRNG(seed: 7))
+        XCTAssertEqual(reloaded.state.boxedMons.first?.isGraduated, false)
+        reloaded.switchCompanion(to: mimikyu.id)
+        let loaded = await waitUntil { reloaded.currentLine != nil }
+        XCTAssertTrue(loaded)
+        XCTAssertTrue(reloaded.canGraduate)
     }
 
     // MARK: 알 등급 보증
