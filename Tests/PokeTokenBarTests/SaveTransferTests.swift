@@ -661,7 +661,9 @@ final class SaveTransferTests: XCTestCase {
                                      // 내 기록이라 기기를 옮겨도 따라간다.
                                      "gymDefenseLog",
                                      "adventure", "adventureHistory",
-                                     "adventureWeekKey", "weeklyAdventureCount", "focusEggs", "focusEggReadyDates", "eggFragments",
+                                     "adventureWeekKey", "weeklyAdventureCount", "focusEggs", "focusEggReadyDates",
+                                     // 박사 전송 나머지는 다음 알 지급까지 이어지는 계정 진행도다.
+                                     "professorTransferProgress", "eggFragments",
                                      "starPieces", "forcedResetVersion", "integrityVersion", "lastAdventureBonusDate"]
         // 로컬 장부: 이 기기의 시계 기준값·서명 → 새 기기 기준 재설정(저장 시 재서명).
         // 체육관 관장 자격도 같은 부류다 — 이 기기가 호스팅 중인 살아있는 역할이라, 따라가면

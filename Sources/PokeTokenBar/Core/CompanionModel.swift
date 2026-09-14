@@ -2716,6 +2716,9 @@ struct CompanionState: Codable, Sendable {
     var focusEggs = 0
     // 보관 중인 알마다 자동 부화 예정 시각. 알은 획득 5분 뒤 현재 동행과 무관하게 박스에서 부화한다.
     var focusEggReadyDates: [Date] = []
+    /// 박사에게 보낸 포켓몬 중 아직 알로 교환되지 않은 수. 3마리마다 일반 알 하나가 되고
+    /// 나머지(0...2)는 다음 전송으로 이월된다.
+    var professorTransferProgress = 0
     /// 트레이너 꾸미기 — 착용 상태(표시 전용, 서명 밖)와 소유 집합(재화로 산 것, 서명 안).
     var outfit = TrainerOutfit()
     var ownedOutfits: Set<OutfitItem> = []
@@ -2804,6 +2807,7 @@ struct CompanionState: Codable, Sendable {
                                        default: AchievementLadder())
         focusEggs          = c.lenient(Int.self, forKey: .focusEggs, default: 0)
         focusEggReadyDates = c.lenient([Date].self, forKey: .focusEggReadyDates, default: [])
+        professorTransferProgress = c.lenient(Int.self, forKey: .professorTransferProgress, default: 0)
         outfit             = c.lenient(TrainerOutfit.self, forKey: .outfit, default: TrainerOutfit())
         // 모르는 rawValue(미래 빌드가 새 아이템을 저장한 세이브)는 항목 격리로 걸러낸다 —
         // 하나가 걸리면 전체가 통째로 사라지지 않게.

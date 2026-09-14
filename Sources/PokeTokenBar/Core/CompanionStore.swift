@@ -1901,6 +1901,58 @@ final class CompanionStore {
         return true
     }
 
+    struct ProfessorTransferResult: Equatable, Sendable {
+        let sent: Int
+        let eggs: Int
+        let progress: Int
+    }
+
+    var professorTransferProgress: Int { state.professorTransferProgress }
+
+    /// 박사 전송 가능 여부. 잃는 동작을 막는 기존 잠금에 경매 게시도 포함한다. 지닌 도구가 있는
+    /// 개체는 먼저 도구를 회수해야 한다 — 포켓몬과 함께 비싼 도구까지 조용히 사라지면 안 된다.
+    func canSendToProfessor(_ mon: MonState) -> Bool {
+        mon.id != activeMonID
+            && !gymDefenseMonIDs.contains(mon.id)
+            && !isFavorite(mon.id)
+            && !state.auctionListingMonIDs.contains(mon.id)
+            && mon.heldItem == nil
+            && state.boxedMons.contains(where: { $0.id == mon.id })
+    }
+
+    /// 선택한 박스 개체를 한 번에 박사에게 보낸다. 전부 보낼 수 있을 때만 커밋하는 원자적 동작이다.
+    /// 누적 3마리마다 **일반 알** 하나를 넣고, 실제 희귀도는 기존 알과 동일하게 부화 롤이 정한다.
+    @discardableResult
+    func sendToProfessor(_ ids: Set<UUID>) -> ProfessorTransferResult? {
+        guard !ids.isEmpty else { return nil }
+        let selected = state.boxedMons.filter { ids.contains($0.id) }
+        guard selected.count == ids.count, selected.allSatisfy(canSendToProfessor) else { return nil }
+
+        let total = state.professorTransferProgress + selected.count
+        let earnedEggs = total / 3
+        guard state.focusEggs + earnedEggs <= Self.storedEggLimit else { return nil }
+
+        let selectedIDs = Set(selected.map(\.id))
+        state.boxedMons.removeAll { selectedIDs.contains($0.id) }
+        state.homePartyIDs.removeAll { selectedIDs.contains($0) }
+        if state.battleRepresentativeID.map(selectedIDs.contains) == true {
+            state.battleRepresentativeID = nil
+        }
+        state.professorTransferProgress = total % 3
+        if earnedEggs > 0 { _ = addStoredEggs(earnedEggs) }
+
+        for mon in selected {
+            AppLog.write("sent to professor species=\(mon.currentID) lv\(mon.level) graduated=\(mon.isGraduated)")
+            memoryAlbum.deleteAll(for: mon.id)
+            chatStore.deleteSession(for: mon.id)
+        }
+        memoryAlbum.prune(validCompanionIDs: Set(ownedMons.map(\.id)), ownedItems: state.inventory)
+        pruneFavorites()
+        save()
+        return ProfessorTransferResult(sent: selected.count, eggs: earnedEggs,
+                                       progress: state.professorTransferProgress)
+    }
+
     /// 교환으로 함께 보낼 추억. **`performTrade` 가 지우기 전에** 부른다.
     ///
     /// 나가는 것은 **`.event` 뿐이다** — 부화·배틀·진화처럼 그 개체가 겪은 일이다. 손글씨 메모는

@@ -271,6 +271,7 @@ enum SaveTransfer {
         s.seasons.normalize()
         s.focusEggs = min(max(0, s.focusEggs), CompanionStore.storedEggLimit)
         s.focusEggReadyDates = Array(s.focusEggReadyDates.sorted().prefix(s.focusEggs))
+        s.professorTransferProgress = min(max(0, s.professorTransferProgress), 2)
         s.eggFragments = min(max(0, s.eggFragments), 9)
         s.weeklyAdventureCount = min(max(0, s.weeklyAdventureCount), 10)
         s.eggUsage = clampToken(s.eggUsage)
@@ -523,6 +524,9 @@ enum SaveTransfer {
         if !s.focusEggReadyDates.isEmpty {
             p.append("fer" + s.focusEggReadyDates.map { String($0.timeIntervalSince1970) }.joined(separator: ","))
         }
+        // 3마리 교환 누적은 알 지급 직전 진행도다. 손으로 2로 올리면 다음 한 마리만 보내고 알을
+        // 받을 수 있으므로 서명한다. 0이면 생략해 이 필드가 없던 구버전 세이브 서명을 보존한다.
+        if s.professorTransferProgress != 0 { p.append("prof\(s.professorTransferProgress)") }
         p.append("ef\(s.eggFragments)|ab\(s.lastAdventureBonusDate)|wk\(s.adventureWeekKey)|wc\(s.weeklyAdventureCount)")
         p.append("tier\(s.eggTier?.rawValue ?? "-")"); p.append("sc\(s.starterChosen)")
         p.append("cand" + s.starterCandidates.map(String.init).joined(separator: ","))
