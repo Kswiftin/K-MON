@@ -236,11 +236,16 @@ struct RaidView: View {
     }
 
     private var nearbyRooms: some View {
-        let rooms = center.rooms.compactMap { peer -> (MultiplayerRoomPeer, RaidRoomName)? in
+        let parsedRooms = center.rooms.compactMap { peer -> (MultiplayerRoomPeer, RaidRoomName)? in
             guard let parsed = RaidRoomName.parse(peer.serviceName),
                   parsed.idTag != center.myRoomTag else { return nil }
             return (peer, parsed)
         }
+        // Bonjour가 서비스 이름 변경 전후를 잠깐 함께 줄 수 있다. 같은 호스트의 모집/진행 행을
+        // 둘 다 그리지 않고 진행 상태를 우선해 한 줄만 남긴다.
+        let rooms = Dictionary(grouping: parsedRooms, by: { $0.1.idTag }).values.compactMap { entries in
+            entries.first(where: { $0.1.status == .inProgress }) ?? entries.first
+        }.sorted { $0.1.trainerName.localizedStandardCompare($1.1.trainerName) == .orderedAscending }
         return VStack(alignment: .leading, spacing: 5) {
             if rooms.isEmpty {
                 Text(center.isBrowsing ? l.battleNoPeers : l.battleManualHint)
@@ -251,9 +256,14 @@ struct RaidView: View {
                     Text("\(parsed.tier.rawValue)★").font(.caption.bold()).foregroundStyle(.purple)
                     Text(parsed.trainerName).font(.caption).lineLimit(1)
                     Spacer()
-                    Button("참가") { center.join(peer) }
-                        .controlSize(.small)
-                        .disabled(center.phase != .idle)
+                    if parsed.status == .inProgress {
+                        Text("진행중")
+                            .font(.caption.bold()).foregroundStyle(.secondary)
+                    } else {
+                        Button("참가") { center.join(peer) }
+                            .controlSize(.small)
+                            .disabled(center.phase != .idle)
+                    }
                 }
             }
         }

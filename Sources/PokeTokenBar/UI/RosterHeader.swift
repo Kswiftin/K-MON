@@ -109,7 +109,7 @@ struct RosterHeader: View {
     }
 
     private func duplicateFamilyCount(in owned: [MonState]) -> Int {
-        RosterOrdering.duplicateEvolutionFamilyIDs(in: owned).count
+        RosterOrdering.duplicateEvolutionRouteMonIDs(in: owned).count
     }
 
     /// 켜면 중복 계보의 개체를 **전부** 남긴다. 한 계보당 하나로 접는 기능이 아니다 — 사용자는

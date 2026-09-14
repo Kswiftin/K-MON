@@ -137,10 +137,20 @@ final class RosterOrderingTests: XCTestCase {
         let charizard = MonState(baseID: 4, pathIDs: [4, 5, 6], stageIndex: 2,
                                  usedAtStage: 0, rarity: .common, totalForms: 3)
         let box = [charmander, charizard, mon(25)]
-        let duplicateIDs = RosterOrdering.duplicateEvolutionFamilyIDs(in: box)
-        XCTAssertEqual(duplicateIDs, Set([4]))
-        XCTAssertEqual(box.filter { duplicateIDs.contains($0.baseID) }.map(\.currentID),
+        let duplicateIDs = RosterOrdering.duplicateEvolutionRouteMonIDs(in: box)
+        XCTAssertEqual(box.filter { duplicateIDs.contains($0.id) }.map(\.currentID),
                        [4, 6], "진화 전후 모습이 달라도 같은 계보의 개체를 모두 보여 준다")
+    }
+
+    func testDuplicateFilterDoesNotGroupSiblingEvolutionBranches() {
+        let gardevoir = MonState(baseID: 280, pathIDs: [280, 281, 282],
+                                 plannedPathIDs: [280, 281, 282], stageIndex: 2,
+                                 usedAtStage: 0, rarity: .common, totalForms: 3)
+        let gallade = MonState(baseID: 280, pathIDs: [280, 281, 475],
+                               plannedPathIDs: [280, 281, 475], stageIndex: 2,
+                               usedAtStage: 0, rarity: .common, totalForms: 3)
+        XCTAssertTrue(RosterOrdering.duplicateEvolutionRouteMonIDs(in: [gardevoir, gallade]).isEmpty,
+                      "같은 뿌리에서 갈라진 최종형은 서로 중복이 아니다")
     }
 
     func testUnregisteredFilterUsesPermanentDexSpeciesNotTheLivingRoster() {

@@ -249,7 +249,8 @@ final class MultiplayerRoomCenter {
         return current.filter { name in
             guard RaidRoomName.isRaidRoomName(name), !seen.contains(name) else { return false }
             // **원문으로 본다.** `name`(표시용)은 `#` 앞에서 잘려 있어 내 방을 걸러낼 수 없다.
-            return RaidRoomName.parse(name)?.idTag != myIDTag
+            guard let room = RaidRoomName.parse(name), room.status == .recruiting else { return false }
+            return room.idTag != myIDTag
         }
     }
 
@@ -498,9 +499,14 @@ final class MultiplayerRoomCenter {
 
     /// 개시 상태를 세운다 — 호스트와 게스트가 **같은 자리**를 지나야 한 쪽만 초기화를 빠뜨리지 않는다.
     private func beginRaidCombat(fighters: [MultiplayerFighter], seed: UInt64) {
-        // 전투가 시작된 방을 Bonjour 목록에 계속 광고하면 새 참가자는 눌러 본 뒤에야 거절된다.
-        // 기존 연결은 유지하면서 신규 발견·접속만 닫는다.
-        if isHost { listener?.service = nil }
+        // 전투 중인 방도 이웃의 로비에는 남기되, 상태를 이름에 실어 참가 버튼 대신 "진행중"으로
+        // 보여 준다. Bonjour 제거 전파가 늦어 모집 방처럼 남던 문제도 이 상태 갱신으로 없앤다.
+        if isHost, let tier = raidTier {
+            listener?.service = NWListener.Service(
+                name: RaidRoomName.make(trainerName: trainerName, idTag: myRoomTag,
+                                        tier: tier, status: .inProgress),
+                type: Self.serviceType)
+        }
         raidSeed = seed
         combatFighters = fighters; combatRound = 1; combatEvents = []
         // **행동 버퍼도 비운다.** 형제 경로(`startBattle`)가 같은 자리에서 비우는 것과 같은 이유다 —

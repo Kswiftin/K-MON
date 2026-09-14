@@ -422,9 +422,12 @@ enum RaidBoss {
 /// 붙기 전에 무언가를 보여 줄 통로가 이름뿐이다. 티어를 모르면 1★ 인 줄 알고 5★ 에 혼자 들어가
 /// 20턴을 버리게 된다.
 struct RaidRoomName: Equatable {
+    enum Status: String, Equatable { case recruiting = "R", inProgress = "P" }
+
     let tier: RaidTier
     let trainerName: String
     let idTag: String
+    let status: Status
 
     static let prefix = "RAID"
 
@@ -432,8 +435,10 @@ struct RaidRoomName: Equatable {
     static func isRaidRoomName(_ name: String) -> Bool { LANRoomList.matches(name, activity: .raid) }
 
     /// 자를 수 있는 건 트레이너 이름뿐이다 — 접두·티어는 파싱에, 접미는 자기 판정에 쓰인다.
-    static func make(trainerName: String, idTag: String, tier: RaidTier) -> String {
-        LANServiceName.make(base: "\(prefix) · \(tier.rawValue) · \(trainerName)", suffix: "#\(idTag)")
+    static func make(trainerName: String, idTag: String, tier: RaidTier,
+                     status: Status = .recruiting) -> String {
+        LANServiceName.make(base: "\(prefix) · \(tier.rawValue) · \(status.rawValue) · \(trainerName)",
+                            suffix: "#\(idTag)")
     }
 
     /// 티어 자리가 없거나 모르는 티어면 **통째로 nil** 이다. 모르는 값을 기본 티어로 접으면
@@ -447,6 +452,13 @@ struct RaidRoomName: Equatable {
         guard let separator = head.range(of: " · "),
               let raw = Int(head[..<separator.lowerBound]),
               let tier = RaidTier(rawValue: raw) else { return nil }
-        return RaidRoomName(tier: tier, trainerName: String(head[separator.upperBound...]), idTag: idTag)
+        let tail = head[separator.upperBound...]
+        // 상태 필드가 없던 방도 모집 중으로 읽어 같은 버전 전환기에 계속 참가할 수 있게 한다.
+        if let statusSeparator = tail.range(of: " · "),
+           let status = Status(rawValue: String(tail[..<statusSeparator.lowerBound])) {
+            return RaidRoomName(tier: tier, trainerName: String(tail[statusSeparator.upperBound...]),
+                                idTag: idTag, status: status)
+        }
+        return RaidRoomName(tier: tier, trainerName: String(tail), idTag: idTag, status: .recruiting)
     }
 }
