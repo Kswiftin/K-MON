@@ -211,9 +211,21 @@ struct BattleView: View {
                         .font(.caption2).foregroundStyle(iWon ? .green : .orange)
                 }
             }
-            Button(l.battleClose) { center.dismissResult() }
+            if center.isFrontierBattle, iWon == true {
+                Text("\(center.frontierStreak)연승 · 이번 런 ⭐ \(center.frontierTotalReward.formatted())")
+                    .font(.caption.bold()).foregroundStyle(.indigo)
+                HStack {
+                    Button("그만하기") { center.dismissResult() }
+                    Button("다음 도전") { center.continueFrontier() }
+                        .buttonStyle(.borderedProminent).tint(.indigo)
+                }.controlSize(.small)
+            } else {
+                Button(center.isFrontierBattle ? "프런티어로 돌아가기" : l.battleClose) {
+                    center.dismissResult()
+                }
                 .buttonStyle(.borderedProminent)
                 .controlSize(.small)
+            }
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 8)

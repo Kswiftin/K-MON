@@ -80,6 +80,8 @@ final class PopoverNavigation {
     var showGymLeague = false
     /// 던전 오버레이(#79). 설정·체육관과 같은 층이다.
     var showDungeon = false
+    /// 배틀프런티어 오버레이. 혼자 하는 3대3 연승 콘텐츠다.
+    var showBattleFrontier = false
     /// 협동 레이드 오버레이(#80). 위 오버레이들과 같은 층이다.
     var showRaid = false
     /// 꾸미기(트레이너 의상) 오버레이. 위 오버레이들과 같은 층이다.
@@ -103,6 +105,7 @@ final class PopoverNavigation {
         showSettings = false
         showGymLeague = false
         showDungeon = false
+        showBattleFrontier = false
         showRaid = false
         showOutfit = false
         showSafariZone = false
@@ -258,6 +261,8 @@ struct PopoverView: View {
                 GymLeagueView(store: companion, onClose: { nav.showGymLeague = false })
             } else if nav.showDungeon {
                 RogueRunView(store: companion, onClose: { nav.showDungeon = false })
+            } else if nav.showBattleFrontier {
+                BattleFrontierView(store: companion, onClose: { nav.showBattleFrontier = false })
             } else if nav.showRaid {
                 RaidView(store: companion, onClose: { nav.showRaid = false })
             } else if nav.showOutfit {

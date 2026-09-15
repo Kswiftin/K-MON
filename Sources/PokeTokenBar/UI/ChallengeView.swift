@@ -37,6 +37,10 @@ struct ChallengeView: View {
                           subtitle: "체육관을 차례로 돌며 배지를 모으세요.") { nav.showGymLeague = true }
             challengeCard(title: l.dungeonTitle, systemImage: "map.fill", tint: .red,
                           subtitle: "무작위로 이어지는 웨이브를 오르는 로그라이크 런.") { nav.showDungeon = true }
+            challengeCard(title: "배틀프런티어", systemImage: "tower.fill", tint: .indigo,
+                          subtitle: "Lv.50 3대3 배틀에서 강해지는 CPU를 상대로 연승에 도전하세요.") {
+                nav.showBattleFrontier = true
+            }
             challengeCard(title: l.safariZoneTitle, systemImage: "leaf.fill", tint: .green,
                           subtitle: "벌판을 걸어 다니며 미끼·진흙·볼·도망으로 야생 포켓몬을 잡으세요.") {
                 nav.showSafariZone = true
