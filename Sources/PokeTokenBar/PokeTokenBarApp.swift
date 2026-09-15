@@ -258,7 +258,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, UNU
             guard battleCenter.wantsWindowReopened else { return }
             openPopover()
         }
-        if battleCenter.activeGym != nil {
+        if battleCenter.isFrontierBattle {
+            // 사용자가 도전 탭의 프런티어 화면 안에서 시작한 로컬전이다. 일반 LAN 대전처럼
+            // 친구 탭으로 보내면 상대 목록이 잠깐 나타나고 프런티어 오버레이까지 닫힌다.
+        } else if battleCenter.activeGym != nil {
             navigation.goToGymBattle()
         } else if battleCenter.multiplayer.hasLiveGymMatch {
             // 도전은 남이 걸어 오므로 화면을 데려가야 한다. 친구 탭이 판이 도는 동안

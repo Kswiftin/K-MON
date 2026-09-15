@@ -15,12 +15,21 @@ struct BattleView: View {
     @State private var addressCopied = false
     @State private var peerPage = 0
     @State private var pendingChallengePeer: BattlePeer?
+    /// 친구 카드에서 들어온 후보 편성을 취소하면 중복 상대 목록이 아니라 친구 카드 목록으로 돌아간다.
+    var onReturnToFriendMenu: (() -> Void)?
     /// 수동 IP 로 신청하려는 주소. 탐색으로 찾은 상대와 **같은 후보 선택 화면**을 지나야 한다 —
     /// 신청은 후보 6마리를 요구하는데 이 화면에는 고를 자리가 없었다(mDNS 가 막힌 환경의 폴백이
     /// 항상 "먼저 후보를 선택하세요" 로 끝났다).
     @State private var pendingManualAddress: String?
 
     private var l: L { store.l }
+
+    init(store: CompanionStore, initialChallengePeer: BattlePeer? = nil,
+         onReturnToFriendMenu: (() -> Void)? = nil) {
+        self.store = store
+        _pendingChallengePeer = State(initialValue: initialChallengePeer)
+        self.onReturnToFriendMenu = onReturnToFriendMenu
+    }
 
     /// 한 페이지에 그리는 상대 수. 팝오버 안에서는 스크롤로 미룰 수 없어(defect-log) 이 목록도
     /// 세로 예산을 지켜야 한다. 다만 예산은 **한 번에 몇 명을 그리나**만 정하고, 넘치는 상대는
@@ -269,7 +278,11 @@ struct BattleView: View {
 
     private func candidateSelection(named opponent: String, challenge: @escaping () -> Void) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            Button { pendingChallengePeer = nil; pendingManualAddress = nil } label: {
+            Button {
+                pendingChallengePeer = nil
+                pendingManualAddress = nil
+                onReturnToFriendMenu?()
+            } label: {
                 Label("다른 트레이너 선택",
                       systemImage: "chevron.left")
             }.buttonStyle(.borderless)

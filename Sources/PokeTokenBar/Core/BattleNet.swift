@@ -1309,7 +1309,6 @@ final class BattleCenter {
                                               rng: SplitMix64(seed: UInt64.random(in: .min ... .max)))
             lastError = nil
             phase = .battling
-            pendingAttention = true
         }
     }
 
