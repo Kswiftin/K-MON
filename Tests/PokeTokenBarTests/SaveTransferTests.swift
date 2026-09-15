@@ -490,7 +490,7 @@ final class SaveTransferTests: XCTestCase {
     /// 위 가드의 기대값. 목록을 본문 밖에 두는 이유는 실패 메시지에서 diff 가 읽히게 하기 위해서다.
     private static let frozenCanonicalPrefixes: Set<String> = [
         // 세그먼트 접두 — 하나라도 사라지면 이미 배포된 서명을 재현할 수 없다.
-        "v", "u", "sp", "pc", "eg", "br", "pr", "tp", "msd", "achfocus", "sn",
+        "v", "u", "sp", "pc", "eg", "br", "pr", "tp", "msd", "wrun", "fbs", "fbp", "achfocus", "sn",
         "gbbrock", "glbbug", "shc", "gd", "dcd", "rd", "wed", "fe", "fer", "ef", "ab", "wk", "wc", "tier", "cand", "inv",
         "adv", "ah", "bh", "act", "box", "dex", "dg", "cf", "sec",
         // 값에서 나온 토큰 — fixture 가 고정하므로 결정적이다. 열거형 rawValue 변경도 기존 서명을
@@ -506,6 +506,9 @@ final class SaveTransferTests: XCTestCase {
         s.pendingRanked = PendingRankedBattle(stake: 5, opponent: BattleRank(points: 1))
         s.trainer.points = 7
         s.missions.dayKey = "1"
+        s.waveRun.bestWave = 1
+        s.frontierBestStreak = 1
+        s.frontierBP = 1
         s.achievements.counts["focus"] = 1
         s.seasons.seasonKey = "1"
         s.gymBadges = ["brock"]
@@ -535,6 +538,28 @@ final class SaveTransferTests: XCTestCase {
         s.dex = [DexEntry(baseID: 1, finalID: 1, chainOrder: [1], rarity: .common,
                           caughtAt: Date(timeIntervalSince1970: 0))]
         return s
+    }
+
+    /// 2.39.0 테스트판에서 프런티어 값을 처음 기록한 세이브가 구 canonical 서명을 가진 채
+    /// 남을 수 있었다. 이 파일을 현행 서명으로 즉시 검사하면 정상 진행 전체가 초기화된다.
+    func testVersion13FrontierSaveIsMigratedInsteadOfTreatedAsTampered() {
+        let seed = "frontier-save-regression-device"
+        var legacy = SaveTransfer.signed(CompanionState(), deviceSeed: seed)
+        legacy.integrityVersion = 13
+        legacy.frontierBestStreak = 5
+        legacy.frontierBP = 36
+
+        XCTAssertFalse(SaveTransfer.isTampered(legacy, deviceSeed: seed),
+                       "2.39.0 프런티어 세이브는 한 번 검사 면제 후 재서명해야 한다")
+
+        let migrated = SaveTransfer.signed(legacy, deviceSeed: seed)
+        XCTAssertEqual(migrated.integrityVersion, 14)
+        XCTAssertFalse(SaveTransfer.isTampered(migrated, deviceSeed: seed))
+
+        var edited = migrated
+        edited.frontierBP += 1
+        XCTAssertTrue(SaveTransfer.isTampered(edited, deviceSeed: seed),
+                      "마이그레이션 뒤에는 BP 손편집을 계속 탐지해야 한다")
     }
 
     private func populatedMon(_ id: Int) -> MonState {
