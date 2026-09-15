@@ -45,6 +45,8 @@ struct FriendView: View {
     @Environment(BattleCenter.self) private var battleCenter
     @Environment(AppSettings.self) private var settings
     @State private var destination: Destination?
+    /// 오른쪽 친구 카드에서 고른 상대. 배틀 화면에서 같은 상대를 다시 고르게 하지 않는다.
+    @State private var selectedBattlePeer: BattlePeer?
     @State private var revealsIncomingMessage = false
 
     var body: some View {
@@ -64,7 +66,10 @@ struct FriendView: View {
                                   systemImage: "chevron.left")
                         }.buttonStyle(.borderless)
                     }
-                    BattleView(store: store)
+                    BattleView(store: store, initialChallengePeer: selectedBattlePeer) {
+                        selectedBattlePeer = nil
+                        destination = nil
+                    }
                 }
             // **관장인 것만으로는 화면을 붙잡지 않는다.** 관장은 도전을 기다리는 배경 상태지
             // 배틀 중이 아니다 — 그 내내 친구 탭을 잠그면 교환도 1:1 배틀도 못 한다(닫기를 눌러도
@@ -353,8 +358,8 @@ struct FriendView: View {
             }
             HStack {
                 Button {
+                    selectedBattlePeer = peer
                     destination = .battle
-                    battleCenter.challenge(peer)
                 } label: {
                     Label("배틀 신청", systemImage: "bolt.fill")
                 }
@@ -367,6 +372,7 @@ struct FriendView: View {
                 .disabled(!store.hasBattleReadyMon || battleCenter.phase != .ready)
 
                 Button {
+                    selectedBattlePeer = nil
                     destination = .battle
                     battleCenter.challengeMetronome(peer)
                 } label: {

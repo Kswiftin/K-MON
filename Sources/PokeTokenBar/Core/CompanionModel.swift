@@ -2705,6 +2705,10 @@ struct CompanionState: Codable, Sendable {
     /// 웨이브 런 실적 — 최고 도달 웨이브·클리어 횟수·끝난 판 수. 진행 중인 런은 여기 없다
     /// (메모리 전용이다) — 판 안의 값을 저장하면 이상 상태 복구 경로가 그만큼 늘어난다.
     var waveRun = RunProgress()
+    /// 배틀프런티어 최고 연승. 진행 중인 런은 메모리 전용이고 최고 기록만 계정에 남는다.
+    var frontierBestStreak = 0
+    /// 배틀프런티어 전용 교환 포인트. 별의조각과 섞이지 않고 알 경품에만 쓴다.
+    var frontierBP = 0
     /// 웨이브 런 클리어 알 보상을 지급한 날짜 키(`dayKey`) — 하루 한 번 가드. `raidRewardDate` 와
     /// 같은 규칙이다. 진행 중인 런과 달리 계정 단위로 계속 남아야 하므로 여기(`waveRun`이 아니라
     /// `CompanionState`)에 둔다.
@@ -2801,6 +2805,8 @@ struct CompanionState: Codable, Sendable {
         trainer            = c.lenient(TrainerLevel.self, forKey: .trainer, default: TrainerLevel())
         missions           = c.lenient(MissionBoard.self, forKey: .missions, default: MissionBoard())
         waveRun            = c.lenient(RunProgress.self, forKey: .waveRun, default: RunProgress())
+        frontierBestStreak = c.lenient(Int.self, forKey: .frontierBestStreak, default: 0)
+        frontierBP         = c.lenient(Int.self, forKey: .frontierBP, default: 0)
         waveRunEggRewardDate = c.lenient(String.self, forKey: .waveRunEggRewardDate, default: "")
         seasons            = c.lenient(SeasonBoard.self, forKey: .seasons, default: SeasonBoard())
         achievements       = c.lenient(AchievementLadder.self, forKey: .achievements,

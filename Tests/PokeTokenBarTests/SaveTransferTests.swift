@@ -664,7 +664,9 @@ final class SaveTransferTests: XCTestCase {
                                      "adventureWeekKey", "weeklyAdventureCount", "focusEggs", "focusEggReadyDates",
                                      // 박사 전송 나머지는 다음 알 지급까지 이어지는 계정 진행도다.
                                      "professorTransferProgress", "eggFragments",
-                                     "starPieces", "forcedResetVersion", "integrityVersion", "lastAdventureBonusDate"]
+                                     // BP도 별의조각처럼 소비 가능한 계정 재화라 가져온 잔액을 그대로 쓴다.
+                                     "starPieces", "frontierBP",
+                                     "forcedResetVersion", "integrityVersion", "lastAdventureBonusDate"]
         // 로컬 장부: 이 기기의 시계 기준값·서명 → 새 기기 기준 재설정(저장 시 재서명).
         // 체육관 관장 자격도 같은 부류다 — 이 기기가 호스팅 중인 살아있는 역할이라, 따라가면
         // 옮겨간 기기가 열지도 않은 체육관의 관장을 자처하고 방어팀 넷이 거기서 잠긴다.
@@ -678,7 +680,8 @@ final class SaveTransferTests: XCTestCase {
         // 남기지 않으면 세이브를 주고받는 것만으로 하루 한 번이 무한이 된다.
         // 웨이브 런 클리어 알의 하루 원장도 같은 부류다 — 레이드 지급 원장과 같은 이유로
         // 더 최근 값을 남겨야 세이브를 주고받는 것만으로 하루 한 번이 무한이 되지 않는다.
-        let accountLedger: Set<String> = ["lastCandyDate", "waveRun", "waveRunEggRewardDate",
+        let accountLedger: Set<String> = ["lastCandyDate", "waveRun", "frontierBestStreak",
+                                          "waveRunEggRewardDate",
                                           "gymDefenseRewardDate", "gymDefenseRewardToday",
                                           "raidRewardDate",
                                           // 레이드 포획 원장도 같은 부류다. 지급 원장과 **따로**

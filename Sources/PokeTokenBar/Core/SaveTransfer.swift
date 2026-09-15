@@ -264,6 +264,8 @@ enum SaveTransfer {
         // 던전 기억에서 오늘 맵에 없는 방 번호를 버리고, 정산된 세이브의 클리어 플래그를 맞춘다.
         // 런 실적도 경계에서 자른다 — 최고 웨이브 상한은 최종 웨이브다(넘으면 화면에 "13/12" 로 나온다).
         s.waveRun.normalize()
+        s.frontierBestStreak = min(max(0, s.frontierBestStreak), 1_000_000)
+        s.frontierBP = min(max(0, s.frontierBP), 1_000_000_000)
         // 업적도 경계에서 한 번만 자른다 — 사라진 트랙의 잔재를 버리고 마지막 문턱으로 클램프한다.
         // 클램프된 값이 곧 최고 단계라 손편집으로 넘겨도 보상이 다시 나오지 않는다.
         s.achievements.normalize()
@@ -438,6 +440,8 @@ enum SaveTransfer {
         // 기본값 세이브의 구서명은 그대로 유효하고 `integrityVersion` 을 올릴 필요가 없다.
         // 접두 `wrun` — 짧은 접두는 다른 세그먼트와 겹칠 수 있다(`outf` 와 같은 이유).
         if s.waveRun != RunProgress() { p.append("wrun\(s.waveRun.canonical)") }
+        if s.frontierBestStreak > 0 { p.append("fbs\(s.frontierBestStreak)") }
+        if s.frontierBP > 0 { p.append("fbp\(s.frontierBP)") }
         // 업적 카운터가 곧 단계 판정이다 — 서명 밖에 두면 값을 올려 적는 것만으로 보상을 받는다.
         // 조건부인 이유는 위 두 필드와 같다. 새 필드라 값이 든 기존 세이브가 없으니
         // `integrityVersion` 은 올리지 않는다(올리면 그 배포의 모든 세이브가 검사를 면제받는다).
@@ -667,6 +671,9 @@ enum SaveTransfer {
         // 런 실적은 소모되지 않는 누적이라 각 축의 큰 값을 쓴다 — 한쪽을 고르면 다른 기기에서
         // 세운 최고 기록이 사라진다(던전 진행도와 달리 날짜로 낡지 않는다).
         state.waveRun = RunProgress.merged(imported.waveRun, current.waveRun)
+        state.frontierBestStreak = max(imported.frontierBestStreak, current.frontierBestStreak)
+        // BP는 소비 가능한 재화라 큰 값을 합치면 이미 쓴 포인트가 되살아난다. 가져온 세이브를 기준으로 한다.
+        state.frontierBP = imported.frontierBP
         // 웨이브 런 클리어 알도 하루 원장이다 — 레이드 지급 원장과 같은 이유로 더 최근 날짜를 남긴다.
         state.waveRunEggRewardDate = max(imported.waveRunEggRewardDate, current.waveRunEggRewardDate)
         // 사파리존 방문·포획 원장도 체육관 방어 원장과 같은 부류(날짜+카운트)다. 같은 날이면

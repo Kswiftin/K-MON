@@ -762,6 +762,13 @@ final class BattleCenter {
     private(set) var activeGym: Gym?
     /// 방금 승리로 받은 보상 — 결과 화면이 보여준다. 재도전이면 nil 이다.
     private(set) var lastGymReward: GymReward?
+    /// 배틀프런티어 런은 앱 메모리에서 이어지고 최고 기록만 세이브에 남는다.
+    private(set) var isFrontierBattle = false
+    private(set) var frontierStreak = 0
+    private(set) var frontierTotalReward = 0
+    private(set) var frontierTotalBP = 0
+    /// 준비 도중 화면을 닫은 뒤 완료된 비동기 로딩이 배틀을 되살리지 못하게 한다.
+    private var frontierRequestID: UInt64 = 0
     var rankedTeamSize = 1
     nonisolated static let supportedTeamSizes: Set<Int> = [1, 3, 6]
 
@@ -1258,6 +1265,53 @@ final class BattleCenter {
         }
     }
 
+    /// 배틀프런티어의 다음 3대3. 내 팀과 CPU 모두 Lv.50으로 맞춘다.
+    func startFrontierBattle(newRun: Bool = false) {
+        guard case .ready = phase else { return }
+        guard pickedTeam.count == BattleFrontier.teamSize else {
+            lastError = "출전할 포켓몬 3마리를 선택해 주세요."
+            return
+        }
+        if newRun { frontierStreak = 0; frontierTotalReward = 0; frontierTotalBP = 0 }
+        isFrontierBattle = true
+        frontierRequestID &+= 1
+        let requestID = frontierRequestID
+        phase = .preparing
+        let nextStreak = frontierStreak + 1
+        Task {
+            guard let myTeam = await battleTeamSnapshots(size: BattleFrontier.teamSize,
+                                                         levelOverride: BattleFrontier.battleLevel) else {
+                guard requestID == frontierRequestID, isFrontierBattle else { return }
+                phase = .ready; lastError = l.battleStatsFailed; return
+            }
+            let pool = BattleFrontier.opponentPool(for: nextStreak).shuffled()
+            var cpuTeam: [BattleSnapshot] = []
+            for speciesID in pool.prefix(BattleFrontier.teamSize) {
+                guard let profile = await battleProfileLoader(speciesID) else { continue }
+                let moves = await moveSetLoader(speciesID, BattleFrontier.battleLevel, profile.types)
+                cpuTeam.append(BattleSnapshot(
+                    speciesID: speciesID, name: await companion.resolveSpeciesName(speciesID),
+                    trainer: BattleFrontier.trainerName(for: nextStreak),
+                    level: BattleFrontier.battleLevel, nature: nil, isShiny: false,
+                    types: profile.types, base: profile.stats, moves: moves,
+                    ability: profile.abilitySlug, storedTeraType: nil, heldItem: nil,
+                    weightHectograms: profile.weightHectograms))
+            }
+            guard requestID == frontierRequestID, isFrontierBattle else { return }
+            guard cpuTeam.count == BattleFrontier.teamSize else {
+                phase = .ready; lastError = l.battleStatsFailed; return
+            }
+            isPracticeBattle = true
+            teamPractice = TeamPracticeBattle(mine: myTeam.map(BattleSide.init),
+                                              opponents: cpuTeam.map(BattleSide.init),
+                                              opponentMoveStrategy: .damageFocused,
+                                              allowsTerastallization: false,
+                                              rng: SplitMix64(seed: UInt64.random(in: .min ... .max)))
+            lastError = nil
+            phase = .battling
+        }
+    }
+
     func chooseTeamPracticeMove(_ index: Int) {
         if isMetronomeBattle {
             Task { await chooseMetronomeTurn() }
@@ -1304,6 +1358,12 @@ final class BattleCenter {
     /// 기술 사용과 교체 양쪽이 승부를 낼 수 있어 두 경로가 이 한 곳을 지난다.
     private func settlePracticeResult(_ practice: TeamPracticeBattle) {
         guard let result = practice.result else { return }
+        if isFrontierBattle, result == .win {
+            frontierStreak += 1
+            let reward = companion.recordFrontierVictory(streak: frontierStreak)
+            frontierTotalReward += reward.starPieces
+            frontierTotalBP += reward.bp
+        }
         // 보상은 **`.win` 에서만** 나간다 — 무승부는 이긴 판이 아니다.
         // 재도전이면 `recordGymVictory` 가 0 을 돌려준다 — 첫 승리 보상을 이미 받았으면 아무것도 지급하지 않는다.
         lastGymReward = (result == .win && activeGym != nil) ? companion.recordGymVictory(activeGym!) : nil
@@ -1745,6 +1805,10 @@ final class BattleCenter {
         isResolvingMetronome = false
         activeGym = nil
         lastGymReward = nil
+        isFrontierBattle = false
+        frontierStreak = 0
+        frontierTotalReward = 0
+        frontierTotalBP = 0
         // 정산 표시값도 여기서 비운다 — 결과 화면(`finishedView`)이 이 둘을 그대로 그리는데, 다음 배틀이
         // 랭크전이 아니면(체육관·모의전) 아무도 다시 채우지 않아 체육관 결과에 직전 랭크전의
         // "−⭐ 5,000 / −25 LP"가 그대로 남는다.
@@ -1752,6 +1816,23 @@ final class BattleCenter {
         lastRankDelta = 0
         // `.ready` 전환이 모든 세션 상태를 정리한다. 연결 정리(`dropConnection`)는 소켓 입력만 닫아
         // 결과 화면과 결정타 재생에서 대화가 유지되게 한다.
+    }
+
+    /// 승리 결과에서 다음 프런티어 상대를 부른다. 런 기록은 유지하고 전투 상태만 비운다.
+    func continueFrontier() {
+        guard isFrontierBattle, case .finished(let won, _) = phase, won == true else { return }
+        cancelTurnTimeout()
+        teamPractice = nil
+        phase = .ready
+        isPracticeBattle = false
+        startFrontierBattle()
+    }
+
+    func endFrontierRun() {
+        frontierRequestID &+= 1
+        if case .battling = phase, isFrontierBattle { forfeit() }
+        if case .preparing = phase { phase = .ready }
+        dismissResult()
     }
 
     private var pendingMyLineup: [BattleSnapshot] = []
