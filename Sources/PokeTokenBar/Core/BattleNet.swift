@@ -766,6 +766,7 @@ final class BattleCenter {
     private(set) var isFrontierBattle = false
     private(set) var frontierStreak = 0
     private(set) var frontierTotalReward = 0
+    private(set) var frontierTotalBP = 0
     /// 준비 도중 화면을 닫은 뒤 완료된 비동기 로딩이 배틀을 되살리지 못하게 한다.
     private var frontierRequestID: UInt64 = 0
     var rankedTeamSize = 1
@@ -1271,7 +1272,7 @@ final class BattleCenter {
             lastError = "출전할 포켓몬 3마리를 선택해 주세요."
             return
         }
-        if newRun { frontierStreak = 0; frontierTotalReward = 0 }
+        if newRun { frontierStreak = 0; frontierTotalReward = 0; frontierTotalBP = 0 }
         isFrontierBattle = true
         frontierRequestID &+= 1
         let requestID = frontierRequestID
@@ -1359,7 +1360,9 @@ final class BattleCenter {
         guard let result = practice.result else { return }
         if isFrontierBattle, result == .win {
             frontierStreak += 1
-            frontierTotalReward += companion.recordFrontierVictory(streak: frontierStreak)
+            let reward = companion.recordFrontierVictory(streak: frontierStreak)
+            frontierTotalReward += reward.starPieces
+            frontierTotalBP += reward.bp
         }
         // 보상은 **`.win` 에서만** 나간다 — 무승부는 이긴 판이 아니다.
         // 재도전이면 `recordGymVictory` 가 0 을 돌려준다 — 첫 승리 보상을 이미 받았으면 아무것도 지급하지 않는다.
@@ -1805,6 +1808,7 @@ final class BattleCenter {
         isFrontierBattle = false
         frontierStreak = 0
         frontierTotalReward = 0
+        frontierTotalBP = 0
         // 정산 표시값도 여기서 비운다 — 결과 화면(`finishedView`)이 이 둘을 그대로 그리는데, 다음 배틀이
         // 랭크전이 아니면(체육관·모의전) 아무도 다시 채우지 않아 체육관 결과에 직전 랭크전의
         // "−⭐ 5,000 / −25 LP"가 그대로 남는다.

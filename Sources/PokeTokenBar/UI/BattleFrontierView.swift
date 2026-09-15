@@ -30,7 +30,7 @@ struct BattleFrontierView: View {
                 Text("승리할수록 강한 트레이너가 등장합니다. 7연승마다 프런티어 브레인이 기다립니다.")
                     .font(.caption2).foregroundStyle(.secondary)
                 if center.frontierStreak > 0 {
-                    Text("이번 도전 \(center.frontierStreak)연승 · 획득 ⭐ \(center.frontierTotalReward.formatted())")
+                    Text("이번 도전 \(center.frontierStreak)연승 · ⭐ \(center.frontierTotalReward.formatted()) · \(center.frontierTotalBP) BP")
                         .font(.caption.bold()).foregroundStyle(.indigo)
                 }
             }
@@ -44,6 +44,7 @@ struct BattleFrontierView: View {
                        selection: Binding(get: { center.pickedTeam }, set: { center.pickedTeam = $0 }),
                        limit: BattleFrontier.teamSize,
                        title: "출전 순서")
+            prizeExchange
             Spacer(minLength: 0)
             HStack {
                 Text("\(center.pickedTeam.count) / \(BattleFrontier.teamSize)")
@@ -58,6 +59,32 @@ struct BattleFrontierView: View {
         }
         .padding(PopoverMetrics.padding)
         .frame(height: PopoverMetrics.currentHeight(for: .battle))
+    }
+
+    private var prizeExchange: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Label("BP 경품 교환소", systemImage: "gift.fill").font(.caption.bold())
+                Spacer()
+                Text("보유 \(store.state.frontierBP) BP")
+                    .font(.caption.bold()).foregroundStyle(.indigo)
+            }
+            ForEach(BattleFrontierPrize.allCases) { prize in
+                HStack {
+                    Image(systemName: "circle.hexagongrid.fill").foregroundStyle(.orange)
+                    Text(prize.name).font(.caption.weight(.semibold))
+                    Spacer()
+                    Button("\(prize.cost) BP") { _ = store.redeemFrontierPrize(prize) }
+                        .buttonStyle(.bordered).controlSize(.mini)
+                        .disabled(store.state.frontierBP < prize.cost ||
+                                  store.state.focusEggs >= CompanionStore.storedEggLimit)
+                }
+            }
+            if store.state.focusEggs >= CompanionStore.storedEggLimit {
+                Text("알 보관함이 가득 찼습니다.").font(.caption2).foregroundStyle(.orange)
+            }
+        }
+        .padding(9).pokedoroCard()
     }
 
     private func close() {

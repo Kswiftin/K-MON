@@ -212,7 +212,7 @@ struct BattleView: View {
                 }
             }
             if center.isFrontierBattle, iWon == true {
-                Text("\(center.frontierStreak)연승 · 이번 런 ⭐ \(center.frontierTotalReward.formatted())")
+                Text("\(center.frontierStreak)연승 · ⭐ \(center.frontierTotalReward.formatted()) · \(center.frontierTotalBP) BP")
                     .font(.caption.bold()).foregroundStyle(.indigo)
                 HStack {
                     Button("그만하기") { center.dismissResult() }

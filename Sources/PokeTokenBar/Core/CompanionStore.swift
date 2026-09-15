@@ -2991,13 +2991,27 @@ final class CompanionStore {
 
     /// 배틀프런티어 한 판 승리 정산. 보상과 최고 연승을 한 번에 저장해 앱 종료 사이에 갈라지지 않는다.
     @discardableResult
-    func recordFrontierVictory(streak: Int) -> Int {
-        guard streak > 0 else { return 0 }
+    func recordFrontierVictory(streak: Int) -> (starPieces: Int, bp: Int) {
+        guard streak > 0 else { return (0, 0) }
         let reward = BattleFrontier.reward(for: streak)
+        let bp = BattleFrontier.bpReward(for: streak)
         state.frontierBestStreak = max(state.frontierBestStreak, streak)
         state.starPieces += reward
+        state.frontierBP += bp
         save()
-        return reward
+        return (reward, bp)
+    }
+
+    /// BP 경품 교환은 잔액과 알 저장고를 먼저 모두 검사해 포인트만 빠지는 부분 성공을 막는다.
+    @discardableResult
+    func redeemFrontierPrize(_ prize: BattleFrontierPrize) -> Bool {
+        guard state.frontierBP >= prize.cost,
+              state.focusEggs < Self.storedEggLimit else { return false }
+        state.frontierBP -= prize.cost
+        state.eggTier = Self.strongerGuarantee(state.eggTier, prize.guarantee)
+        guard addStoredEggs(1) == 1 else { return false }
+        save()
+        return true
     }
 
     /// 이로치 확정을 **한 번 쓴다.** 남아 있으면 true 를 돌려주고 하나 깎는다.

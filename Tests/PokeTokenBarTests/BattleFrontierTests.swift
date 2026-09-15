@@ -21,5 +21,15 @@ final class BattleFrontierTests: XCTestCase {
         XCTAssertGreaterThan(BattleFrontier.reward(for: 2), BattleFrontier.reward(for: 1))
         XCTAssertEqual(BattleFrontier.reward(for: 7) - BattleFrontier.reward(for: 6), 2_100)
         XCTAssertEqual(BattleFrontier.trainerName(for: 7), "프런티어 브레인")
+        XCTAssertEqual(BattleFrontier.bpReward(for: 1), 2)
+        XCTAssertEqual(BattleFrontier.bpReward(for: 7), 10)
+    }
+
+    func testPrizeCostsRiseWithGuaranteedRarity() {
+        XCTAssertEqual(BattleFrontierPrize.egg.guarantee, nil)
+        XCTAssertEqual(BattleFrontierPrize.uncommonEgg.guarantee, .uncommon)
+        XCTAssertEqual(BattleFrontierPrize.rareEgg.guarantee, .rare)
+        XCTAssertLessThan(BattleFrontierPrize.egg.cost, BattleFrontierPrize.uncommonEgg.cost)
+        XCTAssertLessThan(BattleFrontierPrize.uncommonEgg.cost, BattleFrontierPrize.rareEgg.cost)
     }
 }

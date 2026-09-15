@@ -27,7 +27,41 @@ enum BattleFrontier {
         return streak.isMultiple(of: 7) ? base + 2_000 : base
     }
 
+    /// 한 판마다 받는 전용 포인트. 7연승 브레인은 일반 승리보다 크게 지급한다.
+    static func bpReward(for streak: Int) -> Int {
+        guard streak > 0 else { return 0 }
+        if streak.isMultiple(of: 7) { return 10 }
+        return streak >= 8 ? 3 : 2
+    }
+
     static func trainerName(for nextStreak: Int) -> String {
         nextStreak.isMultiple(of: 7) ? "프런티어 브레인" : "프런티어 트레이너"
+    }
+}
+
+enum BattleFrontierPrize: String, CaseIterable, Identifiable, Sendable {
+    case egg, uncommonEgg, rareEgg
+
+    var id: String { rawValue }
+    var name: String {
+        switch self {
+        case .egg: "알"
+        case .uncommonEgg: "고급 알"
+        case .rareEgg: "희귀 알"
+        }
+    }
+    var cost: Int {
+        switch self {
+        case .egg: 10
+        case .uncommonEgg: 30
+        case .rareEgg: 60
+        }
+    }
+    var guarantee: Rarity? {
+        switch self {
+        case .egg: nil
+        case .uncommonEgg: .uncommon
+        case .rareEgg: .rare
+        }
     }
 }
