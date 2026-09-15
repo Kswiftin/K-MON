@@ -166,6 +166,11 @@ struct PokopiaTownView: View {
             ForEach(habitats) { habitat in
                 habitatRow(habitat)
             }
+            // 꿈섬 전설 다섯 종의 게이트. 판정은 `TownDevelopment.callsLegends`·`PokopiaTown.awaitingLegends` 가 한다 — 여기서
+            // 종수를 다시 세면 게이트가 둘이 된다. "꿈섬" 이라는 말은 쓰지 않는다: 앱에 그 장소가 없다(설계 문서 특기 절).
+            Text(legendLine)
+                .font(.caption2)
+                .foregroundStyle(development.callsLegends ? PokedoroTheme.mint : .secondary)
             // 복합 서식지. 판정은 `PokopiaTown.compositeHabitats` 가 한다 — 여기서 맞닿음을 다시 세면 표가 둘이 된다.
             Text("복합 서식지")
                 .font(.caption.weight(.semibold)).foregroundStyle(.secondary)
@@ -199,6 +204,19 @@ struct PokopiaTownView: View {
         }
         let types = welcoming.flatMap(\.types).map(\.name).joined(separator: "·")
         return "집중 세션을 마치면 \(types) 타입 중 한 마리가 찾아올 수 있어요."
+    }
+
+    /// 전설 손님 한 줄. 좁은 조건이 먼저 — **여덟 종 미만(목표) → 다 왔다 → 남았다.** 정원이 찬 것은 위 `nextArrivalLine` 이
+    /// 먼저 말하므로 여기서는 순서("먼저")만 약속한다 — 자리가 열리면 그 순서로 온다. 이름을 적지 않는다: 주민 이름은 도착할 때
+    /// PokéAPI 라인에서 오고 오프라인 이름 인덱스가 없다.
+    private var legendLine: String {
+        let total = PokopiaTown.dreamIslandSpecies.count
+        guard development.callsLegends else {
+            return "지형 \(TownTerrain.allCases.count)종을 모두 만들면 전설의 포켓몬 \(total)종이 먼저 찾아와요"
+        }
+        let awaiting = PokopiaTown.awaitingLegends(town.residents).count
+        if awaiting == 0 { return "전설의 포켓몬 \(total)종이 모두 이 마을에 살아요" }
+        return "지형을 모두 만들었어요 — 전설의 포켓몬 \(awaiting)종이 먼저 찾아와요"
     }
 
     private func habitatRow(_ habitat: PokopiaTown.HabitatStatus) -> some View {

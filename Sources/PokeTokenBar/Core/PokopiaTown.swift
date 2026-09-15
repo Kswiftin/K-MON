@@ -363,6 +363,15 @@ enum PokopiaTown {
         let level: Int
         /// 화면에 쓰는 **레벨 구간** 이름. 숫자만 보여 주면 10이 무엇의 끝인지 읽히지 않는다.
         let name: String
+
+        /// 꿈섬 전설 다섯 종(`PokopiaTown.dreamIslandSpecies`)이 후보에 드는 조건 — **지형 여덟 종 전부**가 문턱을 넘었다.
+        /// 원작은 흔들풍손 특기로 별도 장소(꿈섬)에 가지만 앱엔 장소가 없어 개발도 최고 단계로 접었다.
+        ///
+        /// 레벨(`level`)이 아니라 종수(`habitats`)를 본다. 여덟 종이면 18 타입이 전부 부르는 타입이라 다섯 종이 단일 판정
+        /// (`immigrant` 의 "타입 하나라도 부르는가")을 **자동으로** 통과한다 — 면제 분기가 없다. 레벨 8 은 6종 + 정착으로도
+        /// 닿아, 그 마을에서 뮤츠(꽃밭 0칸)는 단일 판정에 막히거나 면제를 받아야 한다. 판정은 이 한 곳이다 — 화면(`legendLine`)과
+        /// `immigrant` 가 같은 값을 읽는다.
+        var callsLegends: Bool { habitats == TownTerrain.allCases.count }
     }
 
     /// 이 마을의 개발도. 종수는 `habitats(_:)` 에서 온다 — 현황표와 **같은 판정**을 쓰므로
@@ -396,6 +405,31 @@ enum PokopiaTown {
         return TownDevelopment(habitats: count, capacity: capacity, settled: settled, level: level, name: name)
     }
 
+    // MARK: - 꿈섬 전설 (지형 여덟 종이 다 되면 다섯 종이 먼저 온다)
+
+    /// 꿈섬 손님 다섯 종 — 뮤츠(150)·라이코(243)·앤테이(244)·스이쿤(245)·피오네(489). 원작 위키(2026-09-08 fetch)의 목록이다.
+    /// **표는 이 파일 하나다**(`terrain(for:)`·`compositeRecipes` 와 같은 규칙). 이름은 적지 않는다 — 도착할 때 PokéAPI
+    /// 라인에서 받아 `TownResident.name` 에 저장한다(주민 이름의 유일한 출처).
+    ///
+    /// **다섯 종은 원래부터 이사 풀에 있다.** 풀은 `BaseSpecies.hatchable(index)` 이고 base 인덱스는 `evolves_from IS NULL`
+    /// 전부라 전설을 거르지 않는다(`is_legendary` 가 인덱스에 없다 — `StarterRules.legendaryExclusions` 가 id 로 거르는 이유와
+    /// 같다). 그래서 이 표의 일은 **더하기가 아니라 막기와 순서**다: 여덟 종 미만이면 후보에서 빼고(라이코는 전기라 1일차 길 줄
+    /// 16칸에도 온다), 여덟 종이면 복합보다 먼저 뽑는다. 그 밖의 전설(루기아·칠색조·뮤 …)은 이 표에 없고 오늘과 같이 단일 풀에
+    /// 남는다 — 전설 전부를 가르려면 인덱스에 플래그를 실어야 하고, 그것은 디스크 캐시 형태를 바꾸는 별도 결정이다.
+    ///
+    /// `RaidBoss.legendarySpeciesPool`(10종)을 재사용하지 않는다 — 레이드 보스 큐레이션이고 다섯 종과 셋만 겹친다. 이름을
+    /// `legendary…` 로 짓지 않은 이유도 같다: "전설 전부" 로 읽혀 누가 루기아를 더한다. 다섯 종 전부 `hasAnimatedSprite` 를
+    /// 통과한다(`testDreamIslandGuestsSurviveNormalization`) — 통과 못 하는 종은 도착해도 다음 실행의 정규화에서 사라진다.
+    static let dreamIslandSpecies: [Int] = [150, 243, 244, 245, 489]
+
+    /// 아직 안 온(살고 있지 않은) 꿈섬 손님. 화면의 "N종이 먼저 찾아와요" 가 읽는다. `immigrant` 는 후보(이미 사는 종을 뺀 것)에서
+    /// 같은 표를 거르므로 두 값은 같다 — 화면이 자기 계산을 하면 표가 둘이 된다. 내보낸 종은 다시 여기 든다(같은 종은 살고 있을
+    /// 때만 안 온다).
+    static func awaitingLegends(_ residents: [TownResident]) -> [Int] {
+        let living = Set(residents.map(\.speciesID))
+        return dreamIslandSpecies.filter { !living.contains($0) }
+    }
+
     /// 이번 세션에 찾아올 종. **순수 함수다** — 판정과 발송(알림)을 가른다.
     ///
     /// 후보를 **정렬한다**. 집합·딕셔너리 순회 순서는 실행마다 달라서, 정렬하지 않으면 같은
@@ -409,25 +443,36 @@ enum PokopiaTown {
     /// 남아 있으면 그중에서 뽑고, 없으면 후보 전체에서 뽑는다. 복합 후보는 늘 단일 후보의 **부분집합**이다 —
     /// 두 지형이 다 문턱을 넘었으니 그 타입은 이미 부르는 타입이다. 그래서 "후보를 더한다" 가 아니라 "먼저 뽑는다" 이고,
     /// 정원(`capacity`)·굴림 소비는 건드리지 않는다.
+    ///
+    /// **꿈섬 전설은 막기와 순서다.** 다섯 종(`dreamIslandSpecies`)은 원래 풀에 있다 — 지형 여덟 종 미만이면 후보에서 **빼고**,
+    /// 여덟 종이면(`callsLegends`) 안 온 종이 남아 있는 한 그중에서 **먼저** 뽑는다. 전설 > 복합 > 단일. 다섯이 다 왔으면 복합·
+    /// 단일로 떨어진다. 여덟 종이면 18 타입이 전부 부르는 타입이라 단일 판정을 자동 통과한다 — 면제 분기가 없다.
     static func immigrant(terrain: [TownTerrain], pool: [Int],
                           typeIndex: [Int: [PokemonType]],
                           residents: [TownResident], roll: UInt64) -> Int? {
         // **정원은 개발도가 정한다** — `populationLimit` 은 절대 천장이고, 지형을 다양하게
         // 만들지 않으면 그 천장까지 열리지 않는다. 풀 172칸짜리 마을이 16마리를 다 받으면
         // "다양하게 만들 이유" 가 없어진다.
-        guard residents.count < development(terrain, residents: residents).capacity else { return nil }
+        let development = Self.development(terrain, residents: residents)
+        guard residents.count < development.capacity else { return nil }
         let welcoming = welcomingTypes(terrain)
         guard !welcoming.isEmpty else { return nil }
         let living = Set(residents.map(\.speciesID))
+        // 꿈섬 손님은 지형 여덟 종이 다 될 때까지 후보에서 **뺀다** — 단일 판정만으로는 라이코(전기·길)가 1일차에 온다.
+        let legends = Set(dreamIslandSpecies)
         // 단일 서식 — 안 사는 종 · 타입표에 있는 종 · 타입 하나라도 부르는 지형이 있는 종. 판정은 전과 같고, 타입을
         // **함께 들고 가는 것**만 바뀌었다: 아래 복합 판정이 같은 값을 읽는다. 여기서 버리고 다시 조회하면 `?? []` 폴백이
         // 생기고 그 분기는 절대 돌지 않는다(`welcomingTypes` 주석의 `^0` 부류).
         let candidates = pool.compactMap { id -> (id: Int, types: [PokemonType])? in
             guard !living.contains(id), let types = typeIndex[id],
-                  types.contains(where: { welcoming.contains($0) }) else { return nil }
+                  types.contains(where: { welcoming.contains($0) }),
+                  development.callsLegends || !legends.contains(id) else { return nil }
             return (id, types)
         }.sorted { $0.id < $1.id }
         guard !candidates.isEmpty else { return nil }
+        // 꿈섬 손님이 후보에 남아 있으면 그중에서 **먼저** 뽑는다 — 복합보다 앞이다. 여덟 종 미만에서는 위 가드가 비워
+        // 두므로 이 배열은 `callsLegends` 일 때만 비지 않는다. 다섯이 다 왔으면 아래 복합 → 단일로 떨어진다.
+        let legendDraw = candidates.filter { legends.contains($0.id) }
         // 복합 서식 — 성립한 조합의 두 지형을 **모두** 만드는 종이 남아 있으면 그중에서 먼저 뽑는다. 단일 후보는 그대로
         // 남는다: 복합 후보가 없을 때(미성립 · 그 종이 다 왔음) 그리로 떨어진다.
         let formed = compositeHabitats(terrain).filter(\.isFormed).map(\.recipe)
@@ -435,7 +480,7 @@ enum PokopiaTown {
             let homes = homeTerrains(of: candidate.types)
             return formed.contains { homes.contains($0.first) && homes.contains($0.second) }
         }
-        let draw = preferred.isEmpty ? candidates : preferred
+        let draw = !legendDraw.isEmpty ? legendDraw : (preferred.isEmpty ? candidates : preferred)
         return draw[Int(roll % UInt64(draw.count))].id
     }
 
