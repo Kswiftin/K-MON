@@ -95,7 +95,10 @@ enum SaveTransfer {
     /// 한 번이라도 도전한) 기존 세이브는 구버전이 `r6a...` 를 포함해 서명했는데 새 코드는 그 세그먼트
     /// 자체를 모른다. 버전을 안 올리면 canonical 문자열이 통째로 달라져 정상 세이브가 전부 조작
     /// 판정된다 — `homePartyIDs`(11→12)가 겪은 것과 같은 부류의 사고이고, 실제로 재현됐다.
-    static let integrityVersion = 13
+    /// 13 → 14(2026-09-15): 배틀프런티어 출시에서 `frontierBestStreak`/`frontierBP`를 canonical에
+    /// 추가했지만 버전을 유지했다. 테스트판이 값을 기록한 일부 정상 세이브가 구서명을 가진 채 남아
+    /// 다음 실행에서 조작으로 오인돼 초기화됐다. 13 이하 서명을 한 번 면제하고 현행 형식으로 재서명한다.
+    static let integrityVersion = 14
     /// 2026-08-13 게임 구조 개편 배포: 모든 기존 진행 데이터를 한 번 완전 초기화한다.
     static let forcedResetVersion = 1
     /// 세이브 파일 크기 상한. 정상 세이브는 수 KB 이고 도감이 가득 차도 수백 KB 를 넘지 않는다.
