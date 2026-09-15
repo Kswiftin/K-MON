@@ -226,7 +226,7 @@ struct BattleView: View {
                 HStack {
                     Button("그만하기") { center.dismissResult() }
                     Button("다음 도전") { center.continueFrontier() }
-                        .buttonStyle(.borderedProminent).tint(.indigo)
+                        .buttonStyle(.borderedProminent).tint(PokedoroTheme.blue)
                 }.controlSize(.small)
             } else {
                 Button(center.isFrontierBattle ? "프런티어로 돌아가기" : l.battleClose) {

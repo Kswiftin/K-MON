@@ -71,7 +71,7 @@ struct BattleFrontierView: View {
                 Button(center.frontierStreak > 0 ? "다음 배틀" : "도전 시작") {
                     center.startFrontierBattle(newRun: center.frontierStreak == 0)
                 }
-                .buttonStyle(.borderedProminent).tint(.indigo)
+                .buttonStyle(.borderedProminent).tint(PokedoroTheme.blue)
                 .disabled(center.pickedTeam.count != BattleFrontier.teamSize || center.phase != .ready)
             }
         }
