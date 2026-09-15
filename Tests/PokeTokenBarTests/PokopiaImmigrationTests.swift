@@ -336,6 +336,34 @@ final class PokopiaImmigrationTests: XCTestCase {
         XCTAssertEqual(Set(store.memoryAlbum.town.residents.map(\.speciesID)), Set(pool), "복합 뒤에 단일 후보가 오지 않았다")
     }
 
+    // MARK: 꿈섬 전설 (지형 여덟 종이 게이트)
+
+    /// **이 단계의 게이트가 실제로 도는지 세는 가드.** 물·꽃밭을 만든 4종 마을은 에스퍼를 부르지만 뮤츠는 오지 않는다 — 다른
+    /// 후보가 오고, 남은 것이 뮤츠뿐이면 아무도 안 온다. 여덟 종을 다 만들면 **곧바로** 뮤츠가 온다. 앞부분만 세면 "뮤츠가 그냥
+    /// 안 오는 기능" 과 구별되지 않는다(`testDiversityOpensMoreRoomAndTheGateReopensImmediately` 와 같은 이유).
+    func testALegendArrivesOnlyOnceEveryHabitatIsBuilt() async throws {
+        let store = makeStore(pool: [7, 150], types: [7: [.water], 150: [.psychic]])
+        makeWatery(store)
+        for col in 0..<PokopiaTown.habitatThreshold {
+            XCTAssertTrue(store.memoryAlbum.shapeTownTile(col: col, row: 1, to: .flower))
+        }
+        let before = store.memoryAlbum.town.terrain
+        XCTAssertTrue(PokopiaTown.welcomingTypes(before).contains(.psychic), "전제: 꽃밭이 문턱을 넘어야 한다")
+        XCTAssertFalse(PokopiaTown.development(before, residents: []).callsLegends, "전제: 여덟 종 미만이어야 한다")
+
+        let first = await store.rollTownImmigration()
+        XCTAssertEqual(first?.speciesID, 7, "전설이 아닌 후보가 먼저 와야 한다")
+        let held = await store.rollTownImmigration()
+        XCTAssertNil(held, "여덟 종 미만인데 전설이 이사 왔다")
+
+        makeDeveloped(store)
+        let arrived = await store.rollTownImmigration()
+        let legend = try XCTUnwrap(arrived, "여덟 종을 다 만들었는데 전설이 오지 않았다")
+        XCTAssertEqual(legend.speciesID, 150)
+        XCTAssertEqual(legend.name, "이웃150", "전설도 다른 주민과 같은 길로 이름을 얻는다")
+        XCTAssertEqual(store.memoryAlbum.town.residents.map(\.speciesID), [7, 150])
+    }
+
     // MARK: 서식이 화면에 보인다
 
     /// 찾아온 주민은 **자기를 부른 지형 위에** 선다. 이것이 "내가 만들어서 왔다" 의 시각적 증거다.

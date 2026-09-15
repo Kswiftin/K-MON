@@ -539,6 +539,92 @@ final class PokopiaTownTests: XCTestCase {
                                            residents: [resident(278, [.water, .flying])], roll: 0))
     }
 
+    // MARK: 꿈섬 전설 (지형 여덟 종이 게이트 · 복합보다 먼저)
+
+    /// 여덟 지형이 전부 문턱을 넘은 마을 — 행마다 한 지형 6칸, 나머지는 풀. `PokopiaImmigrationTests.makeDeveloped` 와 같은 모양이다.
+    /// 물(2행 0~5열)이 6열의 풀과 맞닿아 "연못 풀숲" 이 성립한다 — 전설 > 복합 > 단일 순서를 한 마을에서 볼 수 있다.
+    private func builtOut() -> [TownTerrain] {
+        var out = [TownTerrain](repeating: .grass, count: PokopiaTown.tileCount)
+        for (row, tile) in TownTerrain.allCases.enumerated() {
+            for col in 0..<PokopiaTown.habitatThreshold { out[row * PokopiaTown.columns + col] = tile }
+        }
+        return out
+    }
+
+    /// 표가 성립하는지 — 다섯 종, 중복 없음, 전부 그릴 수 있다. 로드맵의 함정: `normalized` 가 `hasAnimatedSprite` 로 거르므로
+    /// 그 필터를 통과하지 못하는 종은 도착해도 다음 실행에서 사라져 "안 오는 기능" 이 된다.
+    func testDreamIslandSpeciesAreWellFormedAndDrawable() {
+        let legends = PokopiaTown.dreamIslandSpecies
+        XCTAssertEqual(legends.count, 5)
+        XCTAssertEqual(Set(legends).count, legends.count, "중복 종")
+        for id in legends {
+            XCTAssertTrue(PokemonAssets.hasAnimatedSprite(speciesID: id), "#\(id) 은 그릴 수 없다 — 도착해도 정규화가 지운다")
+        }
+        XCTAssertLessThanOrEqual(legends.count, PokopiaTown.populationLimit, "다섯이 다 와도 정원 안이어야 한다")
+        XCTAssertEqual(PokopiaTown.awaitingLegends([]), legends)
+        XCTAssertEqual(PokopiaTown.awaitingLegends([resident(7, [.water])]), legends, "전설이 아닌 주민이 대기 목록을 줄였다")
+    }
+
+    /// 다섯 종이 신뢰경계를 **실제로** 통과한다 — 위 테스트는 필터의 재료를 보고, 이 테스트는 필터 자체를 밟는다.
+    func testDreamIslandGuestsSurviveNormalization() {
+        var state = PokopiaTownState()
+        state.residents = PokopiaTown.dreamIslandSpecies.map { resident($0, [.psychic]) }
+        XCTAssertEqual(PokopiaTown.normalized(state).residents.map(\.speciesID), PokopiaTown.dreamIslandSpecies,
+                       "전설이 정규화에서 잘렸다 — 도착해도 다음 실행에서 사라진다")
+    }
+
+    /// 게이트는 종수 8 하나다 — 1~7종은 전부 false. 레벨이 아니다(6종 + 정착으로 Lv.8 이 되어도 false).
+    func testOnlyEightHabitatsCallLegends() {
+        for count in 1...TownTerrain.allCases.count {
+            let development = PokopiaTown.development(terrain(welcomingHabitats: count), residents: [])
+            XCTAssertEqual(development.callsLegends, count == TownTerrain.allCases.count, "\(count)종")
+        }
+    }
+
+    /// **여덟 종 미만에서는 타입이 부르는 지형이 있어도 오지 않는다.** 7종 마을(꽃밭 포함)에서 뮤츠(에스퍼)는 단일 판정을
+    /// 통과하지만 후보에서 빠진다 — 유일한 후보면 nil, 다른 종이 있으면 그 종만 온다. 가드를 지우면 여기가 빨개진다.
+    func testLegendsAreHeldBackUntilEveryHabitatIsBuilt() {
+        let seven = terrain(welcomingHabitats: 7)   // 흙·물·모래·길·꽃밭·나무 + 풀 — 바위만 없다
+        XCTAssertTrue(PokopiaTown.welcomingTypes(seven).contains(.psychic), "전제: 꽃밭이 문턱을 넘어야 한다")
+        XCTAssertFalse(PokopiaTown.development(seven, residents: []).callsLegends, "전제: 7종이어야 한다")
+        let typeIndex: [Int: [PokemonType]] = [150: [.psychic], 7: [.water]]
+        XCTAssertNil(PokopiaTown.immigrant(terrain: seven, pool: [150], typeIndex: typeIndex, residents: [], roll: 0),
+                     "여덟 종 미만인데 전설이 왔다")
+        let draws = Set((0..<30).map { PokopiaTown.immigrant(terrain: seven, pool: [7, 150], typeIndex: typeIndex,
+                                                             residents: [], roll: UInt64($0)) })
+        XCTAssertEqual(draws, [7], "전설이 후보에 남아 있다: \(draws)")
+    }
+
+    /// 여덟 종이면 **전설 > 복합 > 단일**. 연못 풀숲이 성립한 마을에서 뮤츠 → 연꽃몬(물·풀) → 꼬부기 순으로 온다.
+    /// 우선을 지우거나 복합 뒤로 옮기면 첫 단정이 빨개진다. 내보낸 전설은 대기 목록에 다시 든다.
+    func testLegendsComeBeforeCompositeGuestsWhichComeBeforeSingles() {
+        let full = builtOut()
+        XCTAssertTrue(PokopiaTown.development(full, residents: []).callsLegends, "전제: 여덟 종이어야 한다")
+        XCTAssertTrue(PokopiaTown.compositeHabitats(full).contains { $0.recipe.name == "연못 풀숲" && $0.isFormed },
+                      "전제: 연못 풀숲이 성립해야 한다")
+        let typeIndex: [Int: [PokemonType]] = [7: [.water], 270: [.water, .grass], 150: [.psychic]]
+        let pool = [7, 150, 270]
+        func draws(_ residents: [TownResident]) -> Set<Int?> {
+            Set((0..<30).map { PokopiaTown.immigrant(terrain: full, pool: pool, typeIndex: typeIndex,
+                                                      residents: residents, roll: UInt64($0)) })
+        }
+        XCTAssertEqual(draws([]), [150], "전설이 먼저 오지 않았다")
+        XCTAssertEqual(draws([resident(150, [.psychic])]), [270], "전설 뒤에 복합 손님이 오지 않았다")
+        XCTAssertEqual(draws([resident(150, [.psychic]), resident(270, [.water, .grass])]), [7], "복합 뒤에 단일로 안 떨어졌다")
+        XCTAssertEqual(PokopiaTown.awaitingLegends([resident(150, [.psychic])]), [243, 244, 245, 489])
+    }
+
+    /// 우선은 **후보를 더하지 않는다** — 사는 전설은 오지 않고, 풀에 없는 전설을 기다리지 않고, 타입을 모르는 전설은 오지 않는다.
+    func testLegendPreferenceNeverAddsACandidateOutsideTheSinglePath() {
+        let full = builtOut()
+        XCTAssertNil(PokopiaTown.immigrant(terrain: full, pool: [150], typeIndex: [150: [.psychic]],
+                                           residents: [resident(150, [.psychic])], roll: 0), "사는 전설이 또 왔다")
+        XCTAssertEqual(PokopiaTown.immigrant(terrain: full, pool: [7], typeIndex: [7: [.water]], residents: [], roll: 0), 7,
+                       "풀에 없는 전설을 기다리느라 단일 후보를 막았다")
+        XCTAssertNil(PokopiaTown.immigrant(terrain: full, pool: [150], typeIndex: [:], residents: [], roll: 0),
+                     "타입을 모르는 전설이 왔다")
+    }
+
     // MARK: 서식 현황 (화면의 목표)
 
     /// 8지형 전부가 한 줄씩 나온다. 빠진 지형은 사용자가 목표로 삼을 수 없는 채 남는다.
