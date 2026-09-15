@@ -160,8 +160,8 @@ struct BattleView: View {
             onChoose: { center.chooseTeamPracticeMove($0) },
             onSwitch: { center.switchTeamPractice(to: $0) },
             onForfeit: { center.forfeit() },
-            onTerastallize: { center.terastallizeTeamPractice() },
-            canTerastallize: practice.canTerastallizeMine)
+            onTerastallize: center.isFrontierBattle ? nil : { center.terastallizeTeamPractice() },
+            canTerastallize: !center.isFrontierBattle && practice.canTerastallizeMine)
         .onAppear { replay(practice.events, sides: [.a: engineMine, .b: engineTheirs]) }
         .onChange(of: practice.events.count) {
             replay(practice.events, sides: [.a: engineMine, .b: engineTheirs])
@@ -197,9 +197,9 @@ struct BattleView: View {
             }
             Text(finishText(iWon: iWon, byForfeit: byForfeit)).font(.title3).bold()
             if center.battle != nil || center.teamPractice != nil {
-                Text(center.isPracticeBattle
-                     ? "모의전 결과"
-                     : store.battleRank.displayName)
+                Text(center.isFrontierBattle
+                     ? "배틀프런티어 결과"
+                     : (center.isPracticeBattle ? "모의전 결과" : store.battleRank.displayName))
                     .font(.caption).bold()
                 if center.lastRankDelta != 0 {
                     Text("\(center.lastRankDelta > 0 ? "+" : "")\(center.lastRankDelta) LP")

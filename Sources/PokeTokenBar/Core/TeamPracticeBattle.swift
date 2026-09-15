@@ -11,6 +11,8 @@ struct TeamPracticeBattle {
     var mine: [BattleSide]
     var opponents: [BattleSide]
     var opponentMoveStrategy: OpponentMoveStrategy = .random
+    /// 배틀프런티어처럼 세대 기믹을 쓰지 않는 룰에서는 양쪽 모두 테라스탈을 막는다.
+    var allowsTerastallization = true
     var myActive = 0
     var opponentActive = 0
     var turn = 1
@@ -28,7 +30,9 @@ struct TeamPracticeBattle {
     var opponentTerastalUsed = false
 
     /// 지금 테라스탈할 수 있나 — 화면의 버튼이 이 값을 본다.
-    var canTerastallizeMine: Bool { result == nil && !myTerastalUsed && mine[myActive].isAlive }
+    var canTerastallizeMine: Bool {
+        allowsTerastallization && result == nil && !myTerastalUsed && mine[myActive].isAlive
+    }
 
     var mySlot: BattleSide { mine[myActive] }
     var opponentSlot: BattleSide { opponents[opponentActive] }
@@ -153,7 +157,7 @@ struct TeamPracticeBattle {
     /// CPU 의 테라스탈 — 절반 이하로 깎였을 때 한 번 쓴다. 무작위를 쓰지 않아 `rng` 소비가 늘지
     /// 않는다(같은 seed 의 배틀이 그대로 재현된다).
     private mutating func cpuTerastallizeIfWorthwhile() {
-        guard !opponentTerastalUsed, opponents[opponentActive].isAlive,
+        guard allowsTerastallization, !opponentTerastalUsed, opponents[opponentActive].isAlive,
               opponents[opponentActive].hp * 2 <= opponents[opponentActive].stats.hp else { return }
         opponentTerastalUsed = true
         events += BattleEngine.declareTerastal(&opponents[opponentActive], actor: .b)

@@ -7,6 +7,21 @@ final class BattleFrontierTests: XCTestCase {
         XCTAssertEqual(BattleFrontier.battleLevel, 50)
     }
 
+    func testFrontierTeamBattleDisablesTerastallizationForBothSides() {
+        let move = MoveSpec(id: 1, names: [:], type: .normal, power: 40,
+                            damageClass: .physical, accuracy: 100, pp: 20)
+        let snapshot = BattleSnapshot(speciesID: 1, name: "몬", trainer: nil, level: 50,
+                                      nature: nil, isShiny: false, types: [.normal],
+                                      base: BattleStats(hp: 80, atk: 80, def: 80, spa: 80, spd: 80, spe: 80),
+                                      moves: [move])
+        var battle = TeamPracticeBattle(mine: [BattleSide(snapshot)],
+                                        opponents: [BattleSide(snapshot)],
+                                        allowsTerastallization: false,
+                                        rng: SplitMix64(seed: 1))
+        XCTAssertFalse(battle.canTerastallizeMine)
+        XCTAssertFalse(battle.terastallizeMine())
+    }
+
     func testOpponentPoolGetsStrongerAndKeepsEnoughUniqueSpecies() {
         let early = BattleFrontier.opponentPool(for: 1)
         let late = BattleFrontier.opponentPool(for: 14)

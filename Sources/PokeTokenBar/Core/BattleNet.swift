@@ -1305,6 +1305,7 @@ final class BattleCenter {
             teamPractice = TeamPracticeBattle(mine: myTeam.map(BattleSide.init),
                                               opponents: cpuTeam.map(BattleSide.init),
                                               opponentMoveStrategy: .damageFocused,
+                                              allowsTerastallization: false,
                                               rng: SplitMix64(seed: UInt64.random(in: .min ... .max)))
             lastError = nil
             phase = .battling

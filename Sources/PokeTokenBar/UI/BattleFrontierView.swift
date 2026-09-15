@@ -7,7 +7,9 @@ struct BattleFrontierView: View {
     let onClose: () -> Void
 
     var body: some View {
-        if center.isFrontierBattle, center.phase != .ready {
+        if center.isFrontierBattle, case .preparing = center.phase {
+            preparing
+        } else if center.isFrontierBattle, center.phase != .ready {
             BattleView(store: store)
                 .padding(PopoverMetrics.padding)
                 .frame(height: PopoverMetrics.currentHeight(for: .battle))
@@ -16,9 +18,23 @@ struct BattleFrontierView: View {
         }
     }
 
+    private var preparing: some View {
+        VStack(spacing: 12) {
+            PokedoroOverlayHeader(title: "배틀프런티어", systemImage: "flag.checkered",
+                                  tint: .indigo, closeLabel: store.l.close, onClose: close)
+            Spacer()
+            ProgressView()
+            Text("다음 상대와 포켓몬을 회복하는 중…")
+                .font(.caption).foregroundStyle(.secondary)
+            Spacer()
+        }
+        .padding(PopoverMetrics.padding)
+        .frame(height: PopoverMetrics.currentHeight(for: .battle))
+    }
+
     private var lobby: some View {
         VStack(alignment: .leading, spacing: 10) {
-            PokedoroOverlayHeader(title: "배틀프런티어", systemImage: "tower.fill",
+            PokedoroOverlayHeader(title: "배틀프런티어", systemImage: "flag.checkered",
                                   tint: .indigo, closeLabel: store.l.close, onClose: close)
             VStack(alignment: .leading, spacing: 5) {
                 HStack {
@@ -28,6 +44,8 @@ struct BattleFrontierView: View {
                 }
                 .font(.caption.bold())
                 Text("승리할수록 강한 트레이너가 등장합니다. 7연승마다 프런티어 브레인이 기다립니다.")
+                    .font(.caption2).foregroundStyle(.secondary)
+                Label("매 경기 후 HP·PP·상태이상을 모두 회복합니다.", systemImage: "cross.case.fill")
                     .font(.caption2).foregroundStyle(.secondary)
                 if center.frontierStreak > 0 {
                     Text("이번 도전 \(center.frontierStreak)연승 · ⭐ \(center.frontierTotalReward.formatted()) · \(center.frontierTotalBP) BP")
