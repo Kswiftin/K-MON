@@ -1,0 +1,202 @@
+import Foundation
+
+struct PokemonTFTUnitDefinition: Identifiable, Sendable, Equatable {
+    let id: Int
+    let name: String
+    let type: PokemonType
+    let cost: Int
+    let attack: Int
+    let health: Int
+}
+
+struct PokemonTFTUnit: Identifiable, Sendable, Equatable {
+    let id: UUID
+    let definitionID: Int
+    var star: Int
+    var boardSlot: Int?
+
+    init(definitionID: Int, star: Int = 1, boardSlot: Int? = nil, id: UUID = UUID()) {
+        self.id = id
+        self.definitionID = definitionID
+        self.star = star
+        self.boardSlot = boardSlot
+    }
+}
+
+/// 포켓몬식 오토배틀러 한 판. 앱의 보유 포켓몬/재화와 분리된 세션이라 중도 종료해도 세이브를
+/// 오염시키지 않는다. 화면은 입력만 전달하고 경제·합성·전투 판정은 전부 이 구조체가 담당한다.
+struct PokemonTFTGame: Sendable {
+    enum Phase: Sendable, Equatable { case shopping, finished(won: Bool) }
+
+    static let boardSlots = 9
+    static let benchLimit = 8
+    static let finalRound = 12
+    static let catalog: [PokemonTFTUnitDefinition] = [
+        .init(id: 1,   name: "이상해씨", type: .grass,    cost: 1, attack: 42, health: 105),
+        .init(id: 4,   name: "파이리",   type: .fire,     cost: 1, attack: 55, health: 82),
+        .init(id: 7,   name: "꼬부기",   type: .water,    cost: 1, attack: 40, health: 115),
+        .init(id: 25,  name: "피카츄",   type: .electric, cost: 2, attack: 70, health: 88),
+        .init(id: 66,  name: "알통몬",   type: .fighting, cost: 2, attack: 74, health: 120),
+        .init(id: 92,  name: "고오스",   type: .ghost,    cost: 2, attack: 82, health: 78),
+        .init(id: 133, name: "이브이",   type: .normal,   cost: 2, attack: 62, health: 100),
+        .init(id: 147, name: "미뇽",     type: .dragon,   cost: 3, attack: 88, health: 118),
+        .init(id: 215, name: "포푸니",   type: .dark,     cost: 3, attack: 96, health: 90),
+        .init(id: 280, name: "랄토스",   type: .psychic,  cost: 3, attack: 92, health: 94),
+        .init(id: 304, name: "가보리",   type: .steel,    cost: 3, attack: 70, health: 155),
+        .init(id: 443, name: "딥상어동", type: .ground,   cost: 4, attack: 116, health: 145),
+        .init(id: 447, name: "리오르",   type: .fighting, cost: 4, attack: 120, health: 126),
+        .init(id: 570, name: "조로아",   type: .dark,     cost: 4, attack: 132, health: 105),
+        .init(id: 610, name: "터검니",   type: .dragon,   cost: 5, attack: 148, health: 150)
+    ]
+
+    var health = 100
+    var gold = 10
+    var round = 1
+    var level = 3
+    var experience = 0
+    var units: [PokemonTFTUnit] = []
+    var shop: [Int?] = []
+    var phase: Phase = .shopping
+    var lastBattleText = "포켓몬을 구매해 배치하세요."
+    private var seed: UInt64
+
+    init(seed: UInt64 = UInt64.random(in: 1...UInt64.max)) {
+        self.seed = seed
+        refreshShop(free: true)
+    }
+
+    var deployedCount: Int { units.filter { $0.boardSlot != nil }.count }
+    var unitLimit: Int { min(level, 6) }
+    var benchCount: Int { units.filter { $0.boardSlot == nil }.count }
+    var experienceNeeded: Int { level >= 6 ? 0 : level * 4 }
+
+    func definition(for id: Int) -> PokemonTFTUnitDefinition {
+        Self.catalog.first { $0.id == id }!
+    }
+
+    mutating func buy(shopIndex: Int) -> Bool {
+        guard phase == .shopping, shop.indices.contains(shopIndex),
+              let definitionID = shop[shopIndex] else { return false }
+        let definition = definition(for: definitionID)
+        guard gold >= definition.cost, benchCount < Self.benchLimit else { return false }
+        gold -= definition.cost
+        units.append(PokemonTFTUnit(definitionID: definitionID))
+        shop[shopIndex] = nil
+        combine(definitionID: definitionID)
+        return true
+    }
+
+    mutating func refreshShop(free: Bool = false) {
+        guard phase == .shopping, free || gold >= 2 else { return }
+        if !free { gold -= 2 }
+        shop = (0..<5).map { _ in rollDefinitionID() }
+    }
+
+    mutating func buyExperience() {
+        guard phase == .shopping, level < 6, gold >= 4 else { return }
+        gold -= 4; experience += 4
+        while level < 6, experience >= level * 4 {
+            experience -= level * 4; level += 1
+        }
+    }
+
+    mutating func toggleDeployment(_ id: UUID) {
+        guard phase == .shopping, let index = units.firstIndex(where: { $0.id == id }) else { return }
+        if units[index].boardSlot != nil {
+            units[index].boardSlot = nil
+        } else if deployedCount < unitLimit {
+            units[index].boardSlot = (0..<Self.boardSlots).first { slot in
+                !units.contains { $0.boardSlot == slot }
+            }
+        }
+    }
+
+    mutating func move(_ id: UUID, to slot: Int) {
+        guard phase == .shopping, (0..<Self.boardSlots).contains(slot),
+              let index = units.firstIndex(where: { $0.id == id }) else { return }
+        if let other = units.firstIndex(where: { $0.boardSlot == slot }) {
+            units[other].boardSlot = units[index].boardSlot
+        } else if units[index].boardSlot == nil, deployedCount >= unitLimit { return }
+        units[index].boardSlot = slot
+    }
+
+    mutating func sell(_ id: UUID) {
+        guard phase == .shopping, let index = units.firstIndex(where: { $0.id == id }) else { return }
+        let unit = units.remove(at: index)
+        gold += definition(for: unit.definitionID).cost * (unit.star == 1 ? 1 : unit.star * 2)
+    }
+
+    mutating func fight() {
+        guard phase == .shopping, deployedCount > 0 else { return }
+        let player = combatPower(of: units.filter { $0.boardSlot != nil })
+        let enemy = enemyPower(round: round)
+        let jitter = Double(Int(nextRandom() % 21) - 10) / 100
+        if player * (1 + jitter) >= enemy {
+            let income = 5 + min(round / 3, 4)
+            gold += income
+            lastBattleText = "승리! +(income) 골드 · 전투력 (Int(player)) vs (Int(enemy))"
+            if round == Self.finalRound { phase = .finished(won: true); return }
+        } else {
+            let damage = max(4, 3 + round + Int((enemy - player) / 45))
+            health = max(0, health - damage)
+            lastBattleText = "패배 · 체력 -(damage) · 전투력 (Int(player)) vs (Int(enemy))"
+            if health == 0 { phase = .finished(won: false); return }
+        }
+        round += 1
+        gold += min(gold / 10, 5) // 10골드당 이자, 최대 5
+        refreshShop(free: true)
+    }
+
+    func synergyText() -> String {
+        let counts = Dictionary(grouping: units.filter { $0.boardSlot != nil }) {
+            definition(for: $0.definitionID).type
+        }.mapValues(\.count)
+        let active = counts.filter { $0.value >= 2 }.sorted { $0.key.rawValue < $1.key.rawValue }
+        return active.isEmpty ? "활성 시너지 없음" : active.map { "\($0.key.rawValue) \($0.value)" }.joined(separator: " · ")
+    }
+
+    private func combatPower(of deployed: [PokemonTFTUnit]) -> Double {
+        let typeCounts = Dictionary(grouping: deployed) { definition(for: $0.definitionID).type }.mapValues(\.count)
+        let synergy = typeCounts.values.reduce(0.0) { value, count in
+            value + (count >= 4 ? 0.25 : count >= 2 ? 0.10 : 0)
+        }
+        return deployed.reduce(0) { total, unit in
+            let definition = definition(for: unit.definitionID)
+            let stars = pow(1.65, Double(unit.star - 1))
+            let rowBonus = (unit.boardSlot ?? 0) >= 6 ? Double(definition.attack) * 0.08 : Double(definition.health) * 0.04
+            return total + (Double(definition.attack) + Double(definition.health) / 3 + rowBonus) * stars
+        } * (1 + synergy)
+    }
+
+    private func enemyPower(round: Int) -> Double {
+        let count = min(2 + round / 2, 6)
+        let base = 105.0 + Double(round * 24)
+        return Double(count) * base * (round.isMultiple(of: 4) ? 1.14 : 1)
+    }
+
+    private mutating func combine(definitionID: Int) {
+        for star in 1...2 {
+            while units.filter({ $0.definitionID == definitionID && $0.star == star }).count >= 3 {
+                let matches = units.indices.filter { units[$0].definitionID == definitionID && units[$0].star == star }
+                let deployedSlot = matches.compactMap { units[$0].boardSlot }.first
+                for index in matches.prefix(3).sorted(by: >) { units.remove(at: index) }
+                units.append(PokemonTFTUnit(definitionID: definitionID, star: star + 1,
+                                            boardSlot: deployedSlot))
+            }
+        }
+    }
+
+    private mutating func rollDefinitionID() -> Int {
+        let unlockedCost = min(5, 1 + level / 2)
+        let pool = Self.catalog.filter { $0.cost <= unlockedCost }
+        return pool[Int(nextRandom() % UInt64(pool.count))].id
+    }
+
+    private mutating func nextRandom() -> UInt64 {
+        seed &+= 0x9E37_79B9_7F4A_7C15
+        var z = seed
+        z = (z ^ (z >> 30)) &* 0xBF58_476D_1CE4_E5B9
+        z = (z ^ (z >> 27)) &* 0x94D0_49BB_1331_11EB
+        return z ^ (z >> 31)
+    }
+}
