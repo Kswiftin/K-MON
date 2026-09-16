@@ -14,6 +14,9 @@ enum ItemUseOutcome: Equatable, Sendable {
     /// "기술을 바꿨다" 고 말한다.
     case relearnOpened
     case evolutionItemUsed
+    /// 마을이 먹었다(9단계) — 새 만료 시각을 싣는다. 부른 쪽이 남은 시간을 말해야 하고, 요리마다
+    /// 폭이 달라 값을 안 실으면 각자 레시피 표를 다시 읽어야 한다(민트가 성격을 싣는 것과 같은 이유).
+    case townFed(until: Date)
     /// 부적처럼 지니고만 있는 물건 — "지금 쓴다" 는 개념이 없다. **재고 부족과 갈라 둔다**:
     /// 사러 가야 하는지, 애초에 쓰는 물건이 아닌지 사용자가 할 일이 다르다.
     case notUsedThisWay
@@ -70,6 +73,14 @@ enum CompanionAction {
             // 가방에서 쓰는 물건이 아니다(방에서 배치한다). 이름표(`nameable`)가 가구를 빼므로
             // 이름으로는 여기까지 오지 않지만, 갈래를 비워 두면 그 사실이 코드에 안 남는다.
             return .notUsedThisWay
+        case .townGood:
+            // 마을 재료·설비도 같은 자리다 — 재료는 레시피가 먹고, 설비는 갖고 있는 것이 효과다.
+            return .notUsedThisWay
+        case .dish:
+            // 재고 없음(사러 가야 한다)과 거절(마을이 이미 더 오래 배부르다)을 갈라 낸다.
+            guard companion.itemCount(kind) > 0 else { return .unavailable }
+            guard let until = companion.feedTown(kind) else { return .refused }
+            return .townFed(until: until)
         case .evolutionItem:
             guard companion.canUseEvolutionItem(kind) else { return .unavailable }
             guard companion.useEvolutionItem(kind) else { return .refused }

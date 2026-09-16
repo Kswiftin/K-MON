@@ -607,6 +607,8 @@ struct PokemonChatToolbox: PokemonChatToolRunning {
         // 지닌물건은 쓴 것이 아니라 **붙었다** — "used" 로 말하면 모델이 소모품으로 설명한다.
         case .heldItemGiven: return ("item \(kind.rawValue) is now held by the partner", true)
         case .evolutionItemUsed: return ("item \(kind.rawValue) used", true)
+        // 마을에 갔다 — 동행에게 쓴 것이 아니다. "used" 로 말하면 모델이 파트너가 먹은 줄로 설명한다.
+        case .townFed: return ("item \(kind.rawValue) fed the Pokopia town", true)
         // 보유형(부적)은 대화에서 "지금 쓴다" 는 개념이 없다.
         case .notUsedThisWay: return ("item \(kind.rawValue) is not used from chat", false)
         case .unavailable: return ("item \(kind.rawValue) unavailable", false)

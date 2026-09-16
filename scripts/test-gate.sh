@@ -76,6 +76,10 @@ LOGIC_CORE=(
   # 날씨 다섯 종·계절 풀·dayKey 추첨이 사는 곳. 같은 이유로 배열 안이다 — 배열 밖 파일은
   # 커버리지에 **아예 안 잡혀** "몇 %인가" 를 물을 기회조차 없다(#229·#228 부류).
   "Sources/PokeTokenBar/Core/PokopiaTownWeather.swift"
+  # 재료 10·레시피 23·포만감 판정이 사는 곳. 같은 이유로 배열 안이다 — 배열 밖 파일은 커버리지에
+  # **아예 안 잡혀** "몇 %인가" 를 물을 기회조차 없다(#229·#228 부류). 특히 `isFed` 의 먼 미래
+  # 갈래는 신뢰경계라 무테스트로 남으면 손댄 세이브가 레벨을 영구히 한 단 올린다.
+  "Sources/PokeTokenBar/Core/PokopiaCrafting.swift"
   "Sources/PokeTokenBar/Core/DexGoals.swift"
   # 업데이트 뒤 릴리스 노트를 띄울지 정하는 판정. 배열 밖에 두면 "신규 설치엔 안 띄운다"·
   # "버전당 한 번" 분기가 커버리지에서 통째로 빠진다.

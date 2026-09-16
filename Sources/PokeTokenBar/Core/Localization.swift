@@ -1808,6 +1808,42 @@ struct L {
         case .naturePlant: return "숲 화분"
         case .natureBench: return "나무 벤치"
         case .natureLantern: return "이끼 랜턴"
+        // 마을 재료(9단계) — 상점에서 산다
+        case .townWood: return "나무"
+        case .townStone: return "돌"
+        case .townClay: return "흙"
+        case .townSandGrain: return "고운모래"
+        case .townSpringWater: return "샘물"
+        case .townPetal: return "꽃잎"
+        case .townHerb: return "약초"
+        case .townFruit: return "나무열매"
+        case .townHoney: return "꿀"
+        case .townOre: return "광석"
+        // 설비 — 만든다
+        case .townKitchen: return "조리대"
+        case .townFurnace: return "용광로"
+        case .townMixer: return "콘크리트 믹서"
+        // 요리 — 만든다
+        case .dishFruitSalad: return "나무열매샐러드"
+        case .dishHoneyToast: return "꿀토스트"
+        case .dishHerbSoup: return "약초수프"
+        case .dishPetalTea: return "꽃잎차"
+        case .dishRoastedFruit: return "구운열매"
+        case .dishHoneyPickle: return "꿀절임"
+        case .dishHerbPorridge: return "약초죽"
+        case .dishPetalDango: return "꽃잎경단"
+        case .dishWildGreens: return "산나물볶음"
+        case .dishFruitCompote: return "열매조림"
+        case .dishSpringShaved: return "샘물빙수"
+        case .dishFlowerPie: return "꽃꿀파이"
+        case .dishHerbBath: return "약초탕"
+        case .dishTricolorDango: return "삼색경단"
+        case .dishFruitJam: return "열매잼"
+        case .dishHoneySteam: return "꿀찜"
+        case .dishWildflowerBowl: return "들꽃비빔"
+        case .dishFruitStew: return "나무열매스튜"
+        case .dishMixedSkewer: return "모둠꼬치"
+        case .dishPokopiaSet: return "포코피아정식"
         }
     }
     func outfitSlotName(_ slot: OutfitSlot) -> String {
@@ -2024,6 +2060,17 @@ struct L {
             }
         case .furniture:
             return "미니룸에 배치하는 가구예요. 성장이나 보상에는 영향을 주지 않아요."
+        case .townGood:
+            // 재료와 설비가 한 갈래라 문구가 물건마다 갈린다 — 지닌물건이 같은 자리에서
+            // `heldItemEffectHint(kind)` 로 갈리는 것과 같은 형태다.
+            return PokopiaCrafting.facilities.contains(kind)
+                ? "포코피아 만들기에서 이 설비의 레시피가 열려요. 가지고 있기만 하면 돼요."
+                : "포코피아 만들기의 재료예요."
+        case .dish:
+            // 시간은 레시피 표에서 온다 — 여기 숫자를 적으면 표와 문구가 갈린다.
+            // 표에 없는 요리는 만들 수 없으므로 폴백 0 은 실전에서 안 밟힌다.
+            let hours = PokopiaCrafting.recipe(making: kind)?.satietyHours ?? 0
+            return "포코피아 마을이 \(hours)시간 동안 배불러요. 환경 레벨이 한 단 오를 수 있어요."
         case .evolutionItem:
             // 진화 아이템 설명은 규칙에서 갈린다 — 케이스를 40개 나열하면 새 아이템을 넣을 때 빠뜨린다.
             switch kind.evolutionRule {

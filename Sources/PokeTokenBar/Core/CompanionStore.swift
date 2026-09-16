@@ -3821,6 +3821,64 @@ final class CompanionStore {
         return .progressed
     }
 
+    // MARK: 포코피아 — 만들기와 먹이기 (9단계)
+
+    /// 지금 이 레시피를 걸 수 있는가. 재고와 설비를 함께 본다 — **판정은 여기 하나다.** 시트가
+    /// 자기 계산을 하면 버튼은 살아 있는데 눌러도 아무 일이 없는 상태가 생긴다
+    /// (`ShopCatalog` 가 목록과 구매를 한 값으로 묶는 이유와 같다).
+    func canStartTownCraft(_ recipe: PokopiaCrafting.Recipe) -> Bool {
+        guard state.townCraft == nil else { return false }
+        if let facility = recipe.facility, itemCount(facility) < 1 { return false }
+        return recipe.inputs.allSatisfy { itemCount($0.item) >= $0.count }
+    }
+
+    /// 만들기를 건다. **재료는 지금 소비한다** — 끝날 때 빼면 그 사이에 재료를 버린 사용자가
+    /// 공짜로 받는다. 설비는 소모되지 않는다(갖고 있는 것이 곧 효과다).
+    @discardableResult
+    func startTownCraft(_ recipe: PokopiaCrafting.Recipe) -> Bool {
+        guard canStartTownCraft(recipe) else { return false }
+        for input in recipe.inputs {
+            // 0 을 남기지 않는다 — 남기면 가방(`ownedItems`)이 개수 0 짜리 줄을 그린다.
+            let left = itemCount(input.item) - input.count
+            state.inventory[input.item.rawValue] = left > 0 ? left : nil
+        }
+        state.townCraft = TownCraftOrder(
+            output: recipe.output,
+            readyAt: clock().addingTimeInterval(TimeInterval(recipe.minutes) * 60))
+        save()
+        return true
+    }
+
+    /// 다 된 것을 받는다. **아직이면 아무 일도 하지 않는다** — 예정 시각 비교가 여기 한 곳이다.
+    ///
+    /// 방치 틱(`refreshLifecycle`)에 자동 수령을 걸지 않는다. 걸면 "받는다" 라는 동사가 사라지고,
+    /// 이 앱의 알림 경로가 다섯 번째로 늘어난다. 창을 열면 버튼이 있다.
+    @discardableResult
+    func collectTownCraft() -> ItemKind? {
+        guard let order = state.townCraft, order.readyAt <= clock() else { return nil }
+        state.inventory[order.output.rawValue, default: 0] += 1
+        state.townCraft = nil
+        save()
+        return order.output
+    }
+
+    /// 요리 하나를 **지금 보고 있는 마을**에 먹인다. 새 만료 시각을 돌려준다(못 먹이면 nil).
+    ///
+    /// **앨범 거절이 먼저다.** 순서를 뒤집으면 요리가 사라지고 마을은 안 먹는다 — 앨범이
+    /// 인벤토리를 모르므로 소비와 쓰기가 갈려 있고, 그래서 순서가 계약이다.
+    @discardableResult
+    func feedTown(_ kind: ItemKind) -> Date? {
+        guard let hours = PokopiaCrafting.recipe(making: kind)?.satietyHours,
+              itemCount(kind) > 0 else { return nil }
+        let until = PokopiaCrafting.fedUntil(after: memoryAlbum.town.fedUntil,
+                                             hours: hours, now: clock())
+        guard memoryAlbum.feedTown(until: until) else { return nil }
+        let left = itemCount(kind) - 1
+        state.inventory[kind.rawValue] = left > 0 ? left : nil
+        save()
+        return until
+    }
+
     // MARK: 민트 (성격 랜덤 재설정)
 
     /// 민트 사용 가능 — 활성 포켓몬 + 재고>0. 성격은 MonState 에만 있어 진화 라인 로딩과 무관하다

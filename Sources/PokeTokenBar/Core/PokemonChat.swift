@@ -1139,6 +1139,18 @@ final class PokemonMemoryAlbum {
         return true
     }
 
+    /// 마을을 먹인다(9단계). **`beginTownEdit()` 을 부르지 않는다** — 요리는 편집이 아니라
+    /// 사건이다(이사와 같은 자리). 되돌리기가 요리를 되돌리면 재료는 안 돌아오고 요리만 사라진다.
+    ///
+    /// 되돌아가는 값은 **앨범이 실제로 받았는가** 다 — 부른 쪽이 재고를 깎기 전에 본다.
+    /// 지금보다 이른 시각은 거절한다: 짧은 요리로 긴 포만감을 덮어쓰면 먹일수록 손해가 된다.
+    @discardableResult
+    func feedTown(until: Date) -> Bool {
+        guard until > (town.fedUntil ?? .distantPast) else { return false }
+        writeTown { $0.fedUntil = until }; save()
+        return true
+    }
+
     // 되돌리기는 **지금 보고 있는 지역의 스택**만 본다. 지역을 바꾸면 그 지역의 이력이 그대로
     // 살아 있고, 황야에서 되돌리기가 해안을 되돌리는 일이 없다.
     var canUndoTownEdit: Bool { !(townUndoStacks[pokopia.home] ?? []).isEmpty }

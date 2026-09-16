@@ -17,6 +17,7 @@ struct PokopiaTownView: View {
 
     @State private var feedback: String?
     @State private var transforming = false
+    @State private var crafting = false
     @State private var evicting: TownResident?
     /// 아바타가 서 있는 칸. **저장하지 않는다** — 뷰 상태다(새 저장 필드 0개).
     @State private var avatarCell: (col: Int, row: Int) = (PokopiaTown.columns / 2,
@@ -26,8 +27,12 @@ struct PokopiaTownView: View {
     private var album: PokemonMemoryAlbum { store.memoryAlbum }
     private var town: PokopiaTownState { album.town }
     /// 마을 개발도. 파생이라 매번 다시 센다 — 192칸 집계 + 주민 16 이라 화면 한 번 그리는 비용에 묻힌다.
+    ///
+    /// 축 C(포만감)는 **내 마을에만** 넘긴다. 이웃 마을(`neighborTown`)은 방문한 값이라 기본
+    /// `false` 로 둔다 — 남의 포만감을 내 시계로 판정하지 않는다.
     private var development: PokopiaTown.TownDevelopment {
-        PokopiaTown.development(town.terrain, residents: town.residents)
+        PokopiaTown.development(town.terrain, residents: town.residents,
+                                fed: PokopiaCrafting.isFed(fedUntil: town.fedUntil, now: Date()))
     }
     /// 다섯 마을을 합친 주민 수. 파생이라 매번 다시 센다 — 마을 다섯 × 주민 16 이 상한이다.
     private var totalResidents: Int { album.pokopia.totalResidents }
@@ -49,6 +54,8 @@ struct PokopiaTownView: View {
                     .font(.callout)
                     .foregroundStyle(PokedoroTheme.ink)
                     .frame(maxWidth: 512, alignment: .leading)
+                satietyLine
+                craftLine
                 habitatBoard
                 if let feedback {
                     Text(feedback).font(.caption).foregroundStyle(PokedoroTheme.red)
@@ -59,6 +66,7 @@ struct PokopiaTownView: View {
             .padding(12)
         }
         .sheet(isPresented: $transforming) { PokopiaTransformSheet(store: store) }
+        .sheet(isPresented: $crafting) { PokopiaCraftSheet(store: store) }
         .alert("\(evicting?.name ?? "") 내보낼까요?", isPresented: .init(
             get: { evicting != nil }, set: { if !$0 { evicting = nil } })) {
             Button("취소", role: .cancel) { evicting = nil }
@@ -151,6 +159,13 @@ struct PokopiaTownView: View {
             }
             .font(.caption)
             .disabled(store.townTransformCandidates.isEmpty)
+
+            Button {
+                crafting = true
+            } label: {
+                Label("만들기", systemImage: "hammer")
+            }
+            .font(.caption)
 
             Button { album.undoTownEdit(); feedback = nil } label: {
                 Image(systemName: "arrow.uturn.backward")
@@ -401,6 +416,45 @@ struct PokopiaTownView: View {
                                     weather: TownWeather.today(dayKey: CompanionStore.dayKey(now),
                                                                season: season),
                                     now: now)
+    }
+
+    /// 배부른 마을이면 남은 시간 한 줄. **안 배부르면 아무것도 안 그린다** — 빈 자리를 만들면
+    /// 창 예산만 먹고 "여기에 뭔가 있어야 한다" 로 읽힌다(이웃 마을 절과 같은 판단).
+    ///
+    /// 술어는 `PokopiaCrafting.isFed` 하나다 — 화면이 자기 비교를 하면 "배부른 마을" 이라 적힌
+    /// 줄과 환경 레벨이 어긋날 수 있다.
+    ///
+    /// `Text(date, style: .timer)` 를 쓰지 않는다. 0 을 지나면 SwiftUI 가 **경과** 시간을 세어
+    /// 올린다(#86, `StoredEggCountdown` 머리 주석) — 이 화면은 상시 애니메이션이 없는 것이 설계다.
+    @ViewBuilder private var satietyLine: some View {
+        let now = Date()
+        if let until = town.fedUntil, PokopiaCrafting.isFed(fedUntil: until, now: now) {
+            Text("배부른 마을 · \(MenuBarStatus.remainingClockText(until, at: now)) 남음")
+                .font(.caption).foregroundStyle(PokedoroTheme.blue)
+                .frame(maxWidth: 512, alignment: .leading)
+        }
+    }
+
+    /// 만드는 중인 것 한 줄. 다 됐으면 [받기] 가 붙는다 — 방치 틱이 자동으로 받지 않는 이유는
+    /// `CompanionStore.collectTownCraft` 주석에 있다.
+    @ViewBuilder private var craftLine: some View {
+        let now = Date()
+        if let order = store.state.townCraft {
+            HStack(spacing: 8) {
+                Text(order.output.fallbackEmoji)
+                if order.readyAt <= now {
+                    Text("\(store.l.itemName(order.output)) 다 됐어요")
+                        .font(.caption).foregroundStyle(PokedoroTheme.ink)
+                    Button("받기") { store.collectTownCraft() }
+                        .buttonStyle(.borderedProminent).controlSize(.small)
+                } else {
+                    Text("\(store.l.itemName(order.output)) 만드는 중 · \(MenuBarStatus.remainingClockText(order.readyAt, at: now)) 남음")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                Spacer()
+            }
+            .frame(maxWidth: 512, alignment: .leading)
+        }
     }
 
     /// 그릴 주민. 자리는 `PokopiaTown.residentSpot` 이 정한다(자기 지형 위).
