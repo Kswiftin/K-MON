@@ -24,11 +24,14 @@ final class PokopiaTownLifeTests: XCTestCase {
         return terrain
     }
 
+    /// `weather` 의 기본값은 **테스트에만** 있다 — 소스의 `line` 에는 없다. 기본값이 소스에 있으면
+    /// 호출부가 날씨를 조용히 빼먹어도 컴파일되고 화면이 영영 맑음이 된다.
     private func line(_ residents: [TownResident], _ terrain: [TownTerrain],
                       season: MemoryHomeSeason = .spring,
-                      timeOfDay: MemoryHomeTimeOfDay = .day) -> String {
+                      timeOfDay: MemoryHomeTimeOfDay = .day,
+                      weather: TownWeather = .clear) -> String {
         PokopiaTownLife.line(residents: residents, terrain: terrain,
-                            season: season, timeOfDay: timeOfDay, now: now)
+                            season: season, timeOfDay: timeOfDay, weather: weather, now: now)
     }
 
     // MARK: 우선순위 (좁은 조건이 먼저 이긴다)
@@ -205,6 +208,38 @@ final class PokopiaTownLifeTests: XCTestCase {
         }
         XCTAssertEqual(sentences.count, seasons.count,
                        "계절이 같은 문장을 쓴다 — 계절마다 다른 제안을 하는 것이 이 분기의 뜻이다")
+    }
+
+    // MARK: 날씨 (6단계)
+
+    /// 날씨 접두는 **다섯 갈래 전부**의 앞에 붙는다. 한 분기만 확인하면 `line` 이 ③ 에서만 접두를
+    /// 붙이는 구현이 조용히 통과한다. 케이스 배열은 `testEveryBranchProducesANonEmptySentence` 의 것과
+    /// 같은 다섯 상태다.
+    func testTheWeatherPrefixLeadsEveryBranch() {
+        let below = Array(repeating: TownTerrain.water, count: PokopiaTown.habitatThreshold - 1)
+        XCTAssertTrue(PokopiaTown.welcomingTypes(below).isEmpty, "⑤ 의 전제가 깨졌다")
+        let cases: [([TownResident], [TownTerrain])] = [
+            ([resident(7, "꼬부기", [.water], arrivedAgo: 60)], town(.water)),                        // ① 갓 옴
+            ([resident(7, "꼬부기", [.water], arrivedAgo: 60 * 60 * 24)], PokopiaTown.defaultTerrain), // ② 자리 잃음
+            ([resident(7, "꼬부기", [.water], arrivedAgo: 60 * 60 * 24)], town(.water)),              // ③ 정착
+            ([], town(.water)),                                                                       // ④ 터만 닦임
+            ([], below),                                                                              // ⑤ 텅 빔
+        ]
+        for weather in TownWeather.allCases {
+            for (residents, terrain) in cases {
+                let text = line(residents, terrain, weather: weather)
+                XCTAssertTrue(text.hasPrefix(weather.prefix), "\(weather): 접두가 앞에 없다: \(text)")
+                XCTAssertTrue(text.count > weather.prefix.count + 1,
+                              "접두만 남고 마을 문장이 사라졌다: \(text)")
+            }
+        }
+    }
+
+    /// 날씨가 다르면 문장이 다르다 — 같으면 인자를 받고 버린 것이다.
+    func testDifferentWeatherYieldsDifferentLines() {
+        let settled = resident(7, "꼬부기", [.water], arrivedAgo: 60 * 60 * 24)
+        let answers = Set(TownWeather.allCases.map { line([settled], town(.water), weather: $0) })
+        XCTAssertEqual(answers.count, TownWeather.allCases.count)
     }
 
     // MARK: 결정성

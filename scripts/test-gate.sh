@@ -73,6 +73,9 @@ LOGIC_CORE=(
   # 마을 한 줄 문구의 파생 분기(우선순위 다섯 단·지형 8×2·특기 18)가 사는 곳. `MemoryHomeRoomLife` 와 같은
   # 원칙의 파일인데 #314 부터 배열 밖이었다 — 위 두 파일을 넣은 이유가 그대로 적용된다.
   "Sources/PokeTokenBar/Core/PokopiaTownLife.swift"
+  # 날씨 다섯 종·계절 풀·dayKey 추첨이 사는 곳. 같은 이유로 배열 안이다 — 배열 밖 파일은
+  # 커버리지에 **아예 안 잡혀** "몇 %인가" 를 물을 기회조차 없다(#229·#228 부류).
+  "Sources/PokeTokenBar/Core/PokopiaTownWeather.swift"
   "Sources/PokeTokenBar/Core/DexGoals.swift"
   # 업데이트 뒤 릴리스 노트를 띄울지 정하는 판정. 배열 밖에 두면 "신규 설치엔 안 띄운다"·
   # "버전당 한 번" 분기가 커버리지에서 통째로 빠진다.
