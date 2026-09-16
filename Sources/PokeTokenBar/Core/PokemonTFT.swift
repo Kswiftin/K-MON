@@ -170,6 +170,8 @@ struct PokemonTFTGame: Sendable {
     var round = 1
     var level = 3
     var experience = 0
+    var winStreak = 0
+    var lossStreak = 0
     var units: [PokemonTFTUnit] = []
     var shop: [Int?] = []
     var phase: Phase = .shopping
@@ -279,19 +281,17 @@ struct PokemonTFTGame: Sendable {
 
     mutating func settleBattle(playerWon: Bool) {
         guard phase == .shopping, deployedCount > 0 else { return }
+        let income = awardRoundIncome(playerWon: playerWon)
         if playerWon {
-            let income = 5 + min(round / 3, 4)
-            gold += income
-            lastBattleText = "승리! +\(income) 골드"
+            lastBattleText = "승리! \(income.summary)"
             if round == Self.finalRound { phase = .finished(won: true); return }
         } else {
             let damage = max(4, 3 + round)
             health = max(0, health - damage)
-            lastBattleText = "패배 · 체력 -\(damage)"
+            lastBattleText = "패배 · 체력 -\(damage) · \(income.summary)"
             if health == 0 { phase = .finished(won: false); return }
         }
         round += 1
-        gold += min(gold / 10, 5) // 10골드당 이자, 최대 5
         refreshShop(free: true)
     }
 
@@ -299,15 +299,54 @@ struct PokemonTFTGame: Sendable {
     /// 승패에 따른 상점 경제만 갱신하고, 12라운드 단독 모드 종료 규칙을 타지 않는다.
     mutating func settleMultiplayerBattle(playerWon: Bool) {
         guard phase == .shopping, deployedCount > 0 else { return }
+        let income = awardRoundIncome(playerWon: playerWon)
         if playerWon {
-            let income = 5 + min(round / 3, 4)
-            gold += income; lastBattleText = "승리! +\(income) 골드"
+            lastBattleText = "승리! \(income.summary)"
         } else {
-            lastBattleText = "패배 · 호스트 체력 정산 중"
+            lastBattleText = "패배 · 호스트 체력 정산 중 · \(income.summary)"
         }
         round += 1
-        gold += min(gold / 10, 5)
         refreshShop(free: true)
+    }
+
+    /// TFT 경제 규칙: 승패와 무관하게 기본 수입과 이자를 지급하고,
+    /// 승자는 1G를 더 받는다. 2연속부터 연승·연패 보너스가 붙는다.
+    private mutating func awardRoundIncome(playerWon: Bool) -> RoundIncome {
+        let interest = min(gold / 10, 5)
+        if playerWon {
+            winStreak += 1
+            lossStreak = 0
+        } else {
+            lossStreak += 1
+            winStreak = 0
+        }
+        let streak = Self.streakBonus(for: max(winStreak, lossStreak))
+        let income = RoundIncome(base: 5, interest: interest,
+                                 victory: playerWon ? 1 : 0, streak: streak)
+        gold += income.total
+        return income
+    }
+
+    private static func streakBonus(for count: Int) -> Int {
+        if count >= 5 { return 3 }
+        if count >= 4 { return 2 }
+        if count >= 2 { return 1 }
+        return 0
+    }
+
+    private struct RoundIncome {
+        let base: Int
+        let interest: Int
+        let victory: Int
+        let streak: Int
+        var total: Int { base + interest + victory + streak }
+        var summary: String {
+            var parts = ["기본 \(base)G"]
+            if victory > 0 { parts.append("승리 \(victory)G") }
+            if streak > 0 { parts.append("연속 \(streak)G") }
+            if interest > 0 { parts.append("이자 \(interest)G") }
+            return "+\(total)G (\(parts.joined(separator: " · ")))"
+        }
     }
 
     /// 8×6 격자에서 가장 가까운 적을 찾아 이동하고 사거리 안이면 공격하는 전투 리플레이.

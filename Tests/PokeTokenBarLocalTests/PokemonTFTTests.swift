@@ -44,6 +44,37 @@ import Testing
         #expect(game.health > 0)
     }
 
+    @Test func losingStillReceivesBaseIncomeAndInterest() {
+        var game = PokemonTFTGame(seed: 31)
+        game.gold = 20
+        game.units = [PokemonTFTUnit(definitionID: 1, boardSlot: 0)]
+
+        game.settleBattle(playerWon: false)
+
+        #expect(game.gold == 27) // 기본 5G + 보유 20G의 이자 2G
+        #expect(game.lossStreak == 1)
+        #expect(game.lastBattleText.contains("기본 5G"))
+        #expect(game.lastBattleText.contains("이자 2G"))
+    }
+
+    @Test func winsAndLossesBothBuildTFTStreakIncome() {
+        var winner = PokemonTFTGame(seed: 32)
+        winner.gold = 0
+        winner.units = [PokemonTFTUnit(definitionID: 1, boardSlot: 0)]
+        winner.settleBattle(playerWon: true)
+        winner.settleBattle(playerWon: true)
+        #expect(winner.gold == 13) // 6G + (기본 5G + 승리 1G + 연승 1G)
+        #expect(winner.winStreak == 2)
+
+        var loser = PokemonTFTGame(seed: 33)
+        loser.gold = 0
+        loser.units = [PokemonTFTUnit(definitionID: 1, boardSlot: 0)]
+        loser.settleBattle(playerWon: false)
+        loser.settleBattle(playerWon: false)
+        #expect(loser.gold == 11) // 5G + (기본 5G + 연패 1G)
+        #expect(loser.lossStreak == 2)
+    }
+
     @Test func replayMovesAttacksAndFinishesWithOneResult() {
         var game = PokemonTFTGame(seed: 4)
         game.gold = 20
