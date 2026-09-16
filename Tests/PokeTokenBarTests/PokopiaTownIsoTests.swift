@@ -122,7 +122,7 @@ final class PokopiaTownIsoTests: XCTestCase {
     /// 격자 밖은 nil 이다 — 클램프하면 사용자가 안 누른 가장자리 칸이 바뀐다
     /// (`PokopiaTown.index` 가 클램프를 거절하는 것과 같은 이유).
     func testOutsideTheGridIsRejected() {
-        let field = PokopiaTown.defaultTerrain
+        let field = PokopiaTown.defaultTerrain(for: .isle)
         for point in [CGPoint(x: -20, y: -20),
                       CGPoint(x: 2, y: 2),                                  // 왼쪽 위 빈 귀퉁이
                       CGPoint(x: PokopiaTownIso.canvasSize.width - 2, y: 2),

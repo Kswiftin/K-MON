@@ -457,19 +457,14 @@ struct MemoryHomeAccessSettings: Codable, Sendable, Equatable {
     var roomStyle: MemoryHomeRoomStyle = .campus
     var placedDecor: [MemoryHomePlacedDecor] = []
     var featuredPhotoID: UUID?
-    /// 포코피아 마을. 세 축(지형·변신·주민)이 **이 한 키**에 들어간다 — 축마다 키를 만들면
-    /// 세이브 이전이 세 배가 되고, 되돌리기가 삭제 세 번이 된다.
+    /// 포코피아 마을 — **디코드 전용이다.** 마을은 이제 앨범 최상위 `pokopia` 에 산다(7단계).
+    /// 싸이월드 미니홈피 설정 안에 다른 게임이 사는 상태를 끝냈다 — 창을 가른 Phase 0 이 화면에서
+    /// 한 일을 저장에서 한 것이다.
     ///
-    /// 이 홈의 원칙은 "새 저장 필드를 만들지 않는다"(파생으로 만든다)인데
-    /// (`docs/reference/memory-home-plan.md`), 지형 편집·변신·이사는 사용자 의도와 사건이라
-    /// 시계에서 파생할 수 없다. 원칙을 깨는 대가를 최소로 줄인 형태가 이 한 키다 —
-    /// 필드가 셋뿐이고(`terrain`·`dittoForm`·`residents`), **주민 자리·아바타 자리·화면 문구는
-    /// 전부 파생**이며(`PokopiaTown.residentSpot`·`PokopiaTownLife`), 되돌리기는 이 키를
-    /// 지우는 것 하나다.
-    ///
-    /// 주민은 **소유 개체가 아니다** — 파티·박스와 무관한 마을 인구라, 종 번호·이름·타입만
-    /// 들고 있고 이 기기의 개체를 가리키지 않는다.
-    var town = PokopiaTownState()
+    /// 이 필드는 **옛 세이브를 읽어 넘기기 위해서만** 남는다. `normalizeMemoryHomeAccess` 가 한 번
+    /// 옮기고 `nil` 로 비우며, 옵셔널이라 그 뒤로는 굽히지 않는다(JSON 키는 `town` 그대로다 —
+    /// 바꾸면 옛 세이브를 못 읽는다). 위 `roomLayout`·`furniturePositions` 가 같은 자리에 있다.
+    var legacyTown: PokopiaTownState?
     /// Local-only passport stamps, keyed by Bonjour display ID. No visitor history is sent back.
     var visitedHomeStamps: [String: Date] = [:]
 
@@ -488,7 +483,8 @@ struct MemoryHomeAccessSettings: Codable, Sendable, Equatable {
              profileMessage, sharesProfileMessage, moodByDayKey, guestbookEntries,
              peerAliases, roommateIDs, roomLayout, furniturePositions, companionPositions, photos, visitedHomeStamps,
              unlockedRoomStyles, roomStyle, placedDecor, featuredPhotoID,
-             town
+             // JSON 키는 `town` 그대로 둔다 — 7단계 이전의 세이브가 이 이름으로 굽혀 있다.
+             legacyTown = "town"
     }
     init(publicNickname: String? = nil, visibility: MemoryHomeVisibility = .open,
          sharedPinnedMemoryID: UUID? = nil, recentRequesters: [MemoryHomeRecentRequester] = [],
@@ -527,10 +523,10 @@ struct MemoryHomeAccessSettings: Codable, Sendable, Equatable {
         roomStyle = try c.decodeIfPresent(MemoryHomeRoomStyle.self, forKey: .roomStyle) ?? .campus
         placedDecor = try c.decodeIfPresent([MemoryHomePlacedDecor].self, forKey: .placedDecor) ?? []
         featuredPhotoID = try c.decodeIfPresent(UUID.self, forKey: .featuredPhotoID)
-        // 마을 키. `decodeIfPresent … ?? .init()` 이라 이 키가 없던 세이브가 그대로 열린다 —
-        // 위 R4 주석과 같은 함정이다: 비옵셔널 `decode` 를 쓰면 기존 사용자 전원의 앨범이
-        // `.corrupt` 로 밀려난다.
-        town = try c.decodeIfPresent(PokopiaTownState.self, forKey: .town) ?? PokopiaTownState()
+        // 옛 마을 키. `decodeIfPresent` 라 이 키가 없던 세이브도, 이미 이전을 마친 세이브도
+        // 그대로 열린다 — 위 R4 주석과 같은 함정이다: 비옵셔널 `decode` 를 쓰면 기존 사용자
+        // 전원의 앨범이 `.corrupt` 로 밀려난다.
+        legacyTown = try c.decodeIfPresent(PokopiaTownState.self, forKey: .legacyTown)
     }
 }
 
@@ -575,13 +571,17 @@ struct PokemonMemoryAlbumSnapshot: Codable, Sendable, Equatable {
     var milestones: [UUID: PokemonMemoryMilestoneState] = [:]
     var roomThemes: [UUID: PokemonMemoryRoomTheme] = [:]
     var memoryHomeAccess = MemoryHomeAccessSettings()
+    /// 포코피아. **미니홈피와 나란한 최상위 키다**(7단계) — `memoryHomeAccess` 안이 아니다.
+    var pokopia = PokopiaState()
 
-    private enum CodingKeys: String, CodingKey { case memories, pinnedMemoryIDs, milestones, roomThemes, memoryHomeAccess }
+    private enum CodingKeys: String, CodingKey { case memories, pinnedMemoryIDs, milestones, roomThemes, memoryHomeAccess, pokopia }
     init(memories: [UUID: [PokemonMemory]], pinnedMemoryIDs: [UUID: UUID],
          milestones: [UUID: PokemonMemoryMilestoneState] = [:],
-         roomThemes: [UUID: PokemonMemoryRoomTheme] = [:], memoryHomeAccess: MemoryHomeAccessSettings = .init()) {
+         roomThemes: [UUID: PokemonMemoryRoomTheme] = [:], memoryHomeAccess: MemoryHomeAccessSettings = .init(),
+         pokopia: PokopiaState = .init()) {
         self.memories = memories; self.pinnedMemoryIDs = pinnedMemoryIDs
         self.milestones = milestones; self.roomThemes = roomThemes; self.memoryHomeAccess = memoryHomeAccess
+        self.pokopia = pokopia
     }
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -590,6 +590,7 @@ struct PokemonMemoryAlbumSnapshot: Codable, Sendable, Equatable {
         milestones = try c.decodeIfPresent([UUID: PokemonMemoryMilestoneState].self, forKey: .milestones) ?? [:]
         roomThemes = try c.decodeIfPresent([UUID: PokemonMemoryRoomTheme].self, forKey: .roomThemes) ?? [:]
         memoryHomeAccess = try c.decodeIfPresent(MemoryHomeAccessSettings.self, forKey: .memoryHomeAccess) ?? .init()
+        pokopia = try c.decodeIfPresent(PokopiaState.self, forKey: .pokopia) ?? PokopiaState()
     }
 }
 
@@ -649,6 +650,9 @@ final class PokemonMemoryAlbum {
         var milestones: [UUID: PokemonMemoryMilestoneState]
         var roomThemes: [UUID: PokemonMemoryRoomTheme]
         var memoryHomeAccess: MemoryHomeAccessSettings
+        /// **전송용 `PokemonMemoryAlbumSnapshot` 과 짝이다** — 한쪽만 고치면 저장은 되는데
+        /// 전송으로 안 넘어가거나 그 반대가 된다.
+        var pokopia: PokopiaState
         init(from decoder: Decoder) throws {
             let c = try decoder.container(keyedBy: CodingKeys.self)
             memories = try c.decode([UUID: [PokemonMemory]].self, forKey: .memories)
@@ -656,6 +660,7 @@ final class PokemonMemoryAlbum {
             milestones = try c.decodeIfPresent([UUID: PokemonMemoryMilestoneState].self, forKey: .milestones) ?? [:]
             roomThemes = try c.decodeIfPresent([UUID: PokemonMemoryRoomTheme].self, forKey: .roomThemes) ?? [:]
             memoryHomeAccess = try c.decodeIfPresent(MemoryHomeAccessSettings.self, forKey: .memoryHomeAccess) ?? .init()
+            pokopia = try c.decodeIfPresent(PokopiaState.self, forKey: .pokopia) ?? PokopiaState()
         }
     }
     private(set) var memories: [UUID: [PokemonMemory]] = [:]
@@ -663,6 +668,8 @@ final class PokemonMemoryAlbum {
     private var milestoneStates: [UUID: PokemonMemoryMilestoneState] = [:]
     private var roomThemes: [UUID: PokemonMemoryRoomTheme] = [:]
     private(set) var memoryHomeAccess = MemoryHomeAccessSettings()
+    /// 포코피아 전체(지역 다섯 + 지금 보고 있는 지역). **미니홈피 설정과 나란한 최상위 상태다.**
+    private(set) var pokopia = PokopiaState()
     /// Undo is deliberately scoped to room fields: network privacy and guestbook changes may
     /// occur while the editor is open and must never be rolled back.
     private struct RoomEditSnapshot {
@@ -681,8 +688,12 @@ final class PokemonMemoryAlbum {
         let terrain: [TownTerrain]
         let dittoForm: Int?
     }
-    private var townUndoStack: [TownEditSnapshot] = []
-    private var townRedoStack: [TownEditSnapshot] = []
+    /// **지역마다 한 벌**이다(7단계). 하나로 두면 황야에서 되돌리기가 해안을 되돌린다 — 방 스택과
+    /// 마을 스택을 가른 것과 같은 이유이고, 여기서는 축이 지역이다.
+    ///
+    /// 저장하지 않는다. 되돌리기는 이 실행 동안의 편집 이력이라 세이브에 넣을 것이 아니다.
+    private var townUndoStacks: [TownRegion: [TownEditSnapshot]] = [:]
+    private var townRedoStacks: [TownRegion: [TownEditSnapshot]] = [:]
     private let fileURL: URL
     /// 이 앨범이 **파일을 쓸 수 있는가.** 터미널은 세이브를 읽기 전용으로 여는데, 그동안
     /// `CompanionStore.isReadOnly` 가 지킨 것은 **자기 파일 하나**였다 — 그 스토어가 만든 앨범과
@@ -706,9 +717,12 @@ final class PokemonMemoryAlbum {
             milestoneStates = snapshot.milestones
             roomThemes = snapshot.roomThemes
             memoryHomeAccess = snapshot.memoryHomeAccess
+            pokopia = snapshot.pokopia
             normalizePins()
-            normalizeMemoryHomeAccess()
-            if normalizeMilestones() || backfillFirstRecordedDates() { save() }
+            // 이전이 돌았으면 **그 자리에서 저장한다.** 안 하면 다음 실행이 또 이전을 돌고,
+            // "이전은 한 번" 이라는 계약이 깨진다(`roomLayout` 이 겪은 부류다).
+            let migrated = normalizeMemoryHomeAccess()
+            if migrated || normalizeMilestones() || backfillFirstRecordedDates() { save() }
         } catch {
             let backup = self.fileURL.appendingPathExtension("corrupt")
             try? FileManager.default.removeItem(at: backup)
@@ -1028,7 +1042,30 @@ final class PokemonMemoryAlbum {
 
     // MARK: - 포코피아 마을
 
-    var town: PokopiaTownState { memoryHomeAccess.town }
+    /// 지금 보고 있는 마을. **모든 마을 API 가 이 하나에 작용한다** — 지역 인자를 밖으로 내면
+    /// 다섯 프런트엔드가 각자 지역을 들고 다니게 되고, 그건 "조립은 두 곳으로만 모은다"
+    /// (`PokopiaTown` 머리 주석)를 깬다.
+    var town: PokopiaTownState { pokopia.town(pokopia.home) }
+
+    /// 지금 보고 있는 지역. 화면이 이름을 쓰고, 되돌리기 스택이 이 값으로 갈린다.
+    var region: TownRegion { pokopia.home }
+
+    /// 지역을 바꾼다. **보는 곳이 곧 이사가 오는 곳**이라 이 하나가 두 뜻을 다 갖는다 —
+    /// 전역 상한이 강제하는 선택이 이 호출이다.
+    @discardableResult
+    func selectRegion(_ region: TownRegion) -> Bool {
+        guard pokopia.home != region else { return false }
+        pokopia.home = region; save()
+        return true
+    }
+
+    /// 지금 보고 있는 마을에 쓴다. **쓰기가 여기 하나로 모인다** — 없는 지역의 마을은 이 순간
+    /// 만들어져 담긴다(읽기만 하면 저장에 안 들어간다).
+    private func writeTown(_ body: (inout PokopiaTownState) -> Void) {
+        var state = pokopia.town(pokopia.home)
+        body(&state)
+        pokopia.towns[pokopia.home.rawValue] = state
+    }
 
     /// 지형 밀기. **비용이 없다** — 제약은 "변신했는가" 하나이고 그 판정은 호출부가 한다
     /// (`PokopiaTown.brush`). 여기서 다시 판정하면 표가 둘이 되고, 앨범이 도감을 알아야 한다.
@@ -1037,9 +1074,9 @@ final class PokemonMemoryAlbum {
     @discardableResult
     func shapeTownTile(col: Int, row: Int, to terrain: TownTerrain) -> Bool {
         guard let index = PokopiaTown.index(col: col, row: row),
-              memoryHomeAccess.town.terrain.indices.contains(index),
-              memoryHomeAccess.town.terrain[index] != terrain else { return false }
-        beginTownEdit(); memoryHomeAccess.town.terrain[index] = terrain; save()
+              town.terrain.indices.contains(index),
+              town.terrain[index] != terrain else { return false }
+        beginTownEdit(); writeTown { $0.terrain[index] = terrain }; save()
         return true
     }
 
@@ -1047,11 +1084,15 @@ final class PokemonMemoryAlbum {
     /// 못 믿을 값이므로 쓰기 자리에서 막는다.
     ///
     /// 해제를 막지 않는 이유: 도감에서 사라진 종으로 변신한 사용자가 트레이너로 못 돌아온다.
+    ///
+    /// **변신은 지역마다 따로다**(7단계). `dittoForm` 이 `PokopiaTownState` 안의 필드라 지역을
+    /// 나누면 자동으로 그렇게 된다 — 밖으로 빼면 이전이 한 겹 늘고, 마을마다 다른 것을 만들게
+    /// 하려는 방향과도 어긋난다.
     @discardableResult
     func setDittoForm(_ speciesID: Int?, registeredSpecies: Set<Int>) -> Bool {
         if let speciesID, !registeredSpecies.contains(speciesID) { return false }
-        guard memoryHomeAccess.town.dittoForm != speciesID else { return false }
-        beginTownEdit(); memoryHomeAccess.town.dittoForm = speciesID; save()
+        guard town.dittoForm != speciesID else { return false }
+        beginTownEdit(); writeTown { $0.dittoForm = speciesID }; save()
         return true
     }
 
@@ -1067,11 +1108,16 @@ final class PokemonMemoryAlbum {
     func admitTownResident(_ resident: TownResident) -> Bool {
         // 주민 하나의 유효성은 `normalized` 와 **같은 술어**다. 여기에 조건을 따로 적으면
         // 둘이 갈리고, 갈린 쪽으로 들어온 주민은 다음 실행에서 소리 없이 사라진다.
+        //
+        // **전역 상한은 여기 하나에서만 본다.** 신뢰경계(`PokopiaTown.normalized`)에 넣으면 배열을
+        // 자르는 자리가 되어, 지역을 옮길 때마다 주민이 사라진다 — 금지한 자동 퇴거다. 여기서
+        // 거절하면 이사가 멈출 뿐이고, 자리를 비우는 길은 내보내기 하나 그대로다.
         guard PokopiaTown.isAdmissible(resident),
-              memoryHomeAccess.town.residents.count < PokopiaTown.populationLimit,
-              !memoryHomeAccess.town.residents.contains(where: { $0.speciesID == resident.speciesID })
+              pokopia.totalResidents < PokopiaTown.globalPopulationLimit,
+              town.residents.count < PokopiaTown.populationLimit,
+              !town.residents.contains(where: { $0.speciesID == resident.speciesID })
         else { return false }
-        memoryHomeAccess.town.residents.append(resident); save()
+        writeTown { $0.residents.append(resident) }; save()
         return true
     }
 
@@ -1079,33 +1125,41 @@ final class PokemonMemoryAlbum {
     /// 자리를 비우는 용도이므로, 화면이 확인 대화를 앞에 둔다.
     @discardableResult
     func evictTownResident(speciesID: Int) -> Bool {
-        guard memoryHomeAccess.town.residents.contains(where: { $0.speciesID == speciesID })
+        guard town.residents.contains(where: { $0.speciesID == speciesID })
         else { return false }
-        memoryHomeAccess.town.residents.removeAll { $0.speciesID == speciesID }; save()
+        writeTown { $0.residents.removeAll { $0.speciesID == speciesID } }; save()
         return true
     }
 
-    var canUndoTownEdit: Bool { !townUndoStack.isEmpty }
-    var canRedoTownEdit: Bool { !townRedoStack.isEmpty }
+    // 되돌리기는 **지금 보고 있는 지역의 스택**만 본다. 지역을 바꾸면 그 지역의 이력이 그대로
+    // 살아 있고, 황야에서 되돌리기가 해안을 되돌리는 일이 없다.
+    var canUndoTownEdit: Bool { !(townUndoStacks[pokopia.home] ?? []).isEmpty }
+    var canRedoTownEdit: Bool { !(townRedoStacks[pokopia.home] ?? []).isEmpty }
     func undoTownEdit() {
-        guard let previous = townUndoStack.popLast() else { return }
-        townRedoStack.append(townEditSnapshot()); applyTownEdit(previous); save()
+        guard let previous = townUndoStacks[pokopia.home]?.popLast() else { return }
+        townRedoStacks[pokopia.home, default: []].append(townEditSnapshot())
+        applyTownEdit(previous); save()
     }
     func redoTownEdit() {
-        guard let next = townRedoStack.popLast() else { return }
-        townUndoStack.append(townEditSnapshot()); applyTownEdit(next); save()
+        guard let next = townRedoStacks[pokopia.home]?.popLast() else { return }
+        townUndoStacks[pokopia.home, default: []].append(townEditSnapshot())
+        applyTownEdit(next); save()
     }
     private func beginTownEdit() {
-        townUndoStack.append(townEditSnapshot())
-        if townUndoStack.count > PokopiaTown.undoDepth { townUndoStack.removeFirst() }
-        townRedoStack.removeAll()
+        townUndoStacks[pokopia.home, default: []].append(townEditSnapshot())
+        if townUndoStacks[pokopia.home, default: []].count > PokopiaTown.undoDepth {
+            townUndoStacks[pokopia.home]?.removeFirst()
+        }
+        townRedoStacks[pokopia.home] = []
     }
     private func townEditSnapshot() -> TownEditSnapshot {
-        .init(terrain: memoryHomeAccess.town.terrain, dittoForm: memoryHomeAccess.town.dittoForm)
+        .init(terrain: town.terrain, dittoForm: town.dittoForm)
     }
     private func applyTownEdit(_ snapshot: TownEditSnapshot) {
-        memoryHomeAccess.town.terrain = snapshot.terrain
-        memoryHomeAccess.town.dittoForm = snapshot.dittoForm
+        writeTown {
+            $0.terrain = snapshot.terrain
+            $0.dittoForm = snapshot.dittoForm
+        }
     }
     /// 반환값은 **앨범이 실제로 받았는가** 다. `Void` 로 두면 부르는 쪽이 거절(빈 본문·180자 초과·
     /// 이벤트 중복)을 알 수 없어 "기억해 둘게" 라고 말하고 앨범엔 아무것도 없는 상태가 된다.
@@ -1206,7 +1260,7 @@ final class PokemonMemoryAlbum {
         }
         normalizePins(); normalizeMemoryHomeAccess(); _ = normalizeMilestones(); save()
     }
-    var snapshot: PokemonMemoryAlbumSnapshot { PokemonMemoryAlbumSnapshot(memories: memories, pinnedMemoryIDs: pinnedMemoryIDs, milestones: milestoneStates, roomThemes: roomThemes, memoryHomeAccess: memoryHomeAccess) }
+    var snapshot: PokemonMemoryAlbumSnapshot { PokemonMemoryAlbumSnapshot(memories: memories, pinnedMemoryIDs: pinnedMemoryIDs, milestones: milestoneStates, roomThemes: roomThemes, memoryHomeAccess: memoryHomeAccess, pokopia: pokopia) }
     func replace(with snapshot: PokemonMemoryAlbumSnapshot, validCompanionIDs: Set<UUID>,
                  ownedItems: [String: Int]? = nil) {
         let localNetworkSettings = (memoryHomeAccess.visibility, memoryHomeAccess.blockedPeerIDs,
@@ -1231,7 +1285,9 @@ final class PokemonMemoryAlbum {
         memoryHomeAccess.publicNickname = localNetworkSettings.3
         // 마을 주민은 **이 기기의 개체를 가리키지 않는다**(마을 인구다). 전송된 앨범의 주민은
         // 종 번호·이름·타입이라 그대로 살아도 뜻이 통한다 — 남의 마을 인구를 물려받는 셈이다.
-        // 못 믿을 값(길이·중복·이름 빈 주민·그릴 수 없는 종)은 아래 정규화가 잘라낸다.
+        // 못 믿을 값(길이·중복·이름 빈 주민·그릴 수 없는 종·모르는 지역 키)은 아래 정규화가 잘라낸다.
+        // 옛 세이브에서 온 전송은 `pokopia` 가 비고 `legacyTown` 만 있으므로 같은 이전을 탄다.
+        pokopia = snapshot.pokopia
         normalizePins(); normalizeMemoryHomeAccess()
         if let ownedItems {
             // legacy 슬롯은 `normalizeMemoryHomeAccess` 의 이전에서 이미 비워졌다 — 가방 대조는
@@ -1519,7 +1575,10 @@ final class PokemonMemoryAlbum {
         guard let id = memoryHomeAccess.sharedPinnedMemoryID, pinned(for: activeCompanionID)?.id == id else { return nil }
         return entries(for: activeCompanionID).first { $0.id == id }
     }
-    private func normalizeMemoryHomeAccess() {
+    /// 반환값은 **옛 마을 키 이전이 이 호출에서 돌았는가** 다. 부르는 세 자리 중 파일 열기만
+    /// 그 값을 보고 저장한다 — `prune`·`replace` 는 자기 뒤에서 이미 저장을 부른다.
+    @discardableResult
+    private func normalizeMemoryHomeAccess() -> Bool {
         if let nickname = memoryHomeAccess.publicNickname {
             memoryHomeAccess.publicNickname = Self.validMemoryHomePublicNickname(nickname)
         }
@@ -1599,8 +1658,21 @@ final class PokemonMemoryAlbum {
         memoryHomeAccess.visitedHomeStamps = memoryHomeAccess.visitedHomeStamps.filter { !$0.key.isEmpty }
         // 마을. 주민이 소유 개체가 아니게 되면서 **외부 지식이 필요 없어졌다** — 길이·중복·
         // 이름·그릴 수 있는 종·인구 상한이 전부 마을 안에서 판정된다. 그래서 부르는 세 자리
-        // (파일 열기·`prune`·`replace`)가 이 한 줄 하나로 모인다.
-        memoryHomeAccess.town = PokopiaTown.normalized(memoryHomeAccess.town)
+        // (파일 열기·`prune`·`replace`)가 이 몇 줄로 모인다.
+        //
+        // **옛 키를 한 번만 옮긴다.** `legacyTown` 을 비우는 것이 이전의 소비다 — 안 비우면 조건이
+        // "towns 가 비었는가" 하나뿐이라, 다섯 마을을 다 지운 사용자에게서 옛 마을이 되살아난다
+        // (`roomLayout` 이 위에서 겪은 부류 그대로다). 옮길 곳이 황야인 것은 그것이 창이 처음
+        // 여는 지역이기 때문이고, 지형 배열을 통째로 들고 오므로 황야의 기본 바탕과 달라도
+        // 정상이다 — 사용자가 만든 마을이다.
+        var migrated = false
+        if let legacy = memoryHomeAccess.legacyTown {
+            if pokopia.towns.isEmpty { pokopia.towns[TownRegion.waste.rawValue] = legacy }
+            memoryHomeAccess.legacyTown = nil
+            migrated = true
+        }
+        pokopia = PokopiaTown.normalized(pokopia)
+        return migrated
     }
     /// This is called at the store save boundary, covering every active-companion transition.
     func clearSharedPinnedMemory(unlessPinnedFor activeCompanionID: UUID?) {

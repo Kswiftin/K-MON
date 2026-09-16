@@ -24,8 +24,13 @@ final class PokopiaImmigrationTests: XCTestCase {
         let typeTable = types ?? pool.reduce(into: [Int: [PokemonType]]()) { $0[$1] = [.water] }
         let provider = TownAssemblyProvider(line: base, basePool: pool,
                                             types: typeTable, linesBySpecies: namedLines)
-        return CompanionStore(provider: provider, clock: { Date(timeIntervalSince1970: 1_000) },
-                              fileURL: storeStateURL(tag), rng: SeededRNG(seed: seed))
+        let store = CompanionStore(provider: provider, clock: { Date(timeIntervalSince1970: 1_000) },
+                                   fileURL: storeStateURL(tag), rng: SeededRNG(seed: seed))
+        // **부유섬에서 연다.** 이 파일이 세는 것은 이사 판정이지 지역이 아닌데, 기본 지역
+        // (황야=모래)에서 열면 "물·풀·길 3종" 같은 전제가 지역 표에 묶인다. 부유섬의 바탕은
+        // 7단계 이전의 기본 지형 그대로다. 지역 자체는 `PokopiaRegionTests` 가 센다.
+        _ = store.memoryAlbum.selectRegion(.isle)
+        return store
     }
 
     /// 물 지형을 문턱 이상 깔아 물 타입을 부르는 마을로 만든다.

@@ -27,12 +27,16 @@ struct PokopiaTownView: View {
     private var development: PokopiaTown.TownDevelopment {
         PokopiaTown.development(town.terrain, residents: town.residents)
     }
+    /// 다섯 마을을 합친 주민 수. 파생이라 매번 다시 센다 — 마을 다섯 × 주민 16 이 상한이다.
+    private var totalResidents: Int { album.pokopia.totalResidents }
+    private var atGlobalLimit: Bool { totalResidents >= PokopiaTown.globalPopulationLimit }
 
     var body: some View {
         // 캔버스가 504×315pt 라 창을 최소 크기로 줄이면 넘친다. 고정 높이 칸은 넘친 내용을
         // 숨기지 않으므로(`defect-log.md`) 스크롤 컨테이너로 감싼다.
         ScrollView([.vertical, .horizontal]) {
             VStack(alignment: .leading, spacing: 10) {
+                regionPicker
                 header
                 brushBanner
                 PokopiaTownCanvas(town: town, residents: residentSprites,
@@ -64,12 +68,29 @@ struct PokopiaTownView: View {
         }
     }
 
+    // MARK: 지역
+
+    /// 지역 선택. **보는 곳이 곧 이사가 오는 곳**이라 선택이 하나다 — 둘로 가르면 전역 상한이
+    /// 강제하는 선택("어느 마을을 키울까")이 화면에서 안 보인다.
+    ///
+    /// 지역을 바꾸면 앞 지역의 오류 문구를 지운다. 되돌리기 버튼이 하는 것과 같다.
+    private var regionPicker: some View {
+        Picker("지역", selection: Binding(get: { album.region },
+                                          set: { _ = album.selectRegion($0); feedback = nil })) {
+            ForEach(TownRegion.allCases, id: \.self) { Text($0.name).tag($0) }
+        }
+        .pickerStyle(.segmented)
+        .labelsHidden()
+        .frame(maxWidth: 512, alignment: .leading)
+    }
+
     // MARK: 머리말
 
     private var header: some View {
         HStack(alignment: .top, spacing: 12) {
             VStack(alignment: .leading, spacing: 2) {
-                Text("포코피아 마을").font(.headline)
+                // 지역 이름 뒤에 조사를 붙이지 않는다(`PokopiaParticleGuardTests`) — 받침이 갈린다.
+                Text("포코피아 마을 · \(album.region.name)").font(.headline)
                 Text("집중 세션을 마치면 마을 환경에 맞는 포켓몬이 찾아와요.")
                     .font(.caption).foregroundStyle(.secondary)
             }
@@ -84,6 +105,14 @@ struct PokopiaTownView: View {
                 Text("환경 Lv.\(development.level) \(development.name) · 지형 \(development.habitats)/\(TownTerrain.allCases.count) · 정착 \(development.settled)/\(town.residents.count)")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
+                // 전체 인구. **마을 인구 아래**에 둔다 — 위에 두면 지금 보고 있는 마을의 수가
+                // 두 번째로 읽힌다. 상한에 닿으면 이사가 멈추고, 그때 자리를 비우는 길은
+                // 내보내기 하나다(자동 퇴거는 없다).
+                Text(atGlobalLimit
+                     ? "전체 인구 \(totalResidents)/\(PokopiaTown.globalPopulationLimit) · 상한에 닿아 이사가 멈췄어요"
+                     : "전체 인구 \(totalResidents)/\(PokopiaTown.globalPopulationLimit)")
+                    .font(.caption2)
+                    .foregroundStyle(atGlobalLimit ? PokedoroTheme.red : .secondary)
             }
         }
         .frame(maxWidth: 512, alignment: .leading)
