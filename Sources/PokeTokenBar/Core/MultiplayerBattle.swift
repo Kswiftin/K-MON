@@ -474,6 +474,7 @@ enum MultiplayerWireMessage: Codable, Sendable, Equatable {
     case tftArmy(participantID: UUID, army: PokemonTFTArmy)
     case tftMatchup(participantID: UUID, matchup: PokemonTFTMatchup)
     case tftResult(participantID: UUID, won: Bool)
+    case tftForfeit(participantID: UUID)
     case tftStandings(players: [PokemonTFTPlayerState], round: Int)
     // 공유 체육관. 관장이 호스트라 도전은 게스트→호스트, 판정과 상태는 호스트→전원이다.
     case gymChallenge(participantID: UUID, lineup: [BattleSnapshot])

@@ -125,7 +125,7 @@ struct PokemonTFTGame: Sendable {
     static let benchLimit = 8
     static let finalRound = 12
     private static let rangedTypes: Set<PokemonType> = [.fire, .water, .grass, .electric, .psychic, .ghost, .dragon]
-    static let catalog: [PokemonTFTUnitDefinition] = [
+    private static let shopCatalog: [PokemonTFTUnitDefinition] = [
         .init(id: 1,   name: "이상해씨", type: .grass,    cost: 1, attack: 42, health: 105),
         .init(id: 4,   name: "파이리",   type: .fire,     cost: 1, attack: 55, health: 82),
         .init(id: 7,   name: "꼬부기",   type: .water,    cost: 1, attack: 40, health: 115),
@@ -149,7 +149,80 @@ struct PokemonTFTGame: Sendable {
         .init(id: 446, name: "먹고자",   type: .normal,   cost: 3, attack: 76, health: 165),
         .init(id: 447, name: "리오르",   type: .fighting, cost: 4, attack: 120, health: 126),
         .init(id: 570, name: "조로아",   type: .dark,     cost: 4, attack: 132, health: 105),
-        .init(id: 610, name: "터검니",   type: .dragon,   cost: 5, attack: 148, health: 150)
+        .init(id: 610, name: "터검니",   type: .dragon,   cost: 5, attack: 148, health: 150),
+        .init(id: 58,  name: "가디",     type: .fire,     cost: 2, attack: 72, health: 104),
+        .init(id: 125, name: "에레키드", type: .electric, cost: 3, attack: 88, health: 92),
+        .init(id: 56,  name: "망키",     type: .fighting, cost: 2, attack: 78, health: 96),
+        .init(id: 355, name: "해골몽",   type: .ghost,    cost: 3, attack: 86, health: 112),
+        .init(id: 137, name: "폴리곤",   type: .normal,   cost: 3, attack: 84, health: 108),
+        .init(id: 509, name: "쌔비냥",   type: .dark,     cost: 2, attack: 76, health: 90),
+        .init(id: 111, name: "뿔카노",   type: .ground,   cost: 3, attack: 90, health: 148)
+    ]
+
+    private static let evolvedCatalog: [PokemonTFTUnitDefinition] = [
+        .init(id: 2, name: "이상해풀", type: .grass, cost: 1, attack: 68, health: 145),
+        .init(id: 3, name: "이상해꽃", type: .grass, cost: 1, attack: 104, health: 205),
+        .init(id: 5, name: "리자드", type: .fire, cost: 1, attack: 82, health: 118),
+        .init(id: 6, name: "리자몽", type: .fire, cost: 1, attack: 126, health: 176),
+        .init(id: 8, name: "어니부기", type: .water, cost: 1, attack: 64, health: 160),
+        .init(id: 9, name: "거북왕", type: .water, cost: 1, attack: 105, health: 220),
+        .init(id: 28, name: "고지", type: .ground, cost: 1, attack: 86, health: 168),
+        .init(id: 38, name: "나인테일", type: .fire, cost: 2, attack: 104, health: 132),
+        .init(id: 64, name: "윤겔라", type: .psychic, cost: 2, attack: 118, health: 105),
+        .init(id: 65, name: "후딘", type: .psychic, cost: 2, attack: 166, health: 148),
+        .init(id: 26, name: "라이츄", type: .electric, cost: 2, attack: 112, health: 142),
+        .init(id: 67, name: "근육몬", type: .fighting, cost: 2, attack: 112, health: 174),
+        .init(id: 68, name: "괴력몬", type: .fighting, cost: 2, attack: 158, health: 238),
+        .init(id: 82, name: "레어코일", type: .steel, cost: 2, attack: 108, health: 156),
+        .init(id: 462, name: "자포코일", type: .steel, cost: 2, attack: 152, health: 214),
+        .init(id: 93, name: "고우스트", type: .ghost, cost: 2, attack: 122, health: 112),
+        .init(id: 94, name: "팬텀", type: .ghost, cost: 2, attack: 168, health: 158),
+        .init(id: 134, name: "샤미드", type: .water, cost: 2, attack: 104, health: 184),
+        .init(id: 148, name: "신뇽", type: .dragon, cost: 3, attack: 126, health: 174),
+        .init(id: 149, name: "망나뇽", type: .dragon, cost: 3, attack: 178, health: 242),
+        .init(id: 153, name: "베이리프", type: .grass, cost: 1, attack: 62, health: 168),
+        .init(id: 154, name: "메가니움", type: .grass, cost: 1, attack: 96, health: 232),
+        .init(id: 159, name: "엘리게이", type: .water, cost: 1, attack: 78, health: 154),
+        .init(id: 160, name: "장크로다일", type: .water, cost: 1, attack: 126, health: 218),
+        .init(id: 180, name: "보송송", type: .electric, cost: 2, attack: 96, health: 148),
+        .init(id: 181, name: "전룡", type: .electric, cost: 2, attack: 138, health: 210),
+        .init(id: 461, name: "포푸니라", type: .dark, cost: 3, attack: 148, health: 142),
+        .init(id: 281, name: "킬리아", type: .psychic, cost: 3, attack: 128, health: 136),
+        .init(id: 282, name: "가디안", type: .psychic, cost: 3, attack: 174, health: 190),
+        .init(id: 305, name: "갱도라", type: .steel, cost: 3, attack: 108, health: 218),
+        .init(id: 306, name: "보스로라", type: .steel, cost: 3, attack: 150, health: 292),
+        .init(id: 354, name: "다크펫", type: .ghost, cost: 3, attack: 146, health: 142),
+        .init(id: 444, name: "한바이트", type: .ground, cost: 4, attack: 154, health: 202),
+        .init(id: 445, name: "한카리아스", type: .ground, cost: 4, attack: 204, health: 276),
+        .init(id: 143, name: "잠만보", type: .normal, cost: 3, attack: 122, health: 260),
+        .init(id: 448, name: "루카리오", type: .fighting, cost: 4, attack: 176, health: 190),
+        .init(id: 571, name: "조로아크", type: .dark, cost: 4, attack: 188, health: 158),
+        .init(id: 611, name: "액슨도", type: .dragon, cost: 5, attack: 192, health: 212),
+        .init(id: 612, name: "액스라이즈", type: .dragon, cost: 5, attack: 248, health: 286),
+        .init(id: 59, name: "윈디", type: .fire, cost: 2, attack: 118, health: 168),
+        .init(id: 126, name: "에레브", type: .electric, cost: 3, attack: 126, health: 138),
+        .init(id: 466, name: "에레키블", type: .electric, cost: 3, attack: 176, health: 196),
+        .init(id: 57, name: "성원숭", type: .fighting, cost: 2, attack: 120, health: 152),
+        .init(id: 356, name: "미라몽", type: .ghost, cost: 3, attack: 122, health: 174),
+        .init(id: 477, name: "야느와르몽", type: .ghost, cost: 3, attack: 168, health: 236),
+        .init(id: 233, name: "폴리곤2", type: .normal, cost: 3, attack: 120, health: 164),
+        .init(id: 474, name: "폴리곤Z", type: .normal, cost: 3, attack: 172, health: 218),
+        .init(id: 510, name: "레파르다스", type: .dark, cost: 2, attack: 116, health: 138),
+        .init(id: 112, name: "코뿌리", type: .ground, cost: 3, attack: 134, health: 218),
+        .init(id: 464, name: "거대코뿌리", type: .ground, cost: 3, attack: 184, health: 298)
+    ]
+
+    static let catalog = shopCatalog + evolvedCatalog
+
+    private static let evolutionRoutes: [Int: Int] = [
+        1: 2, 2: 3, 4: 5, 5: 6, 7: 8, 8: 9, 27: 28, 37: 38,
+        63: 64, 64: 65, 25: 26, 66: 67, 67: 68, 81: 82, 82: 462,
+        92: 93, 93: 94, 133: 134, 147: 148, 148: 149, 152: 153, 153: 154,
+        158: 159, 159: 160, 179: 180, 180: 181, 215: 461, 280: 281, 281: 282,
+        304: 305, 305: 306, 353: 354, 443: 444, 444: 445, 446: 143,
+        447: 448, 570: 571, 610: 611, 611: 612, 58: 59, 125: 126, 126: 466,
+        56: 57, 355: 356, 356: 477, 137: 233, 233: 474, 509: 510,
+        111: 112, 112: 464
     ]
 
     struct SynergyInfo: Identifiable, Sendable {
@@ -157,11 +230,12 @@ struct PokemonTFTGame: Sendable {
         let type: PokemonType
         let members: [String]
         let deployed: Int
-        var nextThreshold: Int? { deployed < 2 ? 2 : deployed < 4 ? 4 : nil }
+        var nextThreshold: Int? { deployed < 2 ? 2 : deployed < 4 ? 4 : deployed < 6 ? 6 : nil }
         var effectText: String {
+            if deployed >= 6 { return "6마리: 해당 타입 공격력·체력 +45%" }
             if deployed >= 4 { return "4마리: 해당 타입 공격력·체력 +25%" }
             if deployed >= 2 { return "2마리: 해당 타입 공격력·체력 +10%" }
-            return "2마리 +10% · 4마리 +25%"
+            return "2마리 +10% · 4마리 +25% · 6마리 +45%"
         }
     }
 
@@ -252,10 +326,16 @@ struct PokemonTFTGame: Sendable {
 
     mutating func buyExperience() {
         guard phase == .shopping, level < 6, gold >= 4 else { return }
-        gold -= 4; experience += 4
+        gold -= 4
+        gainExperience(4)
+    }
+
+    private mutating func gainExperience(_ amount: Int) {
+        experience += amount
         while level < 6, experience >= level * 4 {
             experience -= level * 4; level += 1
         }
+        if level >= 6 { experience = 0 }
     }
 
     mutating func toggleDeployment(_ id: UUID) {
@@ -308,6 +388,7 @@ struct PokemonTFTGame: Sendable {
             lastBattleText = "패배 · 체력 -\(damage) · \(income.summary)"
             if health == 0 { phase = .finished(won: false); return }
         }
+        gainExperience(2)
         round += 1
         refreshShop(free: true)
     }
@@ -322,6 +403,7 @@ struct PokemonTFTGame: Sendable {
         } else {
             lastBattleText = "패배 · 호스트 체력 정산 중 · \(income.summary)"
         }
+        gainExperience(2)
         round += 1
         refreshShop(free: true)
     }
@@ -377,7 +459,7 @@ struct PokemonTFTGame: Sendable {
             let typeCount = units.filter { candidate in
                 candidate.boardSlot != nil && self.definition(for: candidate.definitionID).type == definition.type
             }.count
-            let synergy = typeCount >= 4 ? 1.25 : typeCount >= 2 ? 1.10 : 1
+            let synergy = typeCount >= 6 ? 1.45 : typeCount >= 4 ? 1.25 : typeCount >= 2 ? 1.10 : 1
             return PokemonTFTFighter(id: unit.id, speciesID: definition.id, name: definition.name,
                 type: definition.type, team: .player,
                 x: (slot % Self.boardColumns) * 2, y: 5 - slot / Self.boardColumns,
@@ -498,14 +580,17 @@ struct PokemonTFTGame: Sendable {
     }
 
     private mutating func combine(definitionID: Int) {
-        for star in 1...2 {
-            while units.filter({ $0.definitionID == definitionID && $0.star == star }).count >= 3 {
-                let matches = units.indices.filter { units[$0].definitionID == definitionID && units[$0].star == star }
-                let deployedSlot = matches.compactMap { units[$0].boardSlot }.first
-                for index in matches.prefix(3).sorted(by: >) { units.remove(at: index) }
-                units.append(PokemonTFTUnit(definitionID: definitionID, star: star + 1,
-                                            boardSlot: deployedSlot))
-            }
+        var currentID = definitionID
+        var star = 1
+        while let evolvedID = Self.evolutionRoutes[currentID] {
+            let matches = units.indices.filter { units[$0].definitionID == currentID && units[$0].star == star }
+            guard matches.count >= 3 else { break }
+            let deployedSlot = matches.compactMap { units[$0].boardSlot }.first
+            for index in matches.prefix(3).sorted(by: >) { units.remove(at: index) }
+            units.append(PokemonTFTUnit(definitionID: evolvedID, star: star + 1,
+                                        boardSlot: deployedSlot))
+            currentID = evolvedID
+            star += 1
         }
     }
 
@@ -522,7 +607,7 @@ struct PokemonTFTGame: Sendable {
             accumulated += weight
             if roll < accumulated { cost = index + 1; break }
         }
-        let pool = Self.catalog.filter { $0.cost == cost }
+        let pool = Self.shopCatalog.filter { $0.cost == cost }
         return pool[Int(nextRandom() % UInt64(pool.count))].id
     }
 

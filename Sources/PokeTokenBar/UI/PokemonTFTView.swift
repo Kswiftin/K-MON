@@ -14,6 +14,7 @@ struct PokemonTFTView: View {
     @State private var battleFrameIndex = 0
     @State private var battleEffectProgress: CGFloat = 0
     @State private var showSynergyGuide = false
+    @State private var showBeginnerGuide = false
     @State private var playMode: PlayMode?
 
     private var center: MultiplayerRoomCenter { battleCenter.multiplayer }
@@ -31,12 +32,16 @@ struct PokemonTFTView: View {
             else {
                 status
                 if center.tftStarted { multiplayerStandings }
-                switch game.phase {
-                case .shopping:
-                    if battleReplay != nil { battleArena }
-                    else if showSynergyGuide { synergyGuide }
-                    else { board; bench; shop; controls; fieldSynergyBar }
-                case .finished(let won): ending(won: won)
+                if showBeginnerGuide {
+                    beginnerGuide
+                } else {
+                    switch game.phase {
+                    case .shopping:
+                        if battleReplay != nil { battleArena }
+                        else if showSynergyGuide { synergyGuide }
+                        else { board; bench; shop; controls; fieldSynergyBar }
+                    case .finished(let won): ending(won: won)
+                    }
                 }
             }
         }
@@ -202,6 +207,11 @@ struct PokemonTFTView: View {
                 Text("배치 \(game.deployedCount)/\(game.unitLimit)")
                 Spacer()
                 Button {
+                    withAnimation { showBeginnerGuide = true; showSynergyGuide = false }
+                } label: {
+                    Label("가이드", systemImage: "questionmark.circle.fill")
+                }.buttonStyle(.plain).foregroundStyle(.mint).disabled(battleReplay != nil)
+                Button {
                     withAnimation(.easeInOut(duration: 0.2)) { showSynergyGuide.toggle() }
                 } label: {
                     Label(showSynergyGuide ? "배치판" : "시너지 도감", systemImage: "books.vertical.fill")
@@ -225,11 +235,11 @@ struct PokemonTFTView: View {
 
     private func fieldSynergyChip(_ synergy: PokemonTFTGame.SynergyInfo) -> some View {
         let active = synergy.deployed >= 2
-        let target = synergy.deployed >= 2 ? 4 : 2
-        let tier = synergy.deployed >= 4 ? 25 : active ? 10 : 0
+        let target = synergy.deployed >= 4 ? 6 : synergy.deployed >= 2 ? 4 : 2
+        let tier = synergy.deployed >= 6 ? 45 : synergy.deployed >= 4 ? 25 : active ? 10 : 0
         return HStack(spacing: 4) {
             Circle().fill(synergy.type.battleColor).frame(width: 7, height: 7)
-            Text("\(synergy.type.rawValue) \(min(synergy.deployed, 4))/\(target)")
+            Text("\(synergy.type.rawValue) \(min(synergy.deployed, 6))/\(target)")
             if active { Text("+\(tier)%") }
         }
         .font(.caption2.bold()).foregroundStyle(active ? .white : .white.opacity(0.58))
@@ -261,7 +271,7 @@ struct PokemonTFTView: View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
                 Text("시너지 도감").font(.headline)
-                Spacer(); Text("배치한 같은 타입 2/4마리로 활성화").font(.caption2).foregroundStyle(.secondary)
+                Spacer(); Text("같은 타입 2/4/6마리로 강화").font(.caption2).foregroundStyle(.secondary)
             }
             ScrollView {
                 LazyVStack(spacing: 6) {
@@ -286,6 +296,32 @@ struct PokemonTFTView: View {
             Button("배치판으로 돌아가기") { withAnimation { showSynergyGuide = false } }
                 .buttonStyle(.borderedProminent).tint(PokedoroTheme.blue).frame(maxWidth: .infinity)
         }.transition(.opacity)
+    }
+
+    private var beginnerGuide: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Label("처음 하는 트레이너 가이드", systemImage: "graduationcap.fill").font(.headline)
+                Spacer()
+                Button("닫기") { withAnimation { showBeginnerGuide = false } }
+            }
+            guideRow("1", "상점에서 포켓몬을 사고 대기석에 모으세요. 새로고침은 2G입니다.")
+            guideRow("2", "같은 포켓몬 3마리를 모으면 2성이 되며 다음 진화체로 진화합니다.")
+            guideRow("3", "필드에는 레벨만큼 배치할 수 있습니다. 같은 타입 2·4·6마리로 시너지가 강화됩니다.")
+            guideRow("4", "매 라운드 자동으로 2 XP를 받고, 4G를 쓰면 XP 4를 추가로 살 수 있습니다.")
+            guideRow("5", "승패와 무관하게 기본 수입과 이자를 받으며 연승·연패 보너스도 쌓입니다.")
+            guideRow("6", "멀티에서는 배치를 확정하면 상대가 정해집니다. 체력이 0이 되면 탈락합니다.")
+            Spacer()
+        }
+        .padding(12).pokedoroCard()
+    }
+
+    private func guideRow(_ number: String, _ text: String) -> some View {
+        HStack(alignment: .top, spacing: 8) {
+            Text(number).font(.caption.bold()).foregroundStyle(.white)
+                .frame(width: 22, height: 22).background(arenaBlue, in: Circle())
+            Text(text).font(.caption).fixedSize(horizontal: false, vertical: true)
+        }
     }
 
     private var board: some View {
@@ -423,6 +459,7 @@ struct PokemonTFTView: View {
             }.disabled(game.gold < 4 || game.level >= 6)
             Text("4G").font(.caption2.bold()).foregroundStyle(arenaGold)
             if let selectedUnit { Button("판매") { game.sell(selectedUnit); self.selectedUnit = nil } }
+            Button("기권", role: .destructive) { forfeitTFT() }
             Spacer()
             if center.tftStarted {
                 if let winner = center.tftWinner {
@@ -446,6 +483,13 @@ struct PokemonTFTView: View {
         let frames = battleReplay?.frames ?? []
         let frame = frames.indices.contains(battleFrameIndex) ? frames[battleFrameIndex] : frames.first
         return VStack(spacing: 6) {
+            HStack {
+                Spacer()
+                Text(center.tftMatchup.map { "VS \($0.opponentName)" } ?? "VS CPU 트레이너")
+                    .font(.headline.bold()).foregroundStyle(arenaGold)
+                Spacer()
+                Button("기권", role: .destructive) { forfeitTFT() }.controlSize(.mini)
+            }
             Text(frame?.message ?? "전투 준비").font(.caption.bold()).foregroundStyle(.white)
                 .contentTransition(.numericText())
             GeometryReader { proxy in
@@ -572,6 +616,16 @@ struct PokemonTFTView: View {
             }
             withAnimation { battleReplay = nil; battleFrameIndex = 0; battleEffectProgress = 0 }
         }
+    }
+
+    private func forfeitTFT() {
+        battleReplay = nil
+        battleFrameIndex = 0
+        battleEffectProgress = 0
+        battleCenter.isPokemonTFTSoloBattleRunning = false
+        battleCenter.pokemonTFTResolvingRound = nil
+        if center.tftStarted { center.forfeitPokemonTFT() }
+        else { game.phase = .finished(won: false) }
     }
 
     private func close() {
