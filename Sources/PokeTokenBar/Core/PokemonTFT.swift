@@ -23,6 +23,31 @@ struct PokemonTFTUnit: Identifiable, Sendable, Equatable {
     }
 }
 
+struct PokemonTFTFighter: Identifiable, Sendable, Equatable {
+    enum Team: Sendable { case player, enemy }
+    let id: UUID
+    let speciesID: Int
+    let name: String
+    let team: Team
+    var x: Int
+    var y: Int
+    let maxHP: Int
+    var hp: Int
+    let attack: Int
+    let defense: Int
+    let attackRange: Int
+}
+
+struct PokemonTFTBattleFrame: Sendable, Equatable {
+    let fighters: [PokemonTFTFighter]
+    let message: String
+}
+
+struct PokemonTFTBattleReplay: Sendable {
+    let frames: [PokemonTFTBattleFrame]
+    let playerWon: Bool
+}
+
 /// 포켓몬식 오토배틀러 한 판. 앱의 보유 포켓몬/재화와 분리된 세션이라 중도 종료해도 세이브를
 /// 오염시키지 않는다. 화면은 입력만 전달하고 경제·합성·전투 판정은 전부 이 구조체가 담당한다.
 struct PokemonTFTGame: Sendable {
@@ -31,6 +56,7 @@ struct PokemonTFTGame: Sendable {
     static let boardSlots = 9
     static let benchLimit = 8
     static let finalRound = 12
+    private static let rangedTypes: Set<PokemonType> = [.fire, .water, .grass, .electric, .psychic, .ghost, .dragon]
     static let catalog: [PokemonTFTUnitDefinition] = [
         .init(id: 1,   name: "이상해씨", type: .grass,    cost: 1, attack: 42, health: 105),
         .init(id: 4,   name: "파이리",   type: .fire,     cost: 1, attack: 55, health: 82),
@@ -70,6 +96,16 @@ struct PokemonTFTGame: Sendable {
     var benchCount: Int { units.filter { $0.boardSlot == nil }.count }
     var experienceNeeded: Int { level >= 6 ? 0 : level * 4 }
 
+    /// 현재 라운드에서 화면에 보여 줄 상대 진영. 전투 판정의 난이도 곡선과 같은 마릿수를 쓰고,
+    /// 라운드로만 고르므로 연출을 다시 그려도 상대 모습이 바뀌지 않는다.
+    var enemyPreview: [PokemonTFTUnitDefinition] {
+        let count = min(2 + round / 2, 6)
+        return (0..<count).map { offset in
+            let index = (round * 3 + offset * 5) % Self.catalog.count
+            return Self.catalog[index]
+        }
+    }
+
     func definition(for id: Int) -> PokemonTFTUnitDefinition {
         Self.catalog.first { $0.id == id }!
     }
@@ -89,7 +125,7 @@ struct PokemonTFTGame: Sendable {
     mutating func refreshShop(free: Bool = false) {
         guard phase == .shopping, free || gold >= 2 else { return }
         if !free { gold -= 2 }
-        shop = (0..<5).map { _ in rollDefinitionID() }
+        shop = (0..<6).map { _ in rollDefinitionID() }
     }
 
     mutating func buyExperience() {
@@ -128,23 +164,88 @@ struct PokemonTFTGame: Sendable {
 
     mutating func fight() {
         guard phase == .shopping, deployedCount > 0 else { return }
-        let player = combatPower(of: units.filter { $0.boardSlot != nil })
-        let enemy = enemyPower(round: round)
-        let jitter = Double(Int(nextRandom() % 21) - 10) / 100
-        if player * (1 + jitter) >= enemy {
+        settleBattle(playerWon: makeBattleReplay().playerWon)
+    }
+
+    mutating func settleBattle(playerWon: Bool) {
+        guard phase == .shopping, deployedCount > 0 else { return }
+        if playerWon {
             let income = 5 + min(round / 3, 4)
             gold += income
-            lastBattleText = "승리! +(income) 골드 · 전투력 (Int(player)) vs (Int(enemy))"
+            lastBattleText = "승리! +\(income) 골드"
             if round == Self.finalRound { phase = .finished(won: true); return }
         } else {
-            let damage = max(4, 3 + round + Int((enemy - player) / 45))
+            let damage = max(4, 3 + round)
             health = max(0, health - damage)
-            lastBattleText = "패배 · 체력 -(damage) · 전투력 (Int(player)) vs (Int(enemy))"
+            lastBattleText = "패배 · 체력 -\(damage)"
             if health == 0 { phase = .finished(won: false); return }
         }
         round += 1
         gold += min(gold / 10, 5) // 10골드당 이자, 최대 5
         refreshShop(free: true)
+    }
+
+    /// 6×6 격자에서 가장 가까운 적을 찾아 이동하고 사거리 안이면 공격하는 전투 리플레이.
+    /// pokemonAutoChess의 보드/상태 머신 개념을 참고했지만 Swift로 독립 구현했다.
+    func makeBattleReplay() -> PokemonTFTBattleReplay {
+        var fighters: [PokemonTFTFighter] = units.filter { $0.boardSlot != nil }.map { unit in
+            let definition = definition(for: unit.definitionID)
+            let slot = unit.boardSlot ?? 0
+            let multiplier = pow(1.65, Double(unit.star - 1))
+            let hp = Int(Double(definition.health) * multiplier)
+            return PokemonTFTFighter(id: unit.id, speciesID: definition.id, name: definition.name,
+                team: .player, x: (slot % 3) * 2, y: 5 - slot / 3,
+                maxHP: hp, hp: hp, attack: Int(Double(definition.attack) * multiplier),
+                defense: max(4, definition.health / 14),
+                attackRange: Self.rangedTypes.contains(definition.type) ? 2 : 1)
+        }
+        let enemyScale = 1.0 + Double(round - 1) * 0.10
+        fighters += enemyPreview.enumerated().map { index, definition in
+            let hp = Int(Double(definition.health) * enemyScale)
+            return PokemonTFTFighter(id: UUID(), speciesID: definition.id, name: definition.name,
+                team: .enemy, x: (index % 3) * 2 + 1, y: index / 3,
+                maxHP: hp, hp: hp, attack: Int(Double(definition.attack) * enemyScale),
+                defense: max(4, Int(Double(definition.health / 14) * enemyScale)),
+                attackRange: Self.rangedTypes.contains(definition.type) ? 2 : 1)
+        }
+        var frames = [PokemonTFTBattleFrame(fighters: fighters, message: "전투 시작!")]
+        for _ in 0..<28 {
+            var firstMessage: String?
+            for actorID in fighters.filter({ $0.hp > 0 }).map(\.id) {
+                guard let actorIndex = fighters.firstIndex(where: { $0.id == actorID && $0.hp > 0 }) else { continue }
+                let enemies = fighters.indices.filter { fighters[$0].team != fighters[actorIndex].team && fighters[$0].hp > 0 }
+                guard let targetIndex = enemies.min(by: {
+                    Self.distance(fighters[actorIndex], fighters[$0]) < Self.distance(fighters[actorIndex], fighters[$1])
+                }) else { break }
+                if Self.distance(fighters[actorIndex], fighters[targetIndex]) <= fighters[actorIndex].attackRange {
+                    let damage = max(1, fighters[actorIndex].attack - fighters[targetIndex].defense)
+                    fighters[targetIndex].hp = max(0, fighters[targetIndex].hp - damage)
+                    firstMessage = firstMessage ?? "\(fighters[actorIndex].name)의 공격!"
+                } else {
+                    let occupied = Set(fighters.filter { $0.hp > 0 && $0.id != actorID }.map { "\($0.x),\($0.y)" })
+                    let dx = fighters[targetIndex].x == fighters[actorIndex].x ? 0 : (fighters[targetIndex].x > fighters[actorIndex].x ? 1 : -1)
+                    let dy = fighters[targetIndex].y == fighters[actorIndex].y ? 0 : (fighters[targetIndex].y > fighters[actorIndex].y ? 1 : -1)
+                    let candidates = [(fighters[actorIndex].x + dx, fighters[actorIndex].y),
+                                      (fighters[actorIndex].x, fighters[actorIndex].y + dy)]
+                    if let next = candidates.first(where: {
+                        (0..<6).contains($0.0) && (0..<6).contains($0.1) && !occupied.contains("\($0.0),\($0.1)")
+                    }) {
+                        fighters[actorIndex].x = next.0
+                        fighters[actorIndex].y = next.1
+                    }
+                }
+            }
+            frames.append(PokemonTFTBattleFrame(fighters: fighters,
+                                                 message: firstMessage ?? "상대를 향해 이동 중…"))
+            let playerAlive = fighters.contains { $0.team == .player && $0.hp > 0 }
+            let enemyAlive = fighters.contains { $0.team == .enemy && $0.hp > 0 }
+            if !playerAlive || !enemyAlive {
+                return PokemonTFTBattleReplay(frames: frames, playerWon: playerAlive)
+            }
+        }
+        let playerHP = fighters.filter { $0.team == .player }.reduce(0) { $0 + $1.hp }
+        let enemyHP = fighters.filter { $0.team == .enemy }.reduce(0) { $0 + $1.hp }
+        return PokemonTFTBattleReplay(frames: frames, playerWon: playerHP >= enemyHP)
     }
 
     func synergyText() -> String {
@@ -174,6 +275,10 @@ struct PokemonTFTGame: Sendable {
         return Double(count) * base * (round.isMultiple(of: 4) ? 1.14 : 1)
     }
 
+    private static func distance(_ lhs: PokemonTFTFighter, _ rhs: PokemonTFTFighter) -> Int {
+        abs(lhs.x - rhs.x) + abs(lhs.y - rhs.y)
+    }
+
     private mutating func combine(definitionID: Int) {
         for star in 1...2 {
             while units.filter({ $0.definitionID == definitionID && $0.star == star }).count >= 3 {
@@ -187,8 +292,19 @@ struct PokemonTFTGame: Sendable {
     }
 
     private mutating func rollDefinitionID() -> Int {
-        let unlockedCost = min(5, 1 + level / 2)
-        let pool = Self.catalog.filter { $0.cost <= unlockedCost }
+        let weights: [[Int]] = [
+            [100, 0, 0, 0, 0], [75, 25, 0, 0, 0], [55, 35, 10, 0, 0],
+            [35, 40, 22, 3, 0], [22, 34, 30, 12, 2], [12, 25, 34, 23, 6]
+        ]
+        let row = weights[min(max(level, 1), 6) - 1]
+        let roll = Int(nextRandom() % 100)
+        var accumulated = 0
+        var cost = 1
+        for (index, weight) in row.enumerated() {
+            accumulated += weight
+            if roll < accumulated { cost = index + 1; break }
+        }
+        let pool = Self.catalog.filter { $0.cost == cost }
         return pool[Int(nextRandom() % UInt64(pool.count))].id
     }
 

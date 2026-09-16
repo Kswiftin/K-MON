@@ -5,6 +5,8 @@ struct PokemonTFTView: View {
     let onClose: () -> Void
     @State private var game = PokemonTFTGame()
     @State private var selectedUnit: UUID?
+    @State private var battleReplay: PokemonTFTBattleReplay?
+    @State private var battleFrameIndex = 0
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -12,7 +14,9 @@ struct PokemonTFTView: View {
                                   tint: .cyan, closeLabel: store.l.close, onClose: onClose)
             status
             switch game.phase {
-            case .shopping: board; bench; shop; controls
+            case .shopping:
+                if battleReplay != nil { battleArena }
+                else { board; bench; shop; controls }
             case .finished(let won): ending(won: won)
             }
         }
@@ -94,9 +98,89 @@ struct PokemonTFTView: View {
             Button("XP +4 · 4G") { game.buyExperience() }.disabled(game.gold < 4 || game.level >= 6)
             if let selectedUnit { Button("판매") { game.sell(selectedUnit); self.selectedUnit = nil } }
             Spacer()
-            Button("자동 전투") { selectedUnit = nil; game.fight() }
+            Button("자동 전투") { startAnimatedBattle() }
                 .buttonStyle(.borderedProminent).tint(.cyan).disabled(game.deployedCount == 0)
         }.controlSize(.small)
+    }
+
+    private var battleArena: some View {
+        let frames = battleReplay?.frames ?? []
+        let frame = frames.indices.contains(battleFrameIndex) ? frames[battleFrameIndex] : frames.first
+        return VStack(spacing: 6) {
+            Text(frame?.message ?? "전투 준비").font(.caption.bold())
+                .contentTransition(.numericText())
+            GeometryReader { proxy in
+                let cellWidth = proxy.size.width / 6
+                let cellHeight = proxy.size.height / 6
+                ZStack(alignment: .topLeading) {
+                    battleGrid
+                    ForEach(frame?.fighters ?? []) { fighter in
+                        fighterView(fighter, width: cellWidth, height: cellHeight)
+                            .offset(x: CGFloat(fighter.x) * cellWidth,
+                                    y: CGFloat(fighter.y) * cellHeight)
+                            .animation(.easeInOut(duration: 0.16), value: fighter.x)
+                            .animation(.easeInOut(duration: 0.16), value: fighter.y)
+                            .transition(.scale.combined(with: .opacity))
+                    }
+                }
+            }
+            .frame(height: 330)
+            Text("가장 가까운 상대를 추적해 이동하고, 사거리 안에서 공격합니다.")
+                .font(.caption2).foregroundStyle(.secondary)
+        }
+        .padding(10)
+        .pokedoroCard()
+        .transition(.opacity.combined(with: .scale(scale: 0.98)))
+    }
+
+    private var battleGrid: some View {
+        VStack(spacing: 1) {
+            ForEach(0..<6, id: \.self) { row in
+                HStack(spacing: 1) {
+                    ForEach(0..<6, id: \.self) { _ in
+                        RoundedRectangle(cornerRadius: 3)
+                            .fill(row < 3 ? Color.red.opacity(0.07) : Color.blue.opacity(0.08))
+                    }
+                }
+            }
+        }
+    }
+
+    private func fighterView(_ fighter: PokemonTFTFighter, width: CGFloat, height: CGFloat) -> some View {
+        VStack(spacing: 0) {
+            GeometryReader { proxy in
+                ZStack(alignment: .leading) {
+                    Capsule().fill(Color.black.opacity(0.15))
+                    Capsule().fill(fighter.team == .player ? Color.green : Color.red)
+                        .frame(width: proxy.size.width * CGFloat(fighter.hp) / CGFloat(max(1, fighter.maxHP)))
+                }
+            }
+            .frame(width: max(24, width - 8), height: 4)
+            SpriteView(speciesID: fighter.speciesID, size: min(42, height - 9), animated: true,
+                       shiny: false, back: fighter.team == .player)
+        }
+        .frame(width: width, height: height)
+        .opacity(fighter.hp > 0 ? 1 : 0)
+        .scaleEffect(fighter.hp > 0 ? 1 : 0.3)
+        .animation(.easeOut(duration: 0.2), value: fighter.hp)
+    }
+
+    private func startAnimatedBattle() {
+        guard battleReplay == nil, game.deployedCount > 0 else { return }
+        selectedUnit = nil
+        let replay = game.makeBattleReplay()
+        battleReplay = replay
+        battleFrameIndex = 0
+        Task { @MainActor in
+            for index in replay.frames.indices.dropFirst() {
+                guard battleReplay != nil else { return }
+                withAnimation { battleFrameIndex = index }
+                try? await Task.sleep(for: .milliseconds(220))
+            }
+            try? await Task.sleep(for: .milliseconds(500))
+            game.settleBattle(playerWon: replay.playerWon)
+            withAnimation { battleReplay = nil; battleFrameIndex = 0 }
+        }
     }
 
     private func unitTile(_ unit: PokemonTFTUnit, compact: Bool) -> some View {
