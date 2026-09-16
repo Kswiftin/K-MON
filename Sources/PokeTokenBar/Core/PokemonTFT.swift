@@ -129,15 +129,24 @@ struct PokemonTFTGame: Sendable {
         .init(id: 1,   name: "이상해씨", type: .grass,    cost: 1, attack: 42, health: 105),
         .init(id: 4,   name: "파이리",   type: .fire,     cost: 1, attack: 55, health: 82),
         .init(id: 7,   name: "꼬부기",   type: .water,    cost: 1, attack: 40, health: 115),
+        .init(id: 27,  name: "모래두지", type: .ground,   cost: 1, attack: 48, health: 112),
+        .init(id: 37,  name: "식스테일", type: .fire,     cost: 2, attack: 68, health: 84),
+        .init(id: 63,  name: "캐이시",   type: .psychic,  cost: 2, attack: 84, health: 72),
         .init(id: 25,  name: "피카츄",   type: .electric, cost: 2, attack: 70, health: 88),
         .init(id: 66,  name: "알통몬",   type: .fighting, cost: 2, attack: 74, health: 120),
+        .init(id: 81,  name: "코일",     type: .steel,    cost: 2, attack: 72, health: 108),
         .init(id: 92,  name: "고오스",   type: .ghost,    cost: 2, attack: 82, health: 78),
         .init(id: 133, name: "이브이",   type: .normal,   cost: 2, attack: 62, health: 100),
         .init(id: 147, name: "미뇽",     type: .dragon,   cost: 3, attack: 88, health: 118),
+        .init(id: 152, name: "치코리타", type: .grass,    cost: 1, attack: 40, health: 118),
+        .init(id: 158, name: "리아코",   type: .water,    cost: 1, attack: 52, health: 108),
+        .init(id: 179, name: "메리프",   type: .electric, cost: 2, attack: 66, health: 102),
         .init(id: 215, name: "포푸니",   type: .dark,     cost: 3, attack: 96, health: 90),
         .init(id: 280, name: "랄토스",   type: .psychic,  cost: 3, attack: 92, health: 94),
         .init(id: 304, name: "가보리",   type: .steel,    cost: 3, attack: 70, health: 155),
+        .init(id: 353, name: "어둠대신", type: .ghost,    cost: 3, attack: 94, health: 86),
         .init(id: 443, name: "딥상어동", type: .ground,   cost: 4, attack: 116, health: 145),
+        .init(id: 446, name: "먹고자",   type: .normal,   cost: 3, attack: 76, health: 165),
         .init(id: 447, name: "리오르",   type: .fighting, cost: 4, attack: 120, health: 126),
         .init(id: 570, name: "조로아",   type: .dark,     cost: 4, attack: 132, health: 105),
         .init(id: 610, name: "터검니",   type: .dragon,   cost: 5, attack: 148, health: 150)
@@ -207,6 +216,7 @@ struct PokemonTFTGame: Sendable {
 
     var synergyGuide: [SynergyInfo] {
         Array(Set(Self.catalog.map(\.type))).map(synergyInfo(for:))
+            .filter { $0.members.count >= 2 }
             .sorted { $0.type.rawValue < $1.type.rawValue }
     }
 

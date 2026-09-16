@@ -311,22 +311,33 @@ struct PokemonTFTView: View {
     }
 
     private var bench: some View {
-        VStack(alignment: .leading, spacing: 3) {
+        let waiting = game.units.filter { $0.boardSlot == nil }
+        return VStack(alignment: .leading, spacing: 3) {
             HStack {
                 Label("대기석", systemImage: "rectangle.stack.fill")
                 Spacer(); Text("\(game.benchCount)/\(PokemonTFTGame.benchLimit)")
             }.font(.caption2.bold()).foregroundStyle(.white.opacity(0.7))
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 5) {
-                    ForEach(game.units.filter { $0.boardSlot == nil }) { unit in
-                        Button { selectedUnit = selectedUnit == unit.id ? nil : unit.id } label: {
-                            unitTile(unit, compact: false)
-                                .overlay(RoundedRectangle(cornerRadius: 7).stroke(selectedUnit == unit.id ? .cyan : .clear, lineWidth: 2))
-                        }.buttonStyle(.plain).contextMenu { Button("판매") { game.sell(unit.id) } }
+                    ForEach(0..<PokemonTFTGame.benchLimit, id: \.self) { index in
+                        if waiting.indices.contains(index) {
+                            let unit = waiting[index]
+                            Button { selectedUnit = selectedUnit == unit.id ? nil : unit.id } label: {
+                                unitTile(unit, compact: false)
+                                    .frame(width: 48, height: 48)
+                            }.buttonStyle(.plain).contextMenu { Button("판매") { game.sell(unit.id) } }
+                        } else {
+                            RoundedRectangle(cornerRadius: 7)
+                                .fill(.white.opacity(0.035))
+                                .overlay(RoundedRectangle(cornerRadius: 7).stroke(.white.opacity(0.07)))
+                                .frame(width: 48, height: 48)
+                        }
                     }
                 }
-            }.frame(height: 62)
-        }.padding(7).background(arenaInk.opacity(0.94), in: RoundedRectangle(cornerRadius: 11))
+            }.frame(height: 50)
+        }
+        .padding(7).frame(height: 76)
+        .background(arenaInk.opacity(0.94), in: RoundedRectangle(cornerRadius: 11))
     }
 
     private var shop: some View {
@@ -350,7 +361,7 @@ struct PokemonTFTView: View {
                             .frame(maxWidth: .infinity, minHeight: 61)
                     }
                 }
-            }
+            }.frame(height: 63)
         }.padding(8).background(arenaPanel, in: RoundedRectangle(cornerRadius: 12))
             .overlay(RoundedRectangle(cornerRadius: 12).stroke(.white.opacity(0.09)))
     }

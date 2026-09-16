@@ -84,6 +84,15 @@ import Testing
         #expect(fighting.effectText.contains("+10%"))
     }
 
+    @Test func everyVisibleSynergyHasAtLeastTwoDifferentPokemon() {
+        let game = PokemonTFTGame(seed: 51)
+
+        #expect(!game.synergyGuide.isEmpty)
+        #expect(game.synergyGuide.allSatisfy { Set($0.members).count >= 2 })
+        #expect(game.synergyInfo(for: .electric).members.contains("피카츄"))
+        #expect(game.synergyInfo(for: .electric).members.contains("메리프"))
+    }
+
     @Test func multiplayerArmyBecomesTheActualEnemyTeam() {
         var game = PokemonTFTGame(seed: 6)
         game.units = [PokemonTFTUnit(definitionID: 7, boardSlot: 0)]
