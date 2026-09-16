@@ -61,7 +61,23 @@ import Testing
             }
         })
         let final = replay.frames.last!
-        #expect(replay.frames.count <= 37)
+        #expect(replay.frames.count <= 2 + 36 * 12)
         #expect(final.message != "전투 시작!")
+        #expect(replay.frames.dropFirst(2).contains { $0.action != nil })
+    }
+
+    @Test func synergyGuideShowsMembersThresholdAndActiveEffect() {
+        var game = PokemonTFTGame(seed: 5)
+        game.level = 3
+        game.units = [
+            PokemonTFTUnit(definitionID: 66, boardSlot: 0),
+            PokemonTFTUnit(definitionID: 447, boardSlot: 1)
+        ]
+
+        let fighting = game.synergyInfo(for: .fighting)
+        #expect(fighting.deployed == 2)
+        #expect(fighting.members.contains("알통몬"))
+        #expect(fighting.members.contains("리오르"))
+        #expect(fighting.effectText.contains("+10%"))
     }
 }

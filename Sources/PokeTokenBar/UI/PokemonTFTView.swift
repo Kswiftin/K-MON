@@ -7,6 +7,8 @@ struct PokemonTFTView: View {
     @State private var selectedUnit: UUID?
     @State private var battleReplay: PokemonTFTBattleReplay?
     @State private var battleFrameIndex = 0
+    @State private var battleEffectProgress: CGFloat = 0
+    @State private var showSynergyGuide = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -16,7 +18,8 @@ struct PokemonTFTView: View {
             switch game.phase {
             case .shopping:
                 if battleReplay != nil { battleArena }
-                else { board; bench; shop; controls }
+                else if showSynergyGuide { synergyGuide }
+                else { board; selectedSynergy; bench; shop; controls }
             case .finished(let won): ending(won: won)
             }
         }
@@ -33,10 +36,63 @@ struct PokemonTFTView: View {
             }.font(.caption.bold())
             HStack {
                 Text("Lv.\(game.level) · 배치 \(game.deployedCount)/\(game.unitLimit)")
-                Spacer(); Text(game.synergyText())
+                Spacer()
+                Button {
+                    withAnimation(.easeInOut(duration: 0.2)) { showSynergyGuide.toggle() }
+                } label: {
+                    Label(showSynergyGuide ? "배치판" : "시너지 도감", systemImage: "books.vertical.fill")
+                }.buttonStyle(.plain).foregroundStyle(.cyan)
             }.font(.caption2).foregroundStyle(.secondary)
+            Text(game.synergyText()).font(.caption2).foregroundStyle(.secondary)
             Text(game.lastBattleText).font(.caption2).lineLimit(1)
         }.padding(8).pokedoroCard()
+    }
+
+    @ViewBuilder private var selectedSynergy: some View {
+        if let selectedUnit,
+           let unit = game.units.first(where: { $0.id == selectedUnit }) {
+            let definition = game.definition(for: unit.definitionID)
+            let synergy = game.synergyInfo(for: definition.type)
+            HStack(spacing: 6) {
+                Circle().fill(definition.type.battleColor).frame(width: 8, height: 8)
+                Text("\(definition.name) · \(definition.type.rawValue) 시너지")
+                    .font(.caption2.bold())
+                Spacer()
+                Text("\(synergy.deployed)/\(synergy.nextThreshold ?? 4) · \(synergy.effectText)")
+                    .font(.system(size: 9)).foregroundStyle(synergy.deployed >= 2 ? .cyan : .secondary)
+            }.padding(.horizontal, 7).padding(.vertical, 5).pokedoroCard()
+        }
+    }
+
+    private var synergyGuide: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text("시너지 도감").font(.headline)
+                Spacer(); Text("배치한 같은 타입 2/4마리로 활성화").font(.caption2).foregroundStyle(.secondary)
+            }
+            ScrollView {
+                LazyVStack(spacing: 6) {
+                    ForEach(game.synergyGuide) { synergy in
+                        HStack(alignment: .top, spacing: 8) {
+                            Circle().fill(synergy.type.battleColor).frame(width: 11, height: 11).padding(.top, 3)
+                            VStack(alignment: .leading, spacing: 2) {
+                                HStack {
+                                    Text(synergy.type.rawValue).font(.caption.bold())
+                                    Text("\(synergy.deployed)/\(synergy.nextThreshold ?? 4)")
+                                        .font(.caption2.bold()).foregroundStyle(synergy.deployed >= 2 ? .cyan : .secondary)
+                                }
+                                Text(synergy.effectText).font(.caption2)
+                                Text("포함: \(synergy.members.joined(separator: ", "))")
+                                    .font(.system(size: 9)).foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                        }.padding(8).pokedoroCard()
+                    }
+                }
+            }
+            Button("배치판으로 돌아가기") { withAnimation { showSynergyGuide = false } }
+                .buttonStyle(.borderedProminent).tint(.cyan).frame(maxWidth: .infinity)
+        }.transition(.opacity)
     }
 
     private var board: some View {
@@ -123,6 +179,9 @@ struct PokemonTFTView: View {
                             .animation(.easeInOut(duration: 0.16), value: fighter.y)
                             .transition(.scale.combined(with: .opacity))
                     }
+                    if let action = frame?.action, action.kind != .move {
+                        battleEffect(action, cellWidth: cellWidth, cellHeight: cellHeight)
+                    }
                 }
             }
             .frame(height: 330)
@@ -132,6 +191,30 @@ struct PokemonTFTView: View {
         .padding(10)
         .pokedoroCard()
         .transition(.opacity.combined(with: .scale(scale: 0.98)))
+    }
+
+    private func battleEffect(_ action: PokemonTFTBattleAction,
+                              cellWidth: CGFloat, cellHeight: CGFloat) -> some View {
+        let startX = (CGFloat(action.sourceX) + 0.5) * cellWidth
+        let startY = (CGFloat(action.sourceY) + 0.5) * cellHeight
+        let endX = (CGFloat(action.targetX) + 0.5) * cellWidth
+        let endY = (CGFloat(action.targetY) + 0.5) * cellHeight
+        let x = startX + (endX - startX) * battleEffectProgress
+        let y = startY + (endY - startY) * battleEffectProgress
+        let isSkill = action.kind == .skill
+        return ZStack {
+            Circle().fill(action.type.battleColor.opacity(0.25))
+                .frame(width: isSkill ? 34 : 20, height: isSkill ? 34 : 20)
+                .blur(radius: isSkill ? 5 : 2)
+            Image(systemName: isSkill ? "sparkles" : action.kind == .critical ? "burst.fill" : "circle.fill")
+                .font(.system(size: isSkill ? 19 : 11, weight: .bold))
+                .foregroundStyle(action.type.battleColor)
+                .shadow(color: action.type.battleColor, radius: isSkill ? 8 : 3)
+        }
+        .position(x: x, y: y)
+        .scaleEffect(isSkill ? 0.75 + battleEffectProgress * 0.45 : 1)
+        .opacity(battleEffectProgress < 0.94 ? 1 : 0.15)
+        .allowsHitTesting(false)
     }
 
     private var battleGrid: some View {
@@ -172,15 +255,24 @@ struct PokemonTFTView: View {
         let replay = game.makeBattleReplay()
         battleReplay = replay
         battleFrameIndex = 0
+        battleEffectProgress = 0
         Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(650))
             for index in replay.frames.indices.dropFirst() {
                 guard battleReplay != nil else { return }
-                withAnimation { battleFrameIndex = index }
-                try? await Task.sleep(for: .milliseconds(220))
+                var transaction = Transaction()
+                transaction.disablesAnimations = true
+                withTransaction(transaction) {
+                    battleFrameIndex = index
+                    battleEffectProgress = 0
+                }
+                await Task.yield()
+                withAnimation(.easeIn(duration: 0.18)) { battleEffectProgress = 1 }
+                try? await Task.sleep(for: .milliseconds(210))
             }
-            try? await Task.sleep(for: .milliseconds(500))
+            try? await Task.sleep(for: .milliseconds(650))
             game.settleBattle(playerWon: replay.playerWon)
-            withAnimation { battleReplay = nil; battleFrameIndex = 0 }
+            withAnimation { battleReplay = nil; battleFrameIndex = 0; battleEffectProgress = 0 }
         }
     }
 

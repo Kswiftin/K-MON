@@ -28,6 +28,7 @@ struct PokemonTFTFighter: Identifiable, Sendable, Equatable {
     let id: UUID
     let speciesID: Int
     let name: String
+    let type: PokemonType
     let team: Team
     var x: Int
     var y: Int
@@ -40,9 +41,22 @@ struct PokemonTFTFighter: Identifiable, Sendable, Equatable {
     var mana: Int
 }
 
+struct PokemonTFTBattleAction: Sendable, Equatable {
+    enum Kind: Sendable { case move, attack, critical, skill }
+    let kind: Kind
+    let sourceID: UUID
+    let targetID: UUID?
+    let sourceX: Int
+    let sourceY: Int
+    let targetX: Int
+    let targetY: Int
+    let type: PokemonType
+}
+
 struct PokemonTFTBattleFrame: Sendable, Equatable {
     let fighters: [PokemonTFTFighter]
     let message: String
+    let action: PokemonTFTBattleAction?
 }
 
 struct PokemonTFTBattleReplay: Sendable {
@@ -81,6 +95,19 @@ struct PokemonTFTGame: Sendable {
         .init(id: 610, name: "터검니",   type: .dragon,   cost: 5, attack: 148, health: 150)
     ]
 
+    struct SynergyInfo: Identifiable, Sendable {
+        var id: String { type.rawValue }
+        let type: PokemonType
+        let members: [String]
+        let deployed: Int
+        var nextThreshold: Int? { deployed < 2 ? 2 : deployed < 4 ? 4 : nil }
+        var effectText: String {
+            if deployed >= 4 { return "4마리: 해당 타입 공격력·체력 +25%" }
+            if deployed >= 2 { return "2마리: 해당 타입 공격력·체력 +10%" }
+            return "2마리 +10% · 4마리 +25%"
+        }
+    }
+
     var health = 100
     var gold = 10
     var round = 1
@@ -114,6 +141,19 @@ struct PokemonTFTGame: Sendable {
 
     func definition(for id: Int) -> PokemonTFTUnitDefinition {
         Self.catalog.first { $0.id == id }!
+    }
+
+    func synergyInfo(for type: PokemonType) -> SynergyInfo {
+        let members = Self.catalog.filter { $0.type == type }.map(\.name)
+        let deployed = units.filter {
+            $0.boardSlot != nil && definition(for: $0.definitionID).type == type
+        }.count
+        return SynergyInfo(type: type, members: members, deployed: deployed)
+    }
+
+    var synergyGuide: [SynergyInfo] {
+        Array(Set(Self.catalog.map(\.type))).map(synergyInfo(for:))
+            .sorted { $0.type.rawValue < $1.type.rawValue }
     }
 
     mutating func buy(shopIndex: Int) -> Bool {
@@ -204,7 +244,8 @@ struct PokemonTFTGame: Sendable {
             }.count
             let synergy = typeCount >= 4 ? 1.25 : typeCount >= 2 ? 1.10 : 1
             return PokemonTFTFighter(id: unit.id, speciesID: definition.id, name: definition.name,
-                team: .player, x: (slot % Self.boardColumns) * 2, y: 5 - slot / Self.boardColumns,
+                type: definition.type, team: .player,
+                x: (slot % Self.boardColumns) * 2, y: 5 - slot / Self.boardColumns,
                 maxHP: Int(Double(hp) * synergy), hp: Int(Double(hp) * synergy),
                 attack: Int(Double(definition.attack) * multiplier * synergy),
                 defense: max(4, definition.health / 12),
@@ -215,15 +256,15 @@ struct PokemonTFTGame: Sendable {
         fighters += enemyPreview.enumerated().map { index, definition in
             let hp = Int(Double(definition.health) * enemyScale)
             return PokemonTFTFighter(id: UUID(), speciesID: definition.id, name: definition.name,
-                team: .enemy, x: (index % 4) * 2, y: index / 4,
+                type: definition.type, team: .enemy, x: (index % 4) * 2, y: index / 4,
                 maxHP: hp, hp: hp, attack: Int(Double(definition.attack) * enemyScale),
                 defense: max(4, Int(Double(definition.health / 12) * enemyScale)),
                 attackRange: Self.rangedTypes.contains(definition.type) ? 2 : 1,
                 speed: 45 + definition.attack / 4, mana: 0)
         }
-        var frames = [PokemonTFTBattleFrame(fighters: fighters, message: "전투 시작!")]
+        var frames = [PokemonTFTBattleFrame(fighters: fighters, message: "전투 준비…", action: nil),
+                      PokemonTFTBattleFrame(fighters: fighters, message: "전투 시작!", action: nil)]
         for tick in 0..<36 {
-            var firstMessage: String?
             let turnOrder = fighters.filter { $0.hp > 0 }
                 .sorted { $0.speed > $1.speed }.map(\.id)
             for (turn, actorID) in turnOrder.enumerated() {
@@ -233,6 +274,8 @@ struct PokemonTFTGame: Sendable {
                     Self.distance(fighters[actorIndex], fighters[$0]) < Self.distance(fighters[actorIndex], fighters[$1])
                 }) else { break }
                 if Self.distance(fighters[actorIndex], fighters[targetIndex]) <= fighters[actorIndex].attackRange {
+                    let source = fighters[actorIndex]
+                    let target = fighters[targetIndex]
                     let usesSkill = fighters[actorIndex].mana >= 100
                     let critical = !usesSkill && ((tick * 17 + turn * 31 + fighters[actorIndex].speciesID) % 10 == 0)
                     let rawDamage = Double(fighters[actorIndex].attack) * (usesSkill ? 1.65 : critical ? 2 : 1)
@@ -248,13 +291,18 @@ struct PokemonTFTGame: Sendable {
                         for splash in splashTargets {
                             fighters[splash].hp = max(0, fighters[splash].hp - damage / 2)
                         }
-                        firstMessage = firstMessage ?? "\(fighters[actorIndex].name)의 스킬!"
                     } else {
                         fighters[actorIndex].mana = min(100, fighters[actorIndex].mana + 5)
                         fighters[targetIndex].mana = min(100, fighters[targetIndex].mana + 8)
-                        firstMessage = firstMessage ?? "\(fighters[actorIndex].name)의 \(critical ? "급소 공격" : "공격")!"
                     }
+                    let kind: PokemonTFTBattleAction.Kind = usesSkill ? .skill : critical ? .critical : .attack
+                    let action = PokemonTFTBattleAction(kind: kind, sourceID: source.id, targetID: target.id,
+                        sourceX: source.x, sourceY: source.y, targetX: target.x, targetY: target.y, type: source.type)
+                    let verb = usesSkill ? "스킬" : critical ? "급소 공격" : "공격"
+                    frames.append(PokemonTFTBattleFrame(fighters: fighters,
+                                                        message: "\(source.name)의 \(verb)!", action: action))
                 } else {
+                    let source = fighters[actorIndex]
                     let occupied = Set(fighters.filter { $0.hp > 0 && $0.id != actorID }.map { "\($0.x),\($0.y)" })
                     let dx = fighters[targetIndex].x == fighters[actorIndex].x ? 0 : (fighters[targetIndex].x > fighters[actorIndex].x ? 1 : -1)
                     let dy = fighters[targetIndex].y == fighters[actorIndex].y ? 0 : (fighters[targetIndex].y > fighters[actorIndex].y ? 1 : -1)
@@ -267,11 +315,13 @@ struct PokemonTFTGame: Sendable {
                     }) {
                         fighters[actorIndex].x = next.0
                         fighters[actorIndex].y = next.1
+                        let action = PokemonTFTBattleAction(kind: .move, sourceID: source.id, targetID: nil,
+                            sourceX: source.x, sourceY: source.y, targetX: next.0, targetY: next.1, type: source.type)
+                        frames.append(PokemonTFTBattleFrame(fighters: fighters,
+                                                            message: "\(source.name) 이동", action: action))
                     }
                 }
             }
-            frames.append(PokemonTFTBattleFrame(fighters: fighters,
-                                                 message: firstMessage ?? "상대를 향해 이동 중…"))
             let playerAlive = fighters.contains { $0.team == .player && $0.hp > 0 }
             let enemyAlive = fighters.contains { $0.team == .enemy && $0.hp > 0 }
             if !playerAlive || !enemyAlive {
