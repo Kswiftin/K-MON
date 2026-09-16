@@ -19,7 +19,7 @@ final class PokopiaTownLifeTests: XCTestCase {
 
     /// 지형 하나를 문턱 이상 깐 마을.
     private func town(_ tile: TownTerrain, count: Int = PokopiaTown.habitatThreshold) -> [TownTerrain] {
-        var terrain = PokopiaTown.defaultTerrain
+        var terrain = PokopiaTown.defaultTerrain(for: .isle)
         for index in 0..<min(count, terrain.count) { terrain[index] = tile }
         return terrain
     }
@@ -74,7 +74,7 @@ final class PokopiaTownLifeTests: XCTestCase {
     /// ② 자리를 잃은 주민이 만족한 주민보다 먼저다 — 사용자가 그 지형을 없앤 결과이므로.
     func testAnUnsettledResidentWinsOverASettledOne() {
         let unsettled = resident(7, "꼬부기", [.water], arrivedAgo: 60 * 60 * 24)
-        let text = line([unsettled], PokopiaTown.defaultTerrain)   // 물이 없다
+        let text = line([unsettled], PokopiaTown.defaultTerrain(for: .isle))   // 물이 없다
         XCTAssertTrue(text.contains("꼬부기"))
         XCTAssertTrue(text.contains("찾는"), "자리를 잃은 사실을 말하지 않는다: \(text)")
     }
@@ -153,7 +153,7 @@ final class PokopiaTownLifeTests: XCTestCase {
         XCTAssertTrue(line([fresh], town(.water), timeOfDay: .morning).contains("방금"))
         let lost = resident(7, "꼬부기", [.water], arrivedAgo: 60 * 60 * 24)
         let specialty = try XCTUnwrap(PokopiaTown.specialty(of: lost))
-        let text = line([lost], PokopiaTown.defaultTerrain, timeOfDay: .morning)   // 물이 없다
+        let text = line([lost], PokopiaTown.defaultTerrain(for: .isle), timeOfDay: .morning)   // 물이 없다
         XCTAssertTrue(text.contains("찾는"), text)
         XCTAssertFalse(text.contains(specialty.name), "자리 잃은 주민이 특기를 뽐낸다: \(text)")
     }
@@ -220,7 +220,7 @@ final class PokopiaTownLifeTests: XCTestCase {
         XCTAssertTrue(PokopiaTown.welcomingTypes(below).isEmpty, "⑤ 의 전제가 깨졌다")
         let cases: [([TownResident], [TownTerrain])] = [
             ([resident(7, "꼬부기", [.water], arrivedAgo: 60)], town(.water)),                        // ① 갓 옴
-            ([resident(7, "꼬부기", [.water], arrivedAgo: 60 * 60 * 24)], PokopiaTown.defaultTerrain), // ② 자리 잃음
+            ([resident(7, "꼬부기", [.water], arrivedAgo: 60 * 60 * 24)], PokopiaTown.defaultTerrain(for: .isle)), // ② 자리 잃음
             ([resident(7, "꼬부기", [.water], arrivedAgo: 60 * 60 * 24)], town(.water)),              // ③ 정착
             ([], town(.water)),                                                                       // ④ 터만 닦임
             ([], below),                                                                              // ⑤ 텅 빔
@@ -256,11 +256,11 @@ final class PokopiaTownLifeTests: XCTestCase {
     /// 문장이 비지 않는다 — 어느 분기든 화면에 쓸 값이 나온다.
     func testEveryBranchProducesANonEmptySentence() {
         let cases: [([TownResident], [TownTerrain])] = [
-            ([], PokopiaTown.defaultTerrain),
+            ([], PokopiaTown.defaultTerrain(for: .isle)),
             ([], Array(repeating: TownTerrain.water, count: 2)),
             ([resident(7, "꼬부기", [.water], arrivedAgo: 10)], town(.water)),
-            ([resident(7, "꼬부기", [.water], arrivedAgo: 60 * 60 * 24)], PokopiaTown.defaultTerrain),
-            ([resident(7, "꼬부기", [], arrivedAgo: 60 * 60 * 24)], PokopiaTown.defaultTerrain),
+            ([resident(7, "꼬부기", [.water], arrivedAgo: 60 * 60 * 24)], PokopiaTown.defaultTerrain(for: .isle)),
+            ([resident(7, "꼬부기", [], arrivedAgo: 60 * 60 * 24)], PokopiaTown.defaultTerrain(for: .isle)),
         ]
         for (residents, terrain) in cases {
             for timeOfDay in MemoryHomeTimeOfDay.allCases {

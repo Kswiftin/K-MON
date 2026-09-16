@@ -37,10 +37,12 @@ final class PokopiaTownTests: XCTestCase {
         XCTAssertEqual(PokopiaTown.index(col: 0, row: 1), PokopiaTown.columns)
     }
 
-    func testDefaultTerrainIsGrassWithPathOnlyOnTheLastRow() {
-        XCTAssertEqual(PokopiaTown.defaultTerrain.count, PokopiaTown.tileCount)
-        XCTAssertTrue(PokopiaTown.defaultTerrain.suffix(PokopiaTown.columns).allSatisfy { $0 == .path })
-        XCTAssertTrue(PokopiaTown.defaultTerrain
+    /// 부유섬(`.isle`)의 바탕은 **7단계 이전의 기본 지형 그대로**다 — 풀이고 맨 아래 줄만 길이다.
+    /// 다섯 지역 전부의 길 줄은 `PokopiaRegionTests` 가 센다.
+    func testTheIsleBaseIsTheTerrainEveryTownStartedWithBeforeRegions() {
+        XCTAssertEqual(PokopiaTown.defaultTerrain(for: .isle).count, PokopiaTown.tileCount)
+        XCTAssertTrue(PokopiaTown.defaultTerrain(for: .isle).suffix(PokopiaTown.columns).allSatisfy { $0 == .path })
+        XCTAssertTrue(PokopiaTown.defaultTerrain(for: .isle)
             .prefix(PokopiaTown.tileCount - PokopiaTown.columns).allSatisfy { $0 == .grass })
     }
 
@@ -126,7 +128,7 @@ final class PokopiaTownTests: XCTestCase {
     /// **기본 마을도 이미 풀·벌레를 부른다**(풀 176칸). 의도다 — 1일차 마을이 아무도 부르지
     /// 않으면 첫 세션의 이사 판정이 영영 빈손이고, 사용자는 이 기능이 도는지도 모른다.
     func testDefaultTownAlreadyWelcomesGrassTypes() {
-        let welcoming = PokopiaTown.welcomingTypes(PokopiaTown.defaultTerrain)
+        let welcoming = PokopiaTown.welcomingTypes(PokopiaTown.defaultTerrain(for: .isle))
         XCTAssertTrue(welcoming.contains(.grass))
         XCTAssertTrue(welcoming.contains(.bug))
         // 길도 16칸이라 문턱을 넘는다 — 노말·전기·고스트도 온다.
@@ -152,7 +154,7 @@ final class PokopiaTownTests: XCTestCase {
     }
 
     func testTileCountsSumsToTheGrid() {
-        let counts = PokopiaTown.tileCounts(PokopiaTown.defaultTerrain)
+        let counts = PokopiaTown.tileCounts(PokopiaTown.defaultTerrain(for: .isle))
         XCTAssertEqual(counts.values.reduce(0, +), PokopiaTown.tileCount)
         XCTAssertEqual(counts[.grass], PokopiaTown.tileCount - PokopiaTown.columns)
         XCTAssertEqual(counts[.path], PokopiaTown.columns)
@@ -247,7 +249,7 @@ final class PokopiaTownTests: XCTestCase {
     /// **서식이 화면에 보이는 근거.** 물 타입이 모래에 서 있으면 "이 마을이 마음에 들어서
     /// 왔다" 가 화면에서 거짓이 된다.
     func testResidentSpotSitsOnItsPreferredTerrain() throws {
-        var terrain = PokopiaTown.defaultTerrain
+        var terrain = PokopiaTown.defaultTerrain(for: .isle)
         // 첫 줄을 물로 바꾼다(길 줄이 아니라 주민이 설 수 있는 자리다).
         for col in 0..<PokopiaTown.columns {
             terrain[try XCTUnwrap(PokopiaTown.index(col: col, row: 0))] = .water
@@ -262,7 +264,7 @@ final class PokopiaTownTests: XCTestCase {
     /// 자동 퇴거는 사용자가 이해할 수 없는 상실이다.
     func testResidentSpotFallsBackWhenItsTerrainIsGone() throws {
         let spot = PokopiaTown.residentSpot(resident(7, [.water]),
-                                            terrain: PokopiaTown.defaultTerrain,
+                                            terrain: PokopiaTown.defaultTerrain(for: .isle),
                                             dayKey: "2026-09-08")
         XCTAssertNotNil(PokopiaTown.index(col: spot.col, row: spot.row))
         XCTAssertLessThan(spot.row, PokopiaTown.rows - 1, "폴백이 아바타 줄로 갔다")
@@ -270,7 +272,7 @@ final class PokopiaTownTests: XCTestCase {
 
     /// 타입이 없는 주민(정규화가 막지만 함수 자체는 안전해야 한다)도 격자 안에 선다.
     func testResidentSpotHandlesATypelessResident() {
-        let spot = PokopiaTown.residentSpot(resident(7, []), terrain: PokopiaTown.defaultTerrain,
+        let spot = PokopiaTown.residentSpot(resident(7, []), terrain: PokopiaTown.defaultTerrain(for: .isle),
                                             dayKey: "2026-09-08")
         XCTAssertNotNil(PokopiaTown.index(col: spot.col, row: spot.row))
     }
@@ -278,17 +280,17 @@ final class PokopiaTownTests: XCTestCase {
     /// 결정론 — `hashValue` 를 쓰면 프로세스마다 시드가 달라 재시작할 때마다 주민이 순간이동한다.
     func testResidentSpotIsDeterministic() {
         let one = PokopiaTown.residentSpot(resident(7, [.water]),
-                                           terrain: PokopiaTown.defaultTerrain, dayKey: "2026-09-08")
+                                           terrain: PokopiaTown.defaultTerrain(for: .isle), dayKey: "2026-09-08")
         let two = PokopiaTown.residentSpot(resident(7, [.water]),
-                                           terrain: PokopiaTown.defaultTerrain, dayKey: "2026-09-08")
+                                           terrain: PokopiaTown.defaultTerrain(for: .isle), dayKey: "2026-09-08")
         XCTAssertTrue(one == two, "\(one) != \(two)")
     }
 
     func testResidentSpotMovesWithTheDay() {
         let today = PokopiaTown.residentSpot(resident(7, [.water]),
-                                             terrain: PokopiaTown.defaultTerrain, dayKey: "2026-09-08")
+                                             terrain: PokopiaTown.defaultTerrain(for: .isle), dayKey: "2026-09-08")
         let tomorrow = PokopiaTown.residentSpot(resident(7, [.water]),
-                                                terrain: PokopiaTown.defaultTerrain, dayKey: "2026-09-09")
+                                                terrain: PokopiaTown.defaultTerrain(for: .isle), dayKey: "2026-09-09")
         XCTAssertFalse(today == tomorrow, "파생이 dayKey 를 안 읽고 있다")
     }
 
@@ -296,7 +298,7 @@ final class PokopiaTownTests: XCTestCase {
     func testResidentSpotAlwaysInsideTheGrid() {
         for speciesID in 1...120 {
             let spot = PokopiaTown.residentSpot(resident(speciesID, [.fire]),
-                                                terrain: PokopiaTown.defaultTerrain,
+                                                terrain: PokopiaTown.defaultTerrain(for: .isle),
                                                 dayKey: String(format: "2026-%02d-%02d",
                                                                speciesID % 12 + 1, speciesID % 28 + 1))
             XCTAssertNotNil(PokopiaTown.index(col: spot.col, row: spot.row), "#\(speciesID)")
@@ -310,7 +312,7 @@ final class PokopiaTownTests: XCTestCase {
                                             terrain: town(.water, count: PokopiaTown.habitatThreshold)))
         XCTAssertFalse(PokopiaTown.isSettled(resident(7, [.water]),
                                              terrain: town(.water, count: PokopiaTown.habitatThreshold - 1)))
-        XCTAssertFalse(PokopiaTown.isSettled(resident(7, []), terrain: PokopiaTown.defaultTerrain),
+        XCTAssertFalse(PokopiaTown.isSettled(resident(7, []), terrain: PokopiaTown.defaultTerrain(for: .isle)),
                        "타입 없는 주민은 만족을 판정할 수 없다")
     }
 
@@ -365,9 +367,9 @@ final class PokopiaTownTests: XCTestCase {
             resident(spriteless, [.dragon]),                      // 그릴 수 없는 종
         ]
 
-        let out = PokopiaTown.normalized(state)
+        let out = PokopiaTown.normalized(state, region: .isle)
 
-        XCTAssertEqual(out.terrain, PokopiaTown.defaultTerrain, "길이가 틀리면 기본으로 되돌린다")
+        XCTAssertEqual(out.terrain, PokopiaTown.defaultTerrain(for: .isle), "길이가 틀리면 기본으로 되돌린다")
         XCTAssertNil(out.dittoForm, "음수 종으로 변신한 채 남았다")
         XCTAssertEqual(out.residents.map(\.speciesID), [7], "못 믿을 주민이 살아남았다")
     }
@@ -376,7 +378,7 @@ final class PokopiaTownTests: XCTestCase {
         var state = PokopiaTownState()
         let ids = Array(1...(PokopiaTown.populationLimit + 5))
         state.residents = ids.map { resident($0, [.water]) }
-        let out = PokopiaTown.normalized(state)
+        let out = PokopiaTown.normalized(state, region: .isle)
         XCTAssertEqual(out.residents.map(\.speciesID),
                        Array(ids.prefix(PokopiaTown.populationLimit)),
                        "상한에 걸릴 때 도착 순서를 안 지켰다")
@@ -387,9 +389,9 @@ final class PokopiaTownTests: XCTestCase {
         var state = PokopiaTownState()
         state.dittoForm = 25
         state.residents = [resident(7, [.water])]
-        let once = PokopiaTown.normalized(state)
+        let once = PokopiaTown.normalized(state, region: .isle)
         XCTAssertEqual(once, state)
-        XCTAssertEqual(PokopiaTown.normalized(once), once)
+        XCTAssertEqual(PokopiaTown.normalized(once, region: .isle), once)
     }
 
     /// 상한과 문턱이 서로 어긋나지 않는다는 전제.
@@ -482,7 +484,7 @@ final class PokopiaTownTests: XCTestCase {
     /// 조합 여덟이 한 줄씩, 성립한 것이 위로, 나머지는 표 순서. 기본 마을은 아무 조합도 성립시키지 않는다(길가 바위는 바위 0칸) —
     /// 1일차 이사가 전과 같다는 근거다.
     func testCompositeHabitatsListEveryRecipeFormedFirst() throws {
-        let none = PokopiaTown.compositeHabitats(PokopiaTown.defaultTerrain)
+        let none = PokopiaTown.compositeHabitats(PokopiaTown.defaultTerrain(for: .isle))
         XCTAssertEqual(none.count, PokopiaTown.compositeRecipes.count)
         XCTAssertEqual(Set(none.map(\.id)).count, none.count, "현황 줄 id 가 겹친다")
         XCTAssertFalse(none.contains(where: \.isFormed), "기본 마을에서 조합이 성립했다 — 1일차 이사 순서가 바뀐다")
@@ -569,7 +571,7 @@ final class PokopiaTownTests: XCTestCase {
     func testDreamIslandGuestsSurviveNormalization() {
         var state = PokopiaTownState()
         state.residents = PokopiaTown.dreamIslandSpecies.map { resident($0, [.psychic]) }
-        XCTAssertEqual(PokopiaTown.normalized(state).residents.map(\.speciesID), PokopiaTown.dreamIslandSpecies,
+        XCTAssertEqual(PokopiaTown.normalized(state, region: .isle).residents.map(\.speciesID), PokopiaTown.dreamIslandSpecies,
                        "전설이 정규화에서 잘렸다 — 도착해도 다음 실행에서 사라진다")
     }
 
@@ -629,7 +631,7 @@ final class PokopiaTownTests: XCTestCase {
 
     /// 8지형 전부가 한 줄씩 나온다. 빠진 지형은 사용자가 목표로 삼을 수 없는 채 남는다.
     func testHabitatsCoverEveryTerrain() {
-        let habitats = PokopiaTown.habitats(PokopiaTown.defaultTerrain)
+        let habitats = PokopiaTown.habitats(PokopiaTown.defaultTerrain(for: .isle))
         XCTAssertEqual(habitats.count, TownTerrain.allCases.count)
         XCTAssertEqual(Set(habitats.map(\.terrain)), Set(TownTerrain.allCases))
         for habitat in habitats {
@@ -641,7 +643,7 @@ final class PokopiaTownTests: XCTestCase {
     /// **표가 갈리지 않는다.** 화면이 "부르는 중" 이라 적은 타입 집합은 이사 판정이 쓰는
     /// `welcomingTypes` 와 같아야 한다 — 다르면 화면이 오지 않을 손님을 약속한다.
     func testWelcomingRowsMatchTheImmigrationTable() {
-        var terrain = PokopiaTown.defaultTerrain          // 풀 176 + 길 16
+        var terrain = PokopiaTown.defaultTerrain(for: .isle)          // 풀 176 + 길 16
         for index in 0..<PokopiaTown.habitatThreshold { terrain[index] = .water }
         let fromBoard = Set(PokopiaTown.habitats(terrain).filter(\.isWelcoming).flatMap(\.types))
         XCTAssertEqual(fromBoard, PokopiaTown.welcomingTypes(terrain))
@@ -689,7 +691,7 @@ final class PokopiaTownTests: XCTestCase {
     /// 현황표의 `id` 가 줄마다 유일하다. `ForEach` 는 id 가 겹치면 **줄을 조용히 하나만 그린다** —
     /// 8지형을 다 넣었는데 화면에 일곱 줄만 보이는 부류다.
     func testHabitatRowIdentifiersAreUnique() {
-        let habitats = PokopiaTown.habitats(PokopiaTown.defaultTerrain)
+        let habitats = PokopiaTown.habitats(PokopiaTown.defaultTerrain(for: .isle))
         XCTAssertEqual(Set(habitats.map(\.id)).count, habitats.count)
         XCTAssertEqual(habitats.map(\.id), habitats.map(\.terrain))
     }
@@ -848,6 +850,6 @@ final class PokopiaTownTests: XCTestCase {
         // 맞대야 보인다 — 이 줄이 없으면 정착을 무시하는 lift 도 위의 `<` 를 통과한다(주입으로 확인, 2026-09-09).
         XCTAssertEqual(after.level, PokopiaTown.development(state.terrain, residents: []).level,
                        "정착 0 인데 축 B 가 레벨을 얹고 있다")
-        XCTAssertEqual(PokopiaTown.normalized(state).residents, state.residents, "정규화가 자리 잃은 주민을 잘랐다")
+        XCTAssertEqual(PokopiaTown.normalized(state, region: .isle).residents, state.residents, "정규화가 자리 잃은 주민을 잘랐다")
     }
 }

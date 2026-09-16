@@ -22,6 +22,43 @@ enum TownTerrain: String, Codable, Sendable, CaseIterable {
     }
 }
 
+/// 마을이 서는 지역 다섯 곳. **rawValue 가 세이브 키다** — `PokopiaState.towns` 의 딕셔너리
+/// 키로 그대로 굽히므로, 바꾸면 그 지역의 마을이 통째로 사라진다(정규화가 모르는 키를 버린다).
+/// 식별자라서 영문 소문자를 유지하고, 화면에 쓰는 이름은 `name` 이 답한다(`TownTerrain` 과 같다).
+///
+/// **지역을 나눈 이유는 바탕이 다르기 때문이다.** 기본 지형이 다섯 곳 다 풀이면 첫날 같은 타입을
+/// 부르고, 그러면 마을을 나눈 것이 이름표 다섯 개가 된다.
+enum TownRegion: String, Codable, Sendable, CaseIterable {
+    case waste, coast, ridge, ashen, isle
+
+    /// 화면에 쓰는 이름. 보간 뒤에 조사를 붙이지 않는다(`PokopiaParticleGuardTests`) —
+    /// 받침이 갈린다(황야·해안·산지는 없고 회색·부유섬은 있다).
+    var name: String {
+        switch self {
+        case .waste: "황야"
+        case .coast: "해안"
+        case .ridge: "산지"
+        case .ashen: "회색"
+        case .isle:  "부유섬"
+        }
+    }
+
+    /// 이 지역의 바탕 지형. **이것이 다섯 마을을 만든 이유다** — 기본 지형 176칸이 이미 문턱
+    /// (`PokopiaTown.habitatThreshold` = 6)을 넘으므로 1일차 마을이 지역마다 다른 타입을 부른다.
+    ///
+    /// 다섯 다 부르는 지형이다(`PokopiaTown.terrain(for:)` 이 8 지형 전부에 최소 한 타입을 준다):
+    /// 모래←불꽃·독 · 물←물·얼음 · 바위←격투·악 · 길←노말·전기·고스트 · 풀←풀·벌레.
+    var base: TownTerrain {
+        switch self {
+        case .waste: .sand
+        case .coast: .water
+        case .ridge: .rock
+        case .ashen: .path
+        case .isle:  .grass
+        }
+    }
+}
+
 /// 주민의 특기. 원작 32종 중 **타입에 붙일 근거가 있는 18종**만 옮겼다 — 타입마다 하나(`PokopiaTown.specialty(for:)`).
 /// **문구 전용**이다: 주민 줄과 아침 문장만 읽고, 보상·정원·레벨·이사 판정은 읽지 않는다.
 ///
@@ -71,7 +108,8 @@ struct TownResident: Codable, Sendable, Equatable, Identifiable {
     var id: Int { speciesID }
 }
 
-/// 마을 상태 전부. `MemoryHomeAccessSettings.town` **한 키**에 들어간다.
+/// 마을 상태 전부. `PokopiaState.towns` 의 값 하나다(7단계 전에는 `MemoryHomeAccessSettings.town`
+/// 한 키였다).
 ///
 /// 필드가 셋뿐이다. 아바타 자리·주민 자리·화면 문구는 **전부 파생**이라 저장하지 않는다
 /// (`docs/reference/memory-home-plan.md` 의 "새 저장 필드를 만들지 않는다" 원칙을 지킬 수
@@ -79,11 +117,61 @@ struct TownResident: Codable, Sendable, Equatable, Identifiable {
 struct PokopiaTownState: Codable, Sendable, Equatable {
     /// 행 우선 평탄 배열, 길이 `PokopiaTown.tileCount`. 2차원 배열로 두면 JSON 이 중첩되고
     /// 길이 검증이 두 축이 된다.
-    var terrain: [TownTerrain] = PokopiaTown.defaultTerrain
+    var terrain: [TownTerrain]
     /// 변신 중인 종 id. **nil 이면 아무것도 밀 수 없다** — 변신이 유일한 도구다.
     var dittoForm: Int?
     /// 도착 순서를 지킨다 — 상한에 걸릴 때 누가 남는지가 실행마다 바뀌면 안 된다.
     var residents: [TownResident] = []
+
+    /// 그 지역의 빈 마을. **지역이 바탕을 정한다** — 지형을 인자로 받지 않는 이유는 그 둘이
+    /// 갈리면 해안 마을이 풀밭으로 시작할 수 있기 때문이다.
+    ///
+    /// 기본값이 `.waste` 인 것은 `PokopiaState.home` 의 기본값과 같은 값이라서다 — 아무 인자
+    /// 없이 만든 마을은 곧 "창을 처음 열었을 때 보이는 마을" 이다.
+    init(region: TownRegion = .waste, dittoForm: Int? = nil, residents: [TownResident] = []) {
+        self.terrain = PokopiaTown.defaultTerrain(for: region)
+        self.dittoForm = dittoForm
+        self.residents = residents
+    }
+}
+
+/// 포코피아 전체. **앨범 최상위 키다** — 싸이월드 미니홈피 설정(`MemoryHomeAccessSettings`) 안이
+/// 아니다. 두 기능이 공유하는 것은 "같은 파일에 저장한다" 뿐이고, 그것은 같은 구조체에 살 이유가
+/// 되지 않는다(창을 가른 Phase 0 이 화면에서 한 일을 7단계가 저장에서 한다).
+struct PokopiaState: Codable, Sendable, Equatable {
+    /// 지역 rawValue → 그 지역의 마을. **`[TownRegion: …]` 이 아니다.** String rawValue 를 가진
+    /// enum 을 딕셔너리 키로 쓰면 Swift Codable 이 객체가 아니라 **배열**로 굽고
+    /// (`{"towns":["waste",{…}]}`), `CodingKeyRepresentable` 을 붙여 객체로 굽게 하면 모르는 키
+    /// 하나에 `dataCorrupted` 를 던져 **앨범 전체가 `.corrupt`** 로 밀려난다. 둘 다 재봤다
+    /// (2026-09-16). `[String: …]` 은 모르는 키를 그냥 담고 `normalized` 가 버린다.
+    ///
+    /// **안 만든 지역은 담기지 않는다.** 읽기는 `town(_:)` 이 기본 마을을 만들어 주므로,
+    /// 포코피아를 한 번도 안 연 사용자의 세이브가 다섯 마을만큼 커지지 않는다.
+    var towns: [String: PokopiaTownState] = [:]
+    /// 지금 보고 있는 지역이자 **이사가 오는 지역**. 둘을 가르지 않는다 — 전역 상한이 "어느 마을을
+    /// 키울지 고르게" 하는 장치인데, 보는 곳과 크는 곳이 다르면 그 선택이 화면에서 안 보인다.
+    /// 사용자 의도라 시계에서 파생할 수 없고, 그래서 저장하는 유일한 새 필드다.
+    var home: TownRegion = .waste
+
+    /// 그 지역의 마을. 없으면 **그 지역의 기본 지형**으로 만든 새 마을이다(저장하지 않는다).
+    func town(_ region: TownRegion) -> PokopiaTownState {
+        towns[region.rawValue] ?? PokopiaTownState(region: region)
+    }
+
+    /// 다섯 마을을 합친 주민 수. `PokopiaTown.globalPopulationLimit` 의 입력이다. 파생이라
+    /// 저장하지 않는다 — 저장하면 `towns` 와 어긋날 수 있는 두 번째 진실이 생긴다.
+    var totalResidents: Int { towns.values.reduce(0) { $0 + $1.residents.count } }
+
+    private enum CodingKeys: String, CodingKey { case towns, home }
+    init() {}
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        towns = try c.decodeIfPresent([String: PokopiaTownState].self, forKey: .towns) ?? [:]
+        // **모르는 지역 이름에 던지지 않는다.** 합성 디코드는 `TownRegion(rawValue:)` 가 nil 이면
+        // `dataCorrupted` 를 던지고, 그 예외 하나가 앨범 파일을 `.corrupt` 로 밀어내 기존 사용자
+        // 전원의 기억을 백업 파일로 보낸다(`PokemonMemoryAlbum.init` 의 catch 가 그 자리다).
+        home = (try? c.decodeIfPresent(TownRegion.self, forKey: .home)).flatMap { $0 } ?? .waste
+    }
 }
 
 /// 마을의 규칙. **표는 전부 여기 하나다** — 화면·테스트·나중의 터미널이 같은 값을 읽는다.
@@ -103,10 +191,21 @@ enum PokopiaTown {
     /// 정원을 신뢰경계에 넣으면 지형을 지울 때 주민이 잘려 나간다(금지한 자동 퇴거다).
     static let populationLimit = 16
 
+    /// 다섯 마을을 합친 인구의 **절대 천장**. `< TownRegion.allCases.count × populationLimit`
+    /// (= 80) 이어야 한다 — 같거나 크면 다섯 마을을 전부 꽉 채울 수 있고, 그러면 "어느 마을을
+    /// 키울지 고른다" 가 사라져 지역이 그냥 격자 다섯 개가 된다. 테스트가 그 부등식을 센다.
+    ///
+    /// 60 은 마을 셋 반쯤이다. 두 마을은 마음껏 키우고 세 번째부터 고르게 된다.
+    ///
+    /// **신뢰경계(`normalized`)는 이 값을 읽지 않는다** — 읽으면 배열을 자르는 자리가 되어
+    /// 지역을 옮길 때마다 주민이 사라진다. 그건 이 기능이 금지한 자동 퇴거다. 거절은 받는 자리
+    /// (`admitTownResident`)가 한다.
+    static let globalPopulationLimit = 60
+
     /// 한 지형이 타입을 부르기 시작하는 칸 수. 6칸은 한 줄(16칸)의 3분의 1 남짓이다 —
     /// 실수로 두 칸 밀었다고 포켓몬이 오면 "내가 만들어서 왔다" 가 아니라 우연이 된다.
     ///
-    /// **기본 지형이 이미 풀 176칸이라 새 마을도 풀·벌레를 부른다.** 의도다 — 1일차 마을이
+    /// **기본 지형이 이미 바탕 176칸이라 새 마을도 그 타입을 부른다.** 의도다 — 1일차 마을이
     /// 아무도 부르지 않으면 첫 세션의 이사 판정이 영영 빈손이고, 사용자는 이 기능이 도는지도
     /// 모른다. 문턱을 올려 막으려 하면 반대로 6칸을 밀어도 아무 일이 없어진다.
     static let habitatThreshold = 6
@@ -115,10 +214,13 @@ enum PokopiaTown {
     /// 다르면 사용자가 어느 쪽에서 몇 번 되돌릴 수 있는지 알 수 없다.
     static let undoDepth = 30
 
-    /// 첫 마을. 전부 풀이고 맨 아래 줄만 길이다 — 빈 격자로 열면 "아직 아무것도 아닌 화면" 이
-    /// 되고, 길이 있으면 그 자체로 장소로 읽힌다. 그 줄은 아바타가 서는 자리이기도 하다.
-    static let defaultTerrain: [TownTerrain] = (0..<tileCount).map {
-        $0 / columns == rows - 1 ? .path : .grass
+    /// 그 지역의 첫 마을. 바탕은 지역이 정하고(`TownRegion.base`) **맨 아래 줄은 언제나 길**이다 —
+    /// 아바타가 서는 자리라서 지역마다 다르면 아바타가 물 위나 바위 위에 선다. 빈 격자로 열지
+    /// 않는 이유도 그대로다: 길이 있으면 그 자체로 장소로 읽힌다.
+    ///
+    /// 회색(`.ashen`)은 바탕도 길이라 격자 전체가 길이 된다 — 의도다(노말·전기·고스트를 부른다).
+    static func defaultTerrain(for region: TownRegion) -> [TownTerrain] {
+        (0..<tileCount).map { $0 / columns == rows - 1 ? .path : region.base }
     }
 
     /// 주민이 설 수 있는 칸. **맨 아래 길 줄을 뺀다** — 아바타 자리라 겹친다.
@@ -574,12 +676,13 @@ enum PokopiaTown {
             && !resident.types.isEmpty
     }
 
-    static func normalized(_ state: PokopiaTownState) -> PokopiaTownState {
+    static func normalized(_ state: PokopiaTownState, region: TownRegion) -> PokopiaTownState {
         var out = state
 
-        // 길이가 틀리면 기본 지형으로 되돌린다. 잘라 쓰거나 채워 쓰면 격자가 한 칸씩 밀린
-        // 채로 남아, 화면은 그려지는데 사용자가 민 자리와 다른 곳이 바뀐다.
-        if out.terrain.count != tileCount { out.terrain = defaultTerrain }
+        // 길이가 틀리면 **그 지역의** 기본 지형으로 되돌린다. 잘라 쓰거나 채워 쓰면 격자가 한 칸씩
+        // 밀린 채로 남아, 화면은 그려지는데 사용자가 민 자리와 다른 곳이 바뀐다. 전역 기본으로
+        // 되돌리면 해안이 풀밭이 되어 사용자가 만들지도 않은 바탕이 남는다.
+        if out.terrain.count != tileCount { out.terrain = defaultTerrain(for: region) }
 
         var seen = Set<Int>()
         out.residents = out.residents
@@ -589,6 +692,22 @@ enum PokopiaTown {
         // 변신 대상은 양수만 본다. 도감 대조는 쓰기 자리(`setDittoForm`)가 한다 — 앨범은
         // 도감을 들고 있지 않고, 등록 안 된 종으로 남은 변신은 브러시가 한 종류 다른 것뿐이다.
         if let form = out.dittoForm, form <= 0 { out.dittoForm = nil }
+        return out
+    }
+
+    /// 포코피아 전체의 신뢰경계. **모르는 지역 키를 버린다** — 손으로 고친 세이브나 옛 전송이
+    /// 담아 온 키가 지역 여섯 번째로 화면에 뜨지 않게 한다. 마을마다의 검사는 위 `normalized` 가
+    /// 그대로 하고, 여기서 딴 검사를 쓰면 한 경로에만 검사를 두는 부류가 된다.
+    ///
+    /// **전역 상한(`globalPopulationLimit`)을 여기서 적용하지 않는다.** 이 함수는 배열을 자르는
+    /// 자리이고, 전역 상한을 자르기로 강제하면 지역을 옮길 때마다 주민이 사라진다 — 받는 자리
+    /// (`admitTownResident`)가 거절하는 것이 맞는 형태다(정원을 여기 안 넣는 이유와 같다).
+    static func normalized(_ state: PokopiaState) -> PokopiaState {
+        var out = state
+        out.towns = state.towns.reduce(into: [:]) { result, entry in
+            guard let region = TownRegion(rawValue: entry.key) else { return }
+            result[entry.key] = normalized(entry.value, region: region)
+        }
         return out
     }
 }

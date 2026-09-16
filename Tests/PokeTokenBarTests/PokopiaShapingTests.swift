@@ -5,8 +5,13 @@ import XCTest
 
 @MainActor
 final class PokopiaShapingTests: XCTestCase {
+    /// **부유섬에서 연다.** 이 파일이 세는 것은 편집·되돌리기·상한이지 지역이 아닌데, 기본 지역
+    /// (황야=모래)에서 열면 "이미 풀인 칸" 같은 전제가 지역 표에 묶인다. 부유섬의 바탕은
+    /// 7단계 이전의 기본 지형 그대로다(풀 + 맨 아래 길 줄). 지역 자체는 `PokopiaRegionTests` 가 센다.
     private func album(_ tag: String = "pokopia-shaping") -> PokemonMemoryAlbum {
-        PokemonMemoryAlbum(fileURL: memoryAlbumURL(tag))
+        let album = PokemonMemoryAlbum(fileURL: memoryAlbumURL(tag))
+        _ = album.selectRegion(.isle)
+        return album
     }
 
     private func resident(_ speciesID: Int, _ type: PokemonType = .water,
@@ -39,7 +44,7 @@ final class PokopiaShapingTests: XCTestCase {
         XCTAssertFalse(album.shapeTownTile(col: PokopiaTown.columns, row: 0, to: .water))
         XCTAssertFalse(album.shapeTownTile(col: 0, row: PokopiaTown.rows, to: .water))
         XCTAssertFalse(album.shapeTownTile(col: -1, row: -1, to: .water))
-        XCTAssertEqual(album.town.terrain, PokopiaTown.defaultTerrain, "거절했는데 지형이 바뀌었다")
+        XCTAssertEqual(album.town.terrain, PokopiaTown.defaultTerrain(for: album.region), "거절했는데 지형이 바뀌었다")
     }
 
     // MARK: 브러시 게이트 (변신이 유일한 도구)
@@ -186,7 +191,7 @@ final class PokopiaShapingTests: XCTestCase {
             let admitted = album("pokopia-parity-\(probe.speciesID)-\(probe.name.count)-\(probe.types.count)")
                 .admitTownResident(probe)
             var state = PokopiaTownState(); state.residents = [probe]
-            let kept = !PokopiaTown.normalized(state).residents.isEmpty
+            let kept = !PokopiaTown.normalized(state, region: .isle).residents.isEmpty
             XCTAssertEqual(admitted, kept,
                            "두 검증기가 갈렸다 — admit=\(admitted) normalize=\(kept): \(probe)")
         }
