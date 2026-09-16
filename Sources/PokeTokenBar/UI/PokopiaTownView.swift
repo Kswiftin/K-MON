@@ -12,6 +12,8 @@ import AppKit
 /// 프레임 루프가 상주하는 표면을 말한다).
 struct PokopiaTownView: View {
     let store: CompanionStore
+    /// 이웃 마을이 실려 오는 곳. 창이 갈렸어도 전송로는 미니홈피의 것 하나다(8단계).
+    let visits: MemoryHomeVisitCenter
 
     @State private var feedback: String?
     @State private var transforming = false
@@ -40,8 +42,8 @@ struct PokopiaTownView: View {
                 header
                 brushBanner
                 PokopiaTownCanvas(town: town, residents: residentSprites,
-                                  outfit: store.state.outfit,
-                                  avatarCell: avatarCell, working: working,
+                                  avatar: (cell: avatarCell, outfit: store.state.outfit),
+                                  working: working,
                                   onTap: shape)
                 Text(lifeLine)
                     .font(.callout)
@@ -52,6 +54,7 @@ struct PokopiaTownView: View {
                     Text(feedback).font(.caption).foregroundStyle(PokedoroTheme.red)
                 }
                 residentList
+                neighborTown
             }
             .padding(12)
         }
@@ -409,6 +412,76 @@ struct PokopiaTownView: View {
                          col: spot.col, row: spot.row)
         }
     }
+
+    // MARK: 이웃 마을 (LAN 방문 결과)
+
+    /// 방금 방문한 집의 마을. **읽기 전용이고 버튼이 없다** — 브러시는 내 도감에서 오므로
+    /// 구조적으로도 못 밀지만, 화면에 조작을 두면 그 보장이 화면에서 안 보인다.
+    ///
+    /// 방문은 Memory Home 창의 VISIT 탭에서 시작한다. 여기에 홈 목록을 두지 않는 이유는
+    /// 진입점을 둘로 만들지 않기 위해서다 — 포코피아 창은 마을의 화면이지 LAN 의 화면이 아니다.
+    ///
+    /// 없으면 **아무것도 안 그린다**(빈 자리도 안 만든다).
+    @ViewBuilder private var neighborTown: some View {
+        if let visited = visits.visitedTown {
+            // 판정은 전부 `PokopiaTown` 하나에서 온다 — 화면이 계산을 더하지 않는다.
+            let development = PokopiaTown.development(visited.town.terrain,
+                                                      residents: visited.town.residents)
+            VStack(alignment: .leading, spacing: 6) {
+                // 지역 이름 뒤에 조사를 붙이지 않는다(`PokopiaParticleGuardTests`) — 받침이 갈린다.
+                Text("이웃 마을 · \(visited.ownerName) · \(visited.region.name)")
+                    .font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                PokopiaTownCanvas(town: visited.town,
+                                  residents: neighborSprites(visited.town),
+                                  avatar: nil,            // 주인이 거기 서 있지 않다
+                                  working: false,
+                                  onTap: { _, _ in })
+                // 인구는 **정규화 결과**를 센다 — 이 기기에 스프라이트가 없는 종은 받는 자리에서
+                // 빠지므로, 받은 원본을 세면 화면에 없는 줄을 숫자가 세게 된다.
+                Text("환경 Lv.\(development.level) \(development.name) · 지형 \(development.habitats)/\(TownTerrain.allCases.count) · 정착 \(development.settled)/\(visited.town.residents.count)")
+                    .font(.caption2).foregroundStyle(.secondary)
+                if visited.town.residents.isEmpty {
+                    Text("아직 아무도 살지 않아요.").font(.caption2).foregroundStyle(.secondary)
+                } else {
+                    ForEach(visited.town.residents) { neighborResidentRow($0, terrain: visited.town.terrain) }
+                }
+            }
+            .padding(.horizontal, 10).padding(.vertical, 8)
+            .frame(maxWidth: 512, alignment: .leading)
+            .background(PokedoroTheme.blue.opacity(0.08),
+                        in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+        }
+    }
+
+    /// 이웃 마을의 주민 자리. 내 마을(`residentSprites`)과 **같은 파생**이다.
+    private func neighborSprites(_ town: PokopiaTownState) -> [PokopiaTownCanvas.Resident] {
+        let dayKey = CompanionStore.dayKey(Date())
+        return town.residents.map { resident in
+            let spot = PokopiaTown.residentSpot(resident, terrain: town.terrain, dayKey: dayKey)
+            return .init(id: resident.speciesID, speciesID: resident.speciesID,
+                         col: spot.col, row: spot.row)
+        }
+    }
+
+    /// 이웃 주민 한 줄. `residentRow` 와 같은 파생을 쓰고 **내보내기 버튼만 없다**.
+    ///
+    /// 지형을 **인자로 받는다.** `residentRow` 는 내 `town.terrain` 을 클로저로 잡으므로
+    /// 그대로 복사하면 이웃 주민이 내 지형 위에서 판정돼 엉뚱한 곳에 산다고 나온다.
+    private func neighborResidentRow(_ resident: TownResident, terrain: [TownTerrain]) -> some View {
+        let home = PokopiaTown.settledTerrain(resident, terrain: terrain)
+        return HStack(spacing: 8) {
+            PokopiaResidentView(speciesID: resident.speciesID, isShiny: false, side: 26)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(resident.name).font(.caption.weight(.medium)).lineLimit(1)
+                Text([home.map { "\($0.name)에 살아요" } ?? "살던 자리를 찾는 중이에요",
+                      PokopiaTown.specialty(of: resident).map { "특기 \($0.name)" }]
+                     .compactMap { $0 }.joined(separator: " · "))
+                    .font(.caption2).foregroundStyle(.secondary)
+            }
+            Spacer()
+        }
+        .padding(.horizontal, 8).padding(.vertical, 5)
+    }
 }
 
 
@@ -432,8 +505,10 @@ struct PokopiaTownCanvas: View {
 
     let town: PokopiaTownState
     let residents: [Resident]
-    let outfit: TrainerOutfit
-    let avatarCell: (col: Int, row: Int)
+    /// 아바타. **`nil` 이면 안 그린다** — 이웃 마을엔 주인이 서 있지 않다. 자리와 옷을 한
+    /// 옵셔널로 묶은 이유는 갈릴 수가 없게 하려는 것이다: 자리만 있고 옷이 없는 상태는
+    /// 그릴 수 없다.
+    let avatar: (cell: (col: Int, row: Int), outfit: TrainerOutfit)?
     let working: Bool
     let onTap: (Int, Int) -> Void
 
@@ -496,7 +571,9 @@ struct PokopiaTownCanvas: View {
                 }
             }
             // 아바타는 늘 맨 위다 — 조작의 커서라, 주민 뒤에 숨으면 내가 어디 있는지 모른다.
-            standee(col: avatarCell.col, row: avatarCell.row, side: 44) { avatar }
+            if let avatar {
+                standee(col: avatar.cell.col, row: avatar.cell.row, side: 44) { avatarView(avatar.outfit) }
+            }
         }
         // 탭은 격자가 받는다 — 스프라이트가 가로채면 주민이 서 있는 칸을 못 민다.
         .allowsHitTesting(false)
@@ -523,7 +600,8 @@ struct PokopiaTownCanvas: View {
         }
     }
 
-    private var avatar: some View {
+    /// `working`(먼지 연출)은 아바타에 붙어 있다 — 아바타가 nil 이면 아무 일도 안 한다.
+    private func avatarView(_ outfit: TrainerOutfit) -> some View {
         ZStack {
             PokopiaTownAvatarView(dittoForm: town.dittoForm, outfit: outfit, side: 44)
             if working {

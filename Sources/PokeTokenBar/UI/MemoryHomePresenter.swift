@@ -717,6 +717,11 @@ private struct MemoryHomeWindowView: View {
                     Text("대문 문구를 저장하면 같은 LAN 공유를 켤 수 있어요.")
                         .font(.caption).foregroundStyle(.secondary)
                 }
+                // 마을은 8단계 전까지 LAN 에 안 나가던 데이터라 **자기 몫의 동의**를 갖는다.
+                // 기본은 꺼짐이다 — 대문 문구와 같은 형태다.
+                Toggle("포코피아 마을 LAN 공유", isOn: Binding(get: { album.memoryHomeAccess.sharesTown }, set: { album.setSharesTown($0) }))
+                Text("지금 보고 있는 지역의 마을 한 채가 방문자에게 보여요. 트레이너 아바타는 가지 않아요.")
+                    .font(.caption).foregroundStyle(.secondary)
                 Toggle("홈 LAN 공개", isOn: Binding(get: { album.memoryHomeAccess.visibility == .open }, set: { album.setMemoryHomeVisibility($0 ? .open : .blocked); visits.refreshAccess() }))
             }.memoryHomePanel().onAppear {
                 profileMessageDraft = album.memoryHomeAccess.profileMessage ?? ""
@@ -838,6 +843,14 @@ private struct MemoryHomeWindowView: View {
             Label(error, systemImage: "exclamationmark.triangle.fill").font(.caption).foregroundStyle(.orange)
         }
         if let selected = visits.selectedProfile { remoteProfile(selected) }
+        // 마을은 **다른 창**에 그려진다(포코피아 창의 '이웃 마을' 절). 안 적으면 방문 결과의
+        // 절반이 어디로 갔는지 화면에 없다 — 눌렀는데 아무 일도 안 일어난 것처럼 보인다.
+        // 버튼을 만들지 않는다: 포코피아 창을 여는 것은 `PokopiaTownPresenter.open()` 이고,
+        // 그것을 여기 들이면 창 하나에 진입점이 둘이 된다.
+        if visits.visitedTown != nil {
+            Label("포코피아 마을을 받았어요. 포코피아 창에서 볼 수 있어요.", systemImage: "tree.fill")
+                .font(.caption).foregroundStyle(PokedoroTheme.mint)
+        }
         if visits.homes.isEmpty { ContentUnavailableView("주변 홈을 찾는 중이에요…", systemImage: "dot.radiowaves.left.and.right") } else { ForEach(visits.homes) { home in Button { visits.visit(home) } label: { Label(home.displayName, systemImage: "house.fill").frame(maxWidth: .infinity, alignment: .leading) }.buttonStyle(.bordered) } }
         footprints
     }.padding(18) }.onAppear { visits.start() }.onDisappear { visits.stop() } }

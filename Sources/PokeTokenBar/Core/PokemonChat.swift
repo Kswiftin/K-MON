@@ -441,6 +441,13 @@ struct MemoryHomeAccessSettings: Codable, Sendable, Equatable {
     /// 않는다. 대신 자기 몫의 명시적 opt-in 을 가지며 기본값은 비공개다.
     var profileMessage: String?
     var sharesProfileMessage: Bool = false
+    /// 포코피아 마을 LAN 공유. **기본은 꺼짐**이다 — 마을은 8단계 전까지 LAN 에 안 나가던
+    /// 데이터라, 기본값을 공개로 두면 업데이트 즉시 기존 공개 사용자 전원의 마을이 사용자가
+    /// 모르는 채 나간다. `sharesProfileMessage` 가 같은 이유로 같은 형태다.
+    ///
+    /// 홈 공개(`visibility`)와 **곱해서** 읽는다 — 홈을 닫으면 카드 자체가 안 나가므로 이
+    /// 값만으로는 공개가 성립하지 않는다.
+    var sharesTown: Bool = false
     /// 하루 한 개. dayKey 는 `%04d-%02d-%02d` 라 문자열 정렬이 곧 시간순 → 최신 60개만 남긴다.
     var moodByDayKey: [String: MemoryHomeMood] = [:]
     var guestbookEntries: [MemoryHomeGuestbookEntry] = []
@@ -480,7 +487,7 @@ struct MemoryHomeAccessSettings: Codable, Sendable, Equatable {
     private enum CodingKeys: String, CodingKey {
         case publicNickname, visibility, sharedPinnedMemoryID, recentRequesters, blockedPeerIDs,
              visitTotal, visitDayKey, visitTodayPeerIDs, visitThresholdDates,
-             profileMessage, sharesProfileMessage, moodByDayKey, guestbookEntries,
+             profileMessage, sharesProfileMessage, sharesTown, moodByDayKey, guestbookEntries,
              peerAliases, roommateIDs, roomLayout, furniturePositions, companionPositions, photos, visitedHomeStamps,
              unlockedRoomStyles, roomStyle, placedDecor, featuredPhotoID,
              // JSON 키는 `town` 그대로 둔다 — 7단계 이전의 세이브가 이 이름으로 굽혀 있다.
@@ -510,6 +517,7 @@ struct MemoryHomeAccessSettings: Codable, Sendable, Equatable {
         visitThresholdDates = try c.decodeIfPresent([Int: Date].self, forKey: .visitThresholdDates) ?? [:]
         profileMessage = try c.decodeIfPresent(String.self, forKey: .profileMessage)
         sharesProfileMessage = try c.decodeIfPresent(Bool.self, forKey: .sharesProfileMessage) ?? false
+        sharesTown = try c.decodeIfPresent(Bool.self, forKey: .sharesTown) ?? false
         moodByDayKey = try c.decodeIfPresent([String: MemoryHomeMood].self, forKey: .moodByDayKey) ?? [:]
         guestbookEntries = try c.decodeIfPresent([MemoryHomeGuestbookEntry].self, forKey: .guestbookEntries) ?? []
         peerAliases = try c.decodeIfPresent([UUID: String].self, forKey: .peerAliases) ?? [:]
@@ -1495,6 +1503,22 @@ final class PokemonMemoryAlbum {
     /// 명시적으로 공유를 켠 경우에만 값이 나온다. LAN 카드는 이 프로퍼티만 읽어야 한다.
     var profileMessageForSharing: String? {
         memoryHomeAccess.sharesProfileMessage ? memoryHomeAccess.profileMessage : nil
+    }
+    /// 마을 공유 토글. `setSharesProfileMessage` 와 달리 **"공유할 것이 있는가" 가드를 두지
+    /// 않는다** — 마을을 한 번도 안 연 사용자에게도 `pokopia.town(home)` 이 그 지역의 기본
+    /// 마을을 돌려주므로 "없을 수" 가 없다. 흉내 내서 `guard !pokopia.towns.isEmpty` 를 넣으면
+    /// 토글을 켜 둔 사용자가 마을을 한 번 열었다 지웠을 때 토글이 조용히 꺼진다.
+    func setSharesTown(_ shares: Bool) {
+        guard memoryHomeAccess.sharesTown != shares else { return }
+        memoryHomeAccess.sharesTown = shares; save()
+    }
+    /// 명시적으로 공유를 켠 경우에만 값이 나온다. LAN 카드는 이 프로퍼티만 읽어야 한다 —
+    /// `pokopia.town(...)` 을 직접 읽으면 동의 없이 새어 나간다(`profileMessageForSharing` 과
+    /// 같은 규칙). 지역도 같이 준다: 받는 쪽의 `normalized(_:region:)` 이 지역을 알아야
+    /// 길이가 틀린 지형을 **그 지역의** 바탕으로 되돌린다.
+    var townForSharing: (region: TownRegion, town: PokopiaTownState)? {
+        guard memoryHomeAccess.sharesTown else { return nil }
+        return (pokopia.home, town)
     }
     /// Bonjour 닉네임과 달리 이건 서비스 이름이 아니라 화면에 찍히는 문구다 → 내부 공백은
     /// 허용하고, 한 줄 레이아웃과 로그 오염을 지키기 위해 줄바꿈·제어문자만 막는다.

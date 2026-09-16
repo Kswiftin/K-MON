@@ -16,18 +16,26 @@ import SwiftUI
 final class PokopiaTownPresenter: NSObject, NSWindowDelegate {
     private let settings: AppSettings
     private let store: CompanionStore
+    /// 이웃 마을을 실어 오는 소켓. **미니홈피의 방문 센터가 이 창에 오는 것이 맞다** — 마을은
+    /// 새 Bonjour 서비스를 만들지 않고 미니홈피 카드(`_kmonhome._tcp`)에 실려 오므로, 전송로의
+    /// 주인은 여전히 `MemoryHomeVisitCenter` 다. 창이 갈린 것은 화면이지 전송로가 아니다.
+    private let visits: MemoryHomeVisitCenter
     private var window: NSWindow?
     private static let defaultContentSize = NSSize(width: 1_040, height: 720)
 
-    init(settings: AppSettings, store: CompanionStore) {
+    init(settings: AppSettings, store: CompanionStore, visits: MemoryHomeVisitCenter) {
         self.settings = settings
         self.store = store
+        self.visits = visits
         super.init()
     }
 
     /// **게이트가 없다.** `memoryHomeEnabled` 를 보지 않는다 — 그 설정은 미니홈피의 LAN 공개를
-    /// 끄는 스위치이고, 마을은 LAN 에 나가지 않는다. 여기서 그 값을 읽으면 미니홈피를 끈
-    /// 사용자가 마을에 못 들어가고, 그건 창을 가른 이유를 되돌리는 것이다.
+    /// 끄는 스위치이고, 여기서 그 값을 읽으면 미니홈피를 끈 사용자가 **자기** 마을에 못 들어간다.
+    /// 그건 창을 가른 이유를 되돌리는 것이다.
+    ///
+    /// 8단계(이웃 마을)가 붙은 뒤에도 같다 — 그 설정을 끈 사용자에게 이웃 마을이 **안 오는** 것은
+    /// `MemoryHomeVisitCenter` 가 시작되지 않은 결과이지 이 창의 게이트가 아니다.
     func open() {
         let window = window ?? makeWindow()
         self.window = window
@@ -60,7 +68,7 @@ final class PokopiaTownPresenter: NSObject, NSWindowDelegate {
     /// 창 크롬(배경·틴트·폰트)만 여기서 얹는다 — Memory Home 창과 같은 값이라야 한 앱으로 보인다.
     private func installContent(in window: NSWindow) {
         window.contentViewController = NSHostingController(rootView:
-            PokopiaTownView(store: store)
+            PokopiaTownView(store: store, visits: visits)
                 .background(PokedoroTheme.pageBackground)
                 .tint(PokedoroTheme.blue)
                 .fontDesign(.rounded)
