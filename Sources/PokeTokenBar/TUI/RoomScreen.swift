@@ -205,6 +205,7 @@ enum RoomScreen {
         case .tournament: "토너먼트"
         case .pokeathlon: "포켓슬론"
         case .pokemonQuiz: "OX 퀴즈"
+        case .pokemonTFT: "포켓몬 TFT"
         case nil: "LAN 방"
         }
     }

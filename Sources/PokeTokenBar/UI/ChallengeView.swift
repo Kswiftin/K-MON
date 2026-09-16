@@ -41,6 +41,10 @@ struct ChallengeView: View {
                           subtitle: "Lv.50 3대3 배틀에서 강해지는 CPU를 상대로 연승에 도전하세요.") {
                 nav.showBattleFrontier = true
             }
+            challengeCard(title: "포켓몬 TFT", systemImage: "square.grid.3x3.fill", tint: .cyan,
+                          subtitle: "포켓몬을 구매·합성·배치하고 타입 시너지로 자동 전투를 이기세요.") {
+                nav.showPokemonTFT = true
+            }
             challengeCard(title: l.safariZoneTitle, systemImage: "leaf.fill", tint: .green,
                           subtitle: "벌판을 걸어 다니며 미끼·진흙·볼·도망으로 야생 포켓몬을 잡으세요.") {
                 nav.showSafariZone = true

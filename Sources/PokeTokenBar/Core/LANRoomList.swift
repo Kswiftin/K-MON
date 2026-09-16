@@ -17,6 +17,7 @@ enum LANRoomList {
         case .pokeathlon: "RUN"
         case .pokemonQuiz: "QUIZ"
         case .tournament: "TOUR"
+        case .pokemonTFT: "TFT"
         case .gym: PlayerGym.roomNamePrefix
         case .raid: RaidRoomName.prefix
         }

@@ -1,7 +1,7 @@
 import Foundation
 
 enum BattleTeam: String, Codable, Sendable { case solo, red, blue }
-enum RoomActivity: String, Codable, Sendable, CaseIterable { case battle, pokeathlon, pokemonQuiz, tournament, gym, raid }
+enum RoomActivity: String, Codable, Sendable, CaseIterable { case battle, pokeathlon, pokemonQuiz, tournament, pokemonTFT, gym, raid }
 
 extension RoomActivity {
     /// 호스트가 **직접 시작하는** 활동인가.
@@ -71,7 +71,7 @@ struct MultiplayerLobby: Codable, Sendable, Equatable {
         let allowed: Bool
         switch activity {
         case .pokemonQuiz: allowed = (2...Self.quizCapacity).contains(capacity)
-        case .tournament: allowed = (2...8).contains(capacity)
+        case .tournament, .pokemonTFT: allowed = (2...8).contains(capacity)
         // 체육관은 관장 1 + 도전자 1 이 한 판이다. 남는 자리는 전부 관전자 몫이라 러너 정원은 둘이다.
         case .gym: allowed = capacity == 2
         // 레이드 파티는 여덟이 상한이다. 보스는 참가자가 아니라 로비 정원에 들지 않는다.
@@ -102,6 +102,7 @@ struct MultiplayerLobby: Codable, Sendable, Equatable {
         if activity == .raid { return !runners.isEmpty && runners.allSatisfy(\.isReady) }
         guard runners.count >= 2, runners.allSatisfy(\.isReady) else { return false }
         if activity == .tournament { return runners.count >= 3 }
+        if activity == .pokemonTFT { return true }
         if activity == .pokeathlon || activity == .pokemonQuiz { return true }
         if mode == .freeForAll { return true }
         return runners.count == 4 && runners.filter { $0.team == .red }.count == 2

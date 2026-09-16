@@ -82,6 +82,8 @@ final class PopoverNavigation {
     var showDungeon = false
     /// 배틀프런티어 오버레이. 혼자 하는 3대3 연승 콘텐츠다.
     var showBattleFrontier = false
+    /// 포켓몬 TFT 오버레이. 한 판의 상태는 화면 안에만 있어 다른 세이브와 분리된다.
+    var showPokemonTFT = false
     /// 협동 레이드 오버레이(#80). 위 오버레이들과 같은 층이다.
     var showRaid = false
     /// 꾸미기(트레이너 의상) 오버레이. 위 오버레이들과 같은 층이다.
@@ -106,6 +108,7 @@ final class PopoverNavigation {
         showGymLeague = false
         showDungeon = false
         showBattleFrontier = false
+        showPokemonTFT = false
         showRaid = false
         showOutfit = false
         showSafariZone = false
@@ -263,6 +266,8 @@ struct PopoverView: View {
                 RogueRunView(store: companion, onClose: { nav.showDungeon = false })
             } else if nav.showBattleFrontier {
                 BattleFrontierView(store: companion, onClose: { nav.showBattleFrontier = false })
+            } else if nav.showPokemonTFT {
+                PokemonTFTView(store: companion, onClose: { nav.showPokemonTFT = false })
             } else if nav.showRaid {
                 RaidView(store: companion, onClose: { nav.showRaid = false })
             } else if nav.showOutfit {

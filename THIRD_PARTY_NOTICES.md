@@ -33,3 +33,13 @@ and rasterised at runtime — there are no bundled image assets and no third-par
 This replaced a CC0 interior tileset (*4 Colour Interior Tileset* by stealthix, from OpenGameArt)
 that earlier versions bundled as `oga-interior-tileset.png`. Nothing derived from that sheet
 remains: the current sprites were drawn from scratch on a different palette and grid.
+
+## Pokémon Auto Chess design reference
+
+- **Project:** pokemonAutoChess
+- **Source:** https://github.com/keldaanCommunity/pokemonAutoChess
+- **License:** GPL-3.0
+
+The Pokémon TFT mode uses this project as a behavioral design reference for grid movement,
+nearest-target combat, attack range, star upgrades and level-weighted shops. No source code or
+assets from the GPL project are copied into K-MON; the Swift implementation and UI are original.
