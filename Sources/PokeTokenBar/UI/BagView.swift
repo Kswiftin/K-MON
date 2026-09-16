@@ -218,6 +218,9 @@ private struct ItemCard: View {
         case .heartScale:     return store.canUseHeartScale
         case .heldItem:       return store.canGiveHeldItem(kind)
         case .furniture:      return false
+        // 재료·설비는 가방에서 쓰는 물건이 아니다(포코피아 만들기가 읽는다) — 가구와 같은 자리.
+        case .townGood:       return false
+        case .dish:           return store.itemCount(kind) > 0
         case .evolutionItem:  return store.canUseEvolutionItem(kind)
         }
     }
@@ -232,6 +235,11 @@ private struct ItemCard: View {
         case .heartScale: return l.heartScaleEffectHint
         case .heldItem:   return l.heldItemEffectHint(kind)
         case .furniture:  return "미니룸에서 배치"
+        case .townGood:
+            return PokopiaCrafting.facilities.contains(kind) ? "포코피아 만들기에서 사용" : "포코피아 만들기의 재료"
+        case .dish:
+            // 시간은 레시피 표에서 온다 — 여기 숫자를 적으면 표와 힌트가 갈린다.
+            return "마을 포만감 \(PokopiaCrafting.recipe(making: kind)?.satietyHours ?? 0)시간"
         case .evolutionItem:
             return "진화 가능할 때 사용"
         }
@@ -246,6 +254,8 @@ private struct ItemCard: View {
         case .heartScale: store.useHeartScale()
         case .heldItem:   store.giveHeldItem(kind)
         case .furniture:  break
+        case .townGood:   break
+        case .dish:       _ = store.feedTown(kind)
         case .evolutionItem: _ = store.useEvolutionItem(kind)
         }
     }
@@ -257,7 +267,9 @@ private struct ItemCard: View {
         } else if canUse {
             if confirming {
                 HStack(spacing: 8) {
-                    Text(l.useOnCurrent(store.displayName))
+                    // 요리는 동행이 아니라 **마을**에 간다 — 파트너 이름을 쓰면 확인 문구가
+                    // 거짓말이 된다(지금 보고 있는 지역이 먹는다).
+                    Text(kind.bagUse == .dish ? "포코피아 마을에 먹일까요?" : l.useOnCurrent(store.displayName))
                         .font(.caption2).foregroundStyle(.secondary).lineLimit(1)
                     Spacer()
                     Button(l.use) { useNow() }

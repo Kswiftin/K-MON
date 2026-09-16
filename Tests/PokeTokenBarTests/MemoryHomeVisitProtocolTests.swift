@@ -227,9 +227,11 @@ final class MemoryHomeVisitProtocolTests: XCTestCase {
         return ids
     }
 
-    private func town(residents: [TownResident] = [], terrain: TownTerrain? = nil) -> PokopiaTownState {
+    private func town(residents: [TownResident] = [], terrain: TownTerrain? = nil,
+                      fedUntil: Date? = nil) -> PokopiaTownState {
         var town = PokopiaTownState(region: .coast, residents: residents)
         if let terrain { town.terrain = Array(repeating: terrain, count: PokopiaTown.tileCount) }
+        town.fedUntil = fedUntil
         return town
     }
 
@@ -341,11 +343,18 @@ final class MemoryHomeVisitProtocolTests: XCTestCase {
             profileMessage: String(repeating: "가", count: MemoryHomeAccessSettings.profileMessageLimit),
             roomTheme: .blue, showcaseFurniture: furniture, roomStyle: .retro,
             placedDecor: decor, featuredPhoto: photo,
-            town: town(residents: residents, terrain: longest), townRegion: .coast)
+            // 포만감(9단계)도 실린다 — `PokopiaTownState` 안의 필드라 자동으로 와이어에 간다.
+            // 최악 카드에 안 넣으면 "최악" 이 아니고, 다음에 필드를 더하는 사람이 여유를
+            // 실제보다 크게 읽는다.
+            town: town(residents: residents, terrain: longest,
+                       fedUntil: Date(timeIntervalSince1970: 1_700_086_400)),
+            townRegion: .coast)
 
         let bytes = try JSONEncoder().encode(card).count
         XCTAssertLessThan(bytes, Int(MemoryHomeVisitCenter.maxFrameBytes),
                           "최악 카드가 프레임 상한을 넘는다 — 넘은 카드는 오류 없이 연결이 끊겨 방문이 무증상으로 실패한다 (\(bytes) B)")
+        // 실측 6,341 B / 상한 16,384 B (2026-09-16, 9단계에서 `fedUntil` 을 실은 뒤).
+        // 여유가 약 10KB 라 다음 필드도 들어가지만, **마을 두 채는 여전히 안 된다**(8단계 결론).
     }
 }
 

@@ -122,6 +122,14 @@ struct PokopiaTownState: Codable, Sendable, Equatable {
     var dittoForm: Int?
     /// 도착 순서를 지킨다 — 상한에 걸릴 때 누가 남는지가 실행마다 바뀌면 안 된다.
     var residents: [TownResident] = []
+    /// 마을이 배부른 시각까지(9단계). **이 단계가 더한 유일한 마을 저장 필드다** — 요리 결과는
+    /// 파생할 수 없다(지형과 주민만 보면 답이 안 나온다). nil = 한 번도 안 먹였거나 다 지났다.
+    ///
+    /// 마을당 하나다. 주민별로 두면 16 × 5 = 80개 상태가 되고, 8단계가 잰 LAN 와이어 예산
+    /// (카드 + 마을 한 채 6,762 B / 상한 16,384 B)을 다시 계산해야 한다.
+    ///
+    /// 옵셔널이라 **옛 세이브가 그대로 열린다** — 합성 `Codable` 이 없는 키를 nil 로 받는다.
+    var fedUntil: Date?
 
     /// 그 지역의 빈 마을. **지역이 바탕을 정한다** — 지형을 인자로 받지 않는 이유는 그 둘이
     /// 갈리면 해안 마을이 풀밭으로 시작할 수 있기 때문이다.
@@ -465,6 +473,8 @@ enum PokopiaTown {
         let level: Int
         /// 화면에 쓰는 **레벨 구간** 이름. 숫자만 보여 주면 10이 무엇의 끝인지 읽히지 않는다.
         let name: String
+        /// 지금 배부른가(9단계, 축 C). 화면이 "배부른 마을" 을 그리는 술어와 **같은 값**이다.
+        let fed: Bool
 
         /// 꿈섬 전설 다섯 종(`PokopiaTown.dreamIslandSpecies`)이 후보에 드는 조건 — **지형 여덟 종 전부**가 문턱을 넘었다.
         /// 원작은 흔들풍손 특기로 별도 장소(꿈섬)에 가지만 앱엔 장소가 없어 개발도 최고 단계로 접었다.
@@ -488,13 +498,26 @@ enum PokopiaTown {
     /// 비율(정착/주민)이지 정원 대비가 아니다 — 주민이 적은 마을과 주민이 불행한 마을은 다른
     /// 상태다. 주민이 없으면 0 이다(0/0 을 만족으로 읽지 않는다). 정수 비교만 쓴다(`settled * 2 >=
     /// residents.count`) — 규칙표에 부동소수를 들이지 않는다.
-    static func development(_ terrain: [TownTerrain], residents: [TownResident]) -> TownDevelopment {
+    /// - Parameter fed: 이 마을이 지금 배부른가(9단계, 축 C). **`Date` 를 받지 않는다** — 이
+    ///   함수가 시계를 읽으면 밤에 돌린 CI 만 빨개지고, `Date` 를 인자로 받으면 기존 호출부가
+    ///   전부 시각을 들고 다녀야 한다. 판정은 `PokopiaCrafting.isFed(fedUntil:now:)` 하나이고
+    ///   여기서는 그 답만 받는다(`townBrush` 가 조립을 한 곳에 모으는 것과 같은 형태다).
+    ///
+    ///   축 C 는 **천장을 올리지 않는다.** `8 + 2 = maxLevel(10)` 등식은 그대로이고(테스트가
+    ///   센다) 포만감은 아래 `min(maxLevel, …)` 에 잘린다 — 지형이 덜 다양한 마을이 같은 레벨에
+    ///   닿는 **두 번째 길**이다. 천장을 11 로 올리면 "원작도 Lv.1~10" 근거가 깨지고, 축 B 의
+    ///   계단 하나를 뺏어 오면 오늘 Lv.10 인 마을이 요리를 하기 전까지 Lv.9 로 내려간다.
+    ///
+    ///   `capacity` 는 축 C 를 **안 본다** — 축 B 를 안 보는 이유와 같다(되먹임).
+    static func development(_ terrain: [TownTerrain], residents: [TownResident],
+                            fed: Bool = false) -> TownDevelopment {
         let count = habitats(terrain).filter(\.isWelcoming).count
         let capacity = min(populationLimit, count * residentsPerHabitat)
         let settled = residents.filter { isSettled($0, terrain: terrain) }.count
         var lift = 0
         if !residents.isEmpty && settled * 2 >= residents.count { lift += 1 }
         if !residents.isEmpty && settled == residents.count && residents.count >= capacity { lift += 1 }
+        if fed { lift += 1 }                                        // 축 C — 천장은 아래 min 이 지킨다
         let level = max(1, min(maxLevel, count + lift))
         let name: String
         switch level {
@@ -504,7 +527,8 @@ enum PokopiaTown {
         case 6...7: name = "큰 마을"
         default:    name = "포코피아"     // 8...maxLevel
         }
-        return TownDevelopment(habitats: count, capacity: capacity, settled: settled, level: level, name: name)
+        return TownDevelopment(habitats: count, capacity: capacity, settled: settled,
+                               level: level, name: name, fed: fed)
     }
 
     // MARK: - 꿈섬 전설 (지형 여덟 종이 다 되면 다섯 종이 먼저 온다)
@@ -692,6 +716,12 @@ enum PokopiaTown {
         // 변신 대상은 양수만 본다. 도감 대조는 쓰기 자리(`setDittoForm`)가 한다 — 앨범은
         // 도감을 들고 있지 않고, 등록 안 된 종으로 남은 변신은 브러시가 한 종류 다른 것뿐이다.
         if let form = out.dittoForm, form <= 0 { out.dittoForm = nil }
+
+        // `fedUntil` 은 **여기서 안 자른다.** 이 함수는 `now` 를 모르고, 시계를 들이면 신뢰경계가
+        // 실행 시각에 따라 다른 답을 낸다. 먼 미래는 **읽는 자리**가 거짓으로 만든다
+        // (`PokopiaCrafting.isFed` 의 `<= now + maxSatiety`). 읽는 자리가 하나라서 성립하는
+        // 형태다 — 두 번째 독자가 생기면 그때 이 판단을 다시 한다.
+
         return out
     }
 

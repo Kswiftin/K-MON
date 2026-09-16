@@ -218,6 +218,27 @@ enum BagUse: Sendable, Equatable, CaseIterable {
     /// 미니룸 가구 — 가방에서 쓰는 것이 아니라 방에서 배치한다.
     case furniture
     case evolutionItem
+    /// 마을 물건(9단계) — 재료 10종과 설비 3종. **가방에서 쓰는 것이 아니다**: 재료는 레시피가
+    /// 먹고, 설비는 갖고 있는 것이 곧 효과다. 가구와 같은 자리이지만 갈래를 나누는 이유는 설명이
+    /// 다르기 때문이다 — `itemDescription` 이 `bagUse` 로 갈리므로 합치면 열세 물건이 한 문장을 쓴다.
+    case townGood
+    /// 요리(9단계) — 쓰면 **지금 보고 있는 마을**이 먹는다. 동행이 아니라 마을에 가는 유일한 아이템이다.
+    case dish
+}
+
+extension BagUse {
+    /// 이름으로 지목해 `use` 할 수 있는 갈래인가. **전수 `switch` 다** — `default: true` 로 두면
+    /// 다음에 더한 "쓸 수 없는" 갈래가 이름표에 들어가 **먼저 받아들여진 뒤** 실패한다
+    /// (`ItemNames.nameable` 이 가구를 뺀 이유 그대로다).
+    var isUsedByName: Bool {
+        switch self {
+        case .candy, .mint, .heartScale, .teraShard, .abilityCapsule, .abilityPatch,
+             .heldItem, .evolutionItem, .dish:
+            return true
+        case .furniture, .townGood:
+            return false
+        }
+    }
 }
 
 /// 인벤토리 아이템 종류 — 확장 대비 enum. rawValue 로 CompanionState.inventory 에 저장.
@@ -398,6 +419,24 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
     case retroArcade, retroRadio, retroTV
     case naturePlant, natureBench, natureLantern
 
+    /// 마을 재료 10종(9단계) — **상점에서만 온다.** 세션 보상도 주민 특기 파생도 아니다: 전자는
+    /// 지운 티켓 경제와 구조가 같고, 후자는 로드맵이 4b 로 보류한 "특기 → 보상" 그대로다.
+    /// 값과 레시피는 `PokopiaCrafting` 한 곳이 답한다.
+    ///
+    /// 접두 `town` 은 **이름 충돌 회피**다(`magnetItem` 과 같은 이유) — `stone`·`water` 는 진화
+    /// 아이템·지닌물건과 갈리고, `sand` 는 `TownTerrain.sand` 와 읽는 사람 눈에서 갈린다.
+    case townWood, townStone, townClay, townSandGrain, townSpringWater
+    case townPetal, townHerb, townFruit, townHoney, townOre
+    /// 설비 3종(9단계) — **격자에 놓지 않는다.** 갖고 있으면 그 레시피가 열린다. 상점에 없다(만든다).
+    case townKitchen, townFurnace, townMixer
+    /// 요리 20종(9단계) — 쓰면 마을에 포만감이 선다(`PokopiaCrafting.isFed`). 상점에 없다(만든다).
+    ///
+    /// **rawValue 가 세이브 ID 다** — 이름을 바꾸면 그 요리를 가진 사용자의 재고가 사라진다.
+    case dishFruitSalad, dishHoneyToast, dishHerbSoup, dishPetalTea, dishRoastedFruit
+    case dishHoneyPickle, dishHerbPorridge, dishPetalDango, dishWildGreens, dishFruitCompote
+    case dishSpringShaved, dishFlowerPie, dishHerbBath, dishTricolorDango, dishFruitJam
+    case dishHoneySteam, dishWildflowerBowl, dishFruitStew, dishMixedSkewer, dishPokopiaSet
+
     /// 진화 아이템 공통가 — 돌과 지닌물건을 구분하지 않는다(둘 다 진화 1회분의 값).
     static let evolutionItemPrice = 500
 
@@ -439,7 +478,16 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
              .loadedDice, .bindingBand, .gripClaw, .throatSpray,
              .quickClaw, .focusBand, .eviolite,
              .roomBed, .roomTable, .roomLamp, .lovelyVanity, .lovelySofa, .lovelyHeartLamp,
-             .retroArcade, .retroRadio, .retroTV, .naturePlant, .natureBench, .natureLantern: return nil
+             .retroArcade, .retroRadio, .retroTV, .naturePlant, .natureBench, .natureLantern,
+             // 마을 물건 33종(9단계) — 진화와 무관하다.
+             .townWood, .townStone, .townClay, .townSandGrain, .townSpringWater,
+             .townPetal, .townHerb, .townFruit, .townHoney, .townOre,
+             .townKitchen, .townFurnace, .townMixer,
+             .dishFruitSalad, .dishHoneyToast, .dishHerbSoup, .dishPetalTea, .dishRoastedFruit,
+             .dishHoneyPickle, .dishHerbPorridge, .dishPetalDango, .dishWildGreens, .dishFruitCompote,
+             .dishSpringShaved, .dishFlowerPie, .dishHerbBath, .dishTricolorDango, .dishFruitJam,
+             .dishHoneySteam, .dishWildflowerBowl, .dishFruitStew, .dishMixedSkewer, .dishPokopiaSet:
+            return nil
         case .linkingCord: return .plainTrade
         case .fireStone: return .useItem("fire-stone")
         case .waterStone: return .useItem("water-stone")
@@ -540,6 +588,15 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
         case .roomBed, .roomTable, .roomLamp, .lovelyVanity, .lovelySofa, .lovelyHeartLamp,
              .retroArcade, .retroRadio, .retroTV, .naturePlant, .natureBench, .natureLantern:
             return .furniture
+        case .townWood, .townStone, .townClay, .townSandGrain, .townSpringWater,
+             .townPetal, .townHerb, .townFruit, .townHoney, .townOre,
+             .townKitchen, .townFurnace, .townMixer:
+            return .townGood
+        case .dishFruitSalad, .dishHoneyToast, .dishHerbSoup, .dishPetalTea, .dishRoastedFruit,
+             .dishHoneyPickle, .dishHerbPorridge, .dishPetalDango, .dishWildGreens, .dishFruitCompote,
+             .dishSpringShaved, .dishFlowerPie, .dishHerbBath, .dishTricolorDango, .dishFruitJam,
+             .dishHoneySteam, .dishWildflowerBowl, .dishFruitStew, .dishMixedSkewer, .dishPokopiaSet:
+            return .dish
         case .linkingCord, .fireStone, .waterStone, .thunderStone, .leafStone, .iceStone,
              .moonStone, .sunStone, .shinyStone, .duskStone, .dawnStone,
              .kingsRock, .metalCoat, .dragonScale, .upgrade, .dubiousDisc,
@@ -972,6 +1029,44 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
         case .lovelyVanity: return "🪞"; case .lovelySofa: return "🩷"; case .lovelyHeartLamp: return "💕"
         case .retroArcade: return "🕹️"; case .retroRadio: return "📻"; case .retroTV: return "📺"
         case .naturePlant: return "🪴"; case .natureBench: return "🌿"; case .natureLantern: return "🏮"
+        // 마을 재료(9단계). 이모지가 다른 아이템과 겹쳐도 둔다 — 같은 화면에 함께 뜨지 않고
+        // (재료는 가방의 마을 묶음에 모인다), 겹침을 피하려고 덜 읽히는 그림을 고르면 손해다.
+        case .townWood: return "🪵"
+        case .townStone: return "🪨"
+        case .townClay: return "🟫"
+        case .townSandGrain: return "⏳"
+        case .townSpringWater: return "💧"
+        case .townPetal: return "🌸"
+        case .townHerb: return "🍀"
+        case .townFruit: return "🍒"
+        case .townHoney: return "🍯"
+        case .townOre: return "⛏️"
+        // 설비
+        case .townKitchen: return "🍳"
+        case .townFurnace: return "🏭"
+        case .townMixer: return "🧱"
+        // 요리 20종. 포만감 3단으로 묶지 않고 하나씩 적는다 — 요리는 갈래가 아니라 **그 요리가
+        // 무엇인가**가 화면에서 읽혀야 하는 물건이다(열매를 갈래로 묶은 것과 반대 판단).
+        case .dishFruitSalad: return "🥗"
+        case .dishHoneyToast: return "🍞"
+        case .dishHerbSoup: return "🍲"
+        case .dishPetalTea: return "🍵"
+        case .dishRoastedFruit: return "🍢"
+        case .dishHoneyPickle: return "🫙"
+        case .dishHerbPorridge: return "🥣"
+        case .dishPetalDango: return "🍡"
+        case .dishWildGreens: return "🥬"
+        case .dishFruitCompote: return "🍇"
+        case .dishSpringShaved: return "🍧"
+        case .dishFlowerPie: return "🥧"
+        case .dishHerbBath: return "🫕"
+        case .dishTricolorDango: return "🍘"
+        case .dishFruitJam: return "🍓"
+        case .dishHoneySteam: return "🥟"
+        case .dishWildflowerBowl: return "🥙"
+        case .dishFruitStew: return "🍜"
+        case .dishMixedSkewer: return "🍡"
+        case .dishPokopiaSet: return "🍱"
         }
     }
     /// 상점 판매가(재화 = 별의조각). nil = 상점 미판매.
@@ -1019,6 +1114,21 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
         case .lovelyVanity, .retroArcade, .natureBench: return 1_400
         case .lovelySofa, .retroTV, .naturePlant: return 1_100
         case .lovelyHeartLamp, .retroRadio, .natureLantern: return 850
+        // 마을 재료만 상점에 오른다. 값은 `PokopiaCrafting` 한 곳이 답한다 — 여기에 숫자를 적으면
+        // 레시피 표와 값 표가 갈린다.
+        case .townWood, .townStone, .townClay, .townSandGrain, .townSpringWater,
+             .townPetal, .townHerb, .townFruit, .townHoney, .townOre:
+            return PokopiaCrafting.materialPrice[self]
+        // 설비·요리는 `nil` 을 **명시한다.** 안 적어도 아래 `default:` 가 같은 값을 주지만, 그때는
+        // "값을 안 정했다" 와 "안 판다" 를 코드에서 구별할 수 없다 — 이 `default:` 가 이 파일에서
+        // 컴파일러가 못 잡는 유일한 자리이고, 하트비늘·테라피스가 걸린 부류가 바로 여기다.
+        case .townKitchen, .townFurnace, .townMixer:
+            return nil
+        case .dishFruitSalad, .dishHoneyToast, .dishHerbSoup, .dishPetalTea, .dishRoastedFruit,
+             .dishHoneyPickle, .dishHerbPorridge, .dishPetalDango, .dishWildGreens, .dishFruitCompote,
+             .dishSpringShaved, .dishFlowerPie, .dishHerbBath, .dishTricolorDango, .dishFruitJam,
+             .dishHoneySteam, .dishWildflowerBowl, .dishFruitStew, .dishMixedSkewer, .dishPokopiaSet:
+            return nil
         default: return isEvolutionItem ? Self.evolutionItemPrice : nil
         }
     }
@@ -2720,6 +2830,10 @@ struct CompanionState: Codable, Sendable {
     var focusEggs = 0
     // 보관 중인 알마다 자동 부화 예정 시각. 알은 획득 5분 뒤 현재 동행과 무관하게 박스에서 부화한다.
     var focusEggReadyDates: [Date] = []
+    /// 지금 만드는 중인 마을 물건 **하나**(9단계). 큐가 아니다 — 동시 여러 건은 상한·정렬·설비별
+    /// 병렬을 부르고, 이 기능이 주려는 것은 병렬 생산 최적화가 아니라 기다림 하나다.
+    /// 오프라인 타이머 형태는 위 `focusEggReadyDates` 와 같다(예정 시각을 저장하고 뒤에 비교한다).
+    var townCraft: TownCraftOrder?
     /// 박사에게 보낸 포켓몬 중 아직 알로 교환되지 않은 수. 3마리마다 일반 알 하나가 되고
     /// 나머지(0...2)는 다음 전송으로 이월된다.
     var professorTransferProgress = 0
@@ -2813,6 +2927,8 @@ struct CompanionState: Codable, Sendable {
                                        default: AchievementLadder())
         focusEggs          = c.lenient(Int.self, forKey: .focusEggs, default: 0)
         focusEggReadyDates = c.lenient([Date].self, forKey: .focusEggReadyDates, default: [])
+        // 9단계 이전 세이브엔 이 키가 없다 — 없으면 nil 이고, 그것이 "아무것도 안 만드는 중" 이다.
+        townCraft          = c.lenientOptional(TownCraftOrder.self, forKey: .townCraft)
         professorTransferProgress = c.lenient(Int.self, forKey: .professorTransferProgress, default: 0)
         outfit             = c.lenient(TrainerOutfit.self, forKey: .outfit, default: TrainerOutfit())
         // 모르는 rawValue(미래 빌드가 새 아이템을 저장한 세이브)는 항목 격리로 걸러낸다 —

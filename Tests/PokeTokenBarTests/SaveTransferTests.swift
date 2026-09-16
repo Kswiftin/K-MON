@@ -687,6 +687,11 @@ final class SaveTransferTests: XCTestCase {
                                      "gymDefenseLog",
                                      "adventure", "adventureHistory",
                                      "adventureWeekKey", "weeklyAdventureCount", "focusEggs", "focusEggReadyDates",
+                                     // 만드는 중인 마을 물건(9단계) — 보관 알의 예정 시각과 같은
+                                     // 부류다. 재료는 **이미 소비됐으므로** 따라가지 않으면 옮긴
+                                     // 기기에서 재료도 산출물도 없이 사라진다. 지급 원장이 아니라
+                                     // (하루 한 번 같은 상한이 없다) 병합이 아닌 진행이다.
+                                     "townCraft",
                                      // 박사 전송 나머지는 다음 알 지급까지 이어지는 계정 진행도다.
                                      "professorTransferProgress", "eggFragments",
                                      // BP도 별의조각처럼 소비 가능한 계정 재화라 가져온 잔액을 그대로 쓴다.

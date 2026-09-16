@@ -14,8 +14,13 @@ extension ItemKind {
     /// 재고에 따라 이름이 되거나 안 되고, 재고는 실행기가 이미 본다.
     /// **손 목록이 아니라 가방 갈래로 판정한다.** 손으로 들던 동안 새 아이템은 여기에도 따로
     /// 적어야 했고(빠뜨리면 대화·터미널이 그 아이템의 이름조차 못 부른다), 그 부류를 없애려고
-    /// `bagUse` 축을 뽑았다 — 가구 하나만 빼면 나머지는 전부 `useItem` 에 갈래가 있다.
-    static let nameable: [ItemKind] = ItemKind.allCases.filter { $0.bagUse != .furniture }
+    /// `bagUse` 축을 뽑았다.
+    ///
+    /// 갈래가 답한다(`BagUse.isUsedByName`) — `!= .furniture` 로 적던 동안은 "쓸 수 없는" 갈래를
+    /// 더할 때마다 이 줄을 같이 고쳐야 했다. 9단계의 마을 재료·설비(`.townGood`)가 그 부류이고,
+    /// 빠뜨렸으면 `use 나무` 가 먼저 받아들여진 뒤 실패했을 것이다. 갈래 쪽은 전수 `switch` 라
+    /// 다음 갈래를 더할 때 컴파일러가 막는다.
+    static let nameable: [ItemKind] = ItemKind.allCases.filter { $0.bagUse.isUsedByName }
 
     /// 이름 → 종류. **화면이 찍어 준 이름 그대로도 받는다** — 대화의 `bag.list` 는 rawValue 를,
     /// 터미널의 `bag` 은 현지화된 표시 이름을 찍으므로 둘 다 정답이어야 한다. 한쪽만 받으면

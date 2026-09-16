@@ -182,6 +182,10 @@ struct PokedoroRequestExecutor {
         // 쓴 것이 아니라 붙었다 — "썼다" 로 답하면 사용자는 소모됐다고 읽는다.
         case .heldItemGiven:
             return ok(request, "\(name)을 지니게 했다.")
+        // 남은 시간을 여기서 세지 않는다 — 실행기가 시계를 들면 같은 판정이 앱 화면과 두 벌이
+        // 된다(알 부화 예정 시각을 대화 상태줄에 안 싣는 것과 같은 이유). 카운트다운은 창에 있다.
+        case .townFed:
+            return ok(request, "\(name)을 썼다. 포코피아 마을이 배불러졌다.")
         // 재고 부족과 **갈라 말한다**: 사러 가야 하는지, 애초에 쓰는 물건이 아닌지 다르다.
         case .notUsedThisWay:
             return no(request, "\(name)은 지니고만 있는 물건이라 쓰는 것이 아니다.")
