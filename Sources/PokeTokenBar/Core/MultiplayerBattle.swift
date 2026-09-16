@@ -444,7 +444,8 @@ enum MultiplayerWireMessage: Codable, Sendable, Equatable {
     // 33: 진화의휘석 — 스냅샷에 `canStillEvolve` 가 늘었다. 구버전 피어는 안 보내므로 휘석이
     //     한쪽에서만 일해 같은 판의 데미지가 갈린다.
     // 34: 1~5세대 특성의 배틀 판정을 적용해 데미지·행동 순서·rng 소비가 달라진다.
-    static let protocolVersion = 34
+    // 35: 최대 8인 포켓몬 TFT 로비·군대 스냅샷·매칭·라운드 결과.
+    static let protocolVersion = 35
     case join(version: Int, participant: LobbyParticipant, snapshot: BattleSnapshot)
     case lobby(MultiplayerLobby)
     case ready(participantID: UUID, ready: Bool)
@@ -469,6 +470,11 @@ enum MultiplayerWireMessage: Codable, Sendable, Equatable {
     case tournamentStart(state: PokemonTournamentState)
     case tournamentAction(matchID: UUID, participantID: UUID, action: NetBattleAction)
     case tournamentState(PokemonTournamentState)
+    case tftStart(players: [PokemonTFTPlayerState], round: Int)
+    case tftArmy(participantID: UUID, army: PokemonTFTArmy)
+    case tftMatchup(participantID: UUID, matchup: PokemonTFTMatchup)
+    case tftResult(participantID: UUID, won: Bool)
+    case tftStandings(players: [PokemonTFTPlayerState], round: Int)
     // 공유 체육관. 관장이 호스트라 도전은 게스트→호스트, 판정과 상태는 호스트→전원이다.
     case gymChallenge(participantID: UUID, lineup: [BattleSnapshot])
     case gymRejected(reason: GymChallengeRejection)

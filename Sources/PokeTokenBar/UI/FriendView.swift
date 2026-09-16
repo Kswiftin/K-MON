@@ -20,7 +20,7 @@ struct FriendView: View {
         case .battle: .roomBattle
         case .tournament: .tournament
         case .gym: .gym
-        case .raid, .pokeathlon, .pokemonQuiz, nil: nil
+        case .raid, .pokeathlon, .pokemonQuiz, .pokemonTFT, nil: nil
         }
     }
 

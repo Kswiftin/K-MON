@@ -23,6 +23,30 @@ struct PokemonTFTUnit: Identifiable, Sendable, Equatable {
     }
 }
 
+struct PokemonTFTArmyUnit: Codable, Sendable, Equatable {
+    let definitionID: Int
+    let star: Int
+    let boardSlot: Int
+}
+
+struct PokemonTFTArmy: Codable, Sendable, Equatable {
+    let units: [PokemonTFTArmyUnit]
+}
+
+struct PokemonTFTPlayerState: Codable, Sendable, Equatable, Identifiable {
+    let id: UUID
+    let trainerName: String
+    var health: Int
+    var isEliminated: Bool { health <= 0 }
+}
+
+struct PokemonTFTMatchup: Codable, Sendable, Equatable {
+    let round: Int
+    let opponentID: UUID
+    let opponentName: String
+    let army: PokemonTFTArmy
+}
+
 struct PokemonTFTFighter: Identifiable, Sendable, Equatable {
     enum Team: Sendable { case player, enemy }
     let id: UUID
@@ -128,6 +152,12 @@ struct PokemonTFTGame: Sendable {
     var unitLimit: Int { min(level, 6) }
     var benchCount: Int { units.filter { $0.boardSlot == nil }.count }
     var experienceNeeded: Int { level >= 6 ? 0 : level * 4 }
+    var armySnapshot: PokemonTFTArmy {
+        PokemonTFTArmy(units: units.compactMap { unit in
+            guard let slot = unit.boardSlot else { return nil }
+            return PokemonTFTArmyUnit(definitionID: unit.definitionID, star: unit.star, boardSlot: slot)
+        })
+    }
 
     /// 현재 라운드에서 화면에 보여 줄 상대 진영. 전투 판정의 난이도 곡선과 같은 마릿수를 쓰고,
     /// 라운드로만 고르므로 연출을 다시 그려도 상대 모습이 바뀌지 않는다.
@@ -231,9 +261,24 @@ struct PokemonTFTGame: Sendable {
         refreshShop(free: true)
     }
 
+    /// LAN TFT의 체력·탈락은 호스트가 단일 원장으로 관리한다. 로컬 클라이언트는
+    /// 승패에 따른 상점 경제만 갱신하고, 12라운드 단독 모드 종료 규칙을 타지 않는다.
+    mutating func settleMultiplayerBattle(playerWon: Bool) {
+        guard phase == .shopping, deployedCount > 0 else { return }
+        if playerWon {
+            let income = 5 + min(round / 3, 4)
+            gold += income; lastBattleText = "승리! +\(income) 골드"
+        } else {
+            lastBattleText = "패배 · 호스트 체력 정산 중"
+        }
+        round += 1
+        gold += min(gold / 10, 5)
+        refreshShop(free: true)
+    }
+
     /// 8×6 격자에서 가장 가까운 적을 찾아 이동하고 사거리 안이면 공격하는 전투 리플레이.
     /// pokemonAutoChess의 보드/상태 머신 개념을 참고했지만 Swift로 독립 구현했다.
-    func makeBattleReplay() -> PokemonTFTBattleReplay {
+    func makeBattleReplay(opponent: PokemonTFTArmy? = nil) -> PokemonTFTBattleReplay {
         var fighters: [PokemonTFTFighter] = units.filter { $0.boardSlot != nil }.map { unit in
             let definition = definition(for: unit.definitionID)
             let slot = unit.boardSlot ?? 0
@@ -252,12 +297,19 @@ struct PokemonTFTGame: Sendable {
                 attackRange: Self.rangedTypes.contains(definition.type) ? 2 : 1,
                 speed: 45 + definition.attack / 4, mana: 80)
         }
-        let enemyScale = 1.0 + Double(round - 1) * 0.10
-        fighters += enemyPreview.enumerated().map { index, definition in
-            let hp = Int(Double(definition.health) * enemyScale)
+        let enemyScale = opponent == nil ? 1.0 + Double(round - 1) * 0.10 : 1
+        let enemyUnits: [(PokemonTFTUnitDefinition, Int, Int)] = opponent?.units.compactMap { unit in
+            guard let definition = Self.catalog.first(where: { $0.id == unit.definitionID }) else { return nil }
+            return (definition, unit.star, unit.boardSlot)
+        } ?? enemyPreview.enumerated().map { ($0.element, 1, $0.offset) }
+        fighters += enemyUnits.enumerated().map { index, entry in
+            let (definition, star, slot) = entry
+            let starScale = pow(1.65, Double(max(0, star - 1)))
+            let hp = Int(Double(definition.health) * enemyScale * starScale)
             return PokemonTFTFighter(id: UUID(), speciesID: definition.id, name: definition.name,
-                type: definition.type, team: .enemy, x: (index % 4) * 2, y: index / 4,
-                maxHP: hp, hp: hp, attack: Int(Double(definition.attack) * enemyScale),
+                type: definition.type, team: .enemy,
+                x: (slot % Self.boardColumns) * 2, y: min(2, slot / Self.boardColumns),
+                maxHP: hp, hp: hp, attack: Int(Double(definition.attack) * enemyScale * starScale),
                 defense: max(4, Int(Double(definition.health / 12) * enemyScale)),
                 attackRange: Self.rangedTypes.contains(definition.type) ? 2 : 1,
                 speed: 45 + definition.attack / 4, mana: 80)

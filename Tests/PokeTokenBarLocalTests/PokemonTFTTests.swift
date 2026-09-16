@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 @testable import PokeTokenBar
 
@@ -81,5 +82,43 @@ import Testing
         #expect(fighting.members.contains("알통몬"))
         #expect(fighting.members.contains("리오르"))
         #expect(fighting.effectText.contains("+10%"))
+    }
+
+    @Test func multiplayerArmyBecomesTheActualEnemyTeam() {
+        var game = PokemonTFTGame(seed: 6)
+        game.units = [PokemonTFTUnit(definitionID: 7, boardSlot: 0)]
+        let opponent = PokemonTFTArmy(units: [
+            PokemonTFTArmyUnit(definitionID: 25, star: 2, boardSlot: 4),
+            PokemonTFTArmyUnit(definitionID: 92, star: 1, boardSlot: 5)
+        ])
+
+        let replay = game.makeBattleReplay(opponent: opponent)
+        let enemies = replay.frames[0].fighters.filter { $0.team == .enemy }
+        #expect(Set(enemies.map(\.speciesID)) == Set([25, 92]))
+        #expect(enemies.first(where: { $0.speciesID == 25 })?.maxHP ?? 0 > 88)
+    }
+
+    @Test func tftLobbyAcceptsEightPlayersAndCanStart() throws {
+        func player(_ number: Int) -> LobbyParticipant {
+            LobbyParticipant(id: UUID(), trainerName: "P\(number)", speciesID: 25,
+                             team: .solo, isReady: true, isHost: number == 1)
+        }
+        var lobby = try MultiplayerLobby(host: player(1), capacity: 8, activity: .pokemonTFT)
+        for number in 2...8 { try lobby.join(player(number)) }
+
+        #expect(lobby.runners.count == 8)
+        #expect(lobby.canStart)
+        #expect(MultiplayerRoomCenter.maxGuestConnections(activity: .pokemonTFT) == 7)
+    }
+
+    @Test func multiplayerDoesNotStopAtSoloRoundTwelve() {
+        var game = PokemonTFTGame(seed: 7)
+        game.round = PokemonTFTGame.finalRound
+        game.units = [PokemonTFTUnit(definitionID: 25, boardSlot: 0)]
+
+        game.settleMultiplayerBattle(playerWon: true)
+
+        #expect(game.round == PokemonTFTGame.finalRound + 1)
+        #expect(game.phase == .shopping)
     }
 }

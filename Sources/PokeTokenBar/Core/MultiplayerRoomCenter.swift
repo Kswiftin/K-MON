@@ -82,6 +82,18 @@ final class MultiplayerRoomCenter {
     private var tournamentBracket: TournamentBracket?
     private var tournamentMatch: TournamentMatchEngine?
     private var tournamentRewarded = false
+    private(set) var tftStarted = false
+    private(set) var tftRound = 1
+    private(set) var tftPlayers: [PokemonTFTPlayerState] = []
+    private(set) var tftMatchup: PokemonTFTMatchup?
+    private(set) var hasSubmittedTFTArmy = false
+    private var tftArmies: [UUID: PokemonTFTArmy] = [:]
+    private var tftResults: [UUID: Bool] = [:]
+    var tftWinner: PokemonTFTPlayerState? {
+        guard tftStarted else { return nil }
+        let alive = tftPlayers.filter { !$0.isEliminated }
+        return alive.count == 1 ? alive[0] : nil
+    }
     private(set) var isPreparingPokemonQuiz = false
     private var pokemonQuizTask: Task<Void, Never>?
     /// 방향키 입력마다 10명 전체 상태를 즉시 보내면 입력 수 × 접속자 수만큼 send 큐가 불어난다.
@@ -212,7 +224,7 @@ final class MultiplayerRoomCenter {
     nonisolated static func maxGuestConnections(activity: RoomActivity?) -> Int {
         switch activity {
         case .pokemonQuiz: MultiplayerLobby.quizCapacity - 1
-        case .tournament: 7
+        case .tournament, .pokemonTFT: 7
         case .gym: 1 + MultiplayerLobby.spectatorCapacity
         case .raid: MultiplayerLobby.raidCapacity - 1 + MultiplayerLobby.spectatorCapacity
         default: 3 + MultiplayerLobby.spectatorCapacity
@@ -285,6 +297,7 @@ final class MultiplayerRoomCenter {
     func createPokeathlonRoom() { createRoom(mode: .freeForAll, activity: .pokeathlon) }
     func createPokemonQuizRoom() { createRoom(mode: .freeForAll, activity: .pokemonQuiz) }
     func createTournamentRoom() { createRoom(mode: .freeForAll, activity: .tournament) }
+    func createPokemonTFTRoom() { createRoom(mode: .freeForAll, activity: .pokemonTFT) }
 
     /// 체육관을 연다 — **이미 열린 체육관이 보이면 열지 않는다.** 중앙 권위가 없어 프로토콜로는
     /// 못 막지만, 개설 경로에서 걸러 내면 정상 사용에서는 하나로 유지된다.
@@ -407,7 +420,7 @@ final class MultiplayerRoomCenter {
                 let capacity: Int
                 switch activity {
                 case .pokemonQuiz: capacity = MultiplayerLobby.quizCapacity
-                case .tournament: capacity = 8
+                case .tournament, .pokemonTFT: capacity = 8
                 case .raid: capacity = MultiplayerLobby.raidCapacity
                 // 관장과 도전자 둘이 러너다. 나머지는 관전자 정원으로 들어온다.
                 case .gym: capacity = 2
@@ -896,7 +909,9 @@ final class MultiplayerRoomCenter {
 
     /// 경기가 시작된 뒤엔 로비 편성을 건드리지 않는다 — `lobby.mode` 는 편성에서 파생되므로
     /// 배틀 중에 바뀌면 승패 판정의 근거가 흔들린다(호스트 자기 자신도 예외가 아니다).
-    var isInPlay: Bool { phase == .battling || phase == .pokeathlon || phase == .pokemonQuiz || phase == .tournament }
+    var isInPlay: Bool {
+        phase == .battling || phase == .pokeathlon || phase == .pokemonQuiz || phase == .tournament || tftStarted
+    }
 
     /// 판이 도는 중에 새 참가자를 받는가.
     ///
@@ -1053,6 +1068,108 @@ final class MultiplayerRoomCenter {
                   self.tournamentState?.currentMatch == nil else { return }
             self.startNextTournamentMatch()
         }
+    }
+
+    // MARK: - Pokemon TFT (2~8인)
+
+    func startPokemonTFT() {
+        guard isHost, let lobby, lobby.activity == .pokemonTFT, lobby.canStart,
+              (2...8).contains(lobby.runners.count) else { return }
+        tftStarted = true; tftRound = 1; tftMatchup = nil; hasSubmittedTFTArmy = false
+        tftArmies.removeAll(); tftResults.removeAll()
+        tftPlayers = lobby.runners.map {
+            PokemonTFTPlayerState(id: $0.id, trainerName: $0.trainerName, health: 100)
+        }
+        for connection in guestConnections.values {
+            send(.tftStart(players: tftPlayers, round: tftRound), over: connection)
+        }
+    }
+
+    /// 각자의 배치를 호스트에 제출한다. 호스트는 생존자 전원이 보내면 현재
+    /// 순서를 라운드마다 회전해 쌍을 짓고, 홀수명이면 첫 생존자의 군대를 고스트로 쓴다.
+    func submitPokemonTFTArmy(_ army: PokemonTFTArmy) {
+        guard tftStarted, !army.units.isEmpty,
+              tftPlayers.contains(where: { $0.id == myID && !$0.isEliminated }),
+              !hasSubmittedTFTArmy, tftArmies[myID] == nil else { return }
+        hasSubmittedTFTArmy = true
+        if isHost { acceptPokemonTFTArmy(army, from: myID) }
+        else if let hostConnection { send(.tftArmy(participantID: myID, army: army), over: hostConnection) }
+    }
+
+    func reportPokemonTFTResult(won: Bool) {
+        guard tftStarted, tftMatchup != nil, tftResults[myID] == nil else { return }
+        tftMatchup = nil
+        if isHost { acceptPokemonTFTResult(won: won, from: myID) }
+        else if let hostConnection { send(.tftResult(participantID: myID, won: won), over: hostConnection) }
+    }
+
+    private func acceptPokemonTFTArmy(_ army: PokemonTFTArmy, from participantID: UUID) {
+        guard isHost, tftStarted, army.units.count <= 6,
+              army.units.allSatisfy({ Self.catalogContainsTFTUnit($0) }),
+              tftPlayers.contains(where: { $0.id == participantID && !$0.isEliminated }) else { return }
+        tftArmies[participantID] = army
+        preparePokemonTFTMatchupsIfReady()
+    }
+
+    private nonisolated static func catalogContainsTFTUnit(_ unit: PokemonTFTArmyUnit) -> Bool {
+        PokemonTFTGame.catalog.contains(where: { $0.id == unit.definitionID }) &&
+            (1...3).contains(unit.star) && (0..<PokemonTFTGame.boardSlots).contains(unit.boardSlot)
+    }
+
+    private func preparePokemonTFTMatchupsIfReady() {
+        let alive = tftPlayers.filter { !$0.isEliminated }
+        guard alive.count >= 2, alive.allSatisfy({ tftArmies[$0.id] != nil }) else { return }
+        let shift = tftRound % alive.count
+        let rotated = Array(alive[shift...]) + Array(alive[..<shift])
+        for (index, player) in rotated.enumerated() {
+            let opponent = rotated[index.isMultiple(of: 2) ? min(index + 1, rotated.count - 1) : index - 1]
+            let actualOpponent = opponent.id == player.id ? rotated[0] : opponent
+            guard let army = tftArmies[actualOpponent.id] else { continue }
+            let matchup = PokemonTFTMatchup(round: tftRound, opponentID: actualOpponent.id,
+                                            opponentName: actualOpponent.trainerName, army: army)
+            if player.id == myID { tftMatchup = matchup }
+            else if let connection = guestConnections[player.id] {
+                send(.tftMatchup(participantID: player.id, matchup: matchup), over: connection)
+            }
+        }
+    }
+
+    private func acceptPokemonTFTResult(won: Bool, from participantID: UUID) {
+        guard isHost, tftStarted,
+              tftPlayers.contains(where: { $0.id == participantID && !$0.isEliminated }),
+              tftResults[participantID] == nil else { return }
+        tftResults[participantID] = won
+        finishPokemonTFTRoundIfReady()
+    }
+
+    private func finishPokemonTFTRoundIfReady() {
+        let alive = tftPlayers.filter { !$0.isEliminated }
+        if alive.count <= 1 {
+            broadcastPokemonTFTStandings()
+            return
+        }
+        guard alive.allSatisfy({ tftResults[$0.id] != nil }) else { return }
+        let damage = max(8, 6 + tftRound * 2)
+        for index in tftPlayers.indices where tftResults[tftPlayers[index].id] == false {
+            tftPlayers[index].health = max(0, tftPlayers[index].health - damage)
+        }
+        tftRound += 1; tftArmies.removeAll(); tftResults.removeAll(); tftMatchup = nil
+        hasSubmittedTFTArmy = false
+        broadcastPokemonTFTStandings()
+    }
+
+    private func broadcastPokemonTFTStandings() {
+        for connection in guestConnections.values {
+            send(.tftStandings(players: tftPlayers, round: tftRound), over: connection)
+        }
+    }
+
+    private func retirePokemonTFTPlayer(_ participantID: UUID) {
+        guard tftStarted, let index = tftPlayers.firstIndex(where: { $0.id == participantID }) else { return }
+        tftPlayers[index].health = 0
+        tftArmies.removeValue(forKey: participantID); tftResults.removeValue(forKey: participantID)
+        preparePokemonTFTMatchupsIfReady()
+        finishPokemonTFTRoundIfReady()
     }
 
     func submitTournamentAction(_ action: NetBattleAction) {
@@ -1660,6 +1777,7 @@ final class MultiplayerRoomCenter {
         case .pokeathlon:  startPokeathlon
         case .pokemonQuiz: startPokemonQuiz
         case .tournament:  startTournament
+        case .pokemonTFT:  startPokemonTFT
         // 도전이 와야 판이 선다(`respondToGymChallenge`) — 부를 함수가 없다.
         case .gym:         nil
         }
@@ -1768,6 +1886,8 @@ final class MultiplayerRoomCenter {
         tournamentState = nil; tournamentTeams.removeAll(); tournamentPools.removeAll(); tournamentBracket = nil
         tournamentFinalTeam = []
         tournamentMatch = nil; tournamentRewarded = false
+        tftStarted = false; tftRound = 1; tftPlayers = []; tftMatchup = nil; hasSubmittedTFTArmy = false
+        tftArmies.removeAll(); tftResults.removeAll()
         gymMatchClearTask?.cancel(); gymMatchClearTask = nil
         gymMatch = nil; gymEngine = nil; gymChallengerLineup = nil; gymRejection = nil
         gymLeaderAbandonedMatch = false; lastGymDefensePayout = nil; pendingGymChallenge = false
@@ -1887,6 +2007,7 @@ final class MultiplayerRoomCenter {
             case .team(let pid, let team) where pid == id && !self.isInPlay:
                 self.lobby?.setTeam(team, participantID: pid); self.broadcastLobby()
             case .leave(let pid) where pid == id:
+                if self.tftStarted { self.retirePokemonTFTPlayer(pid) }
                 if self.phase == .battling {
                     self.retireFighter(pid)
                     // 레이드는 전투 중에도 `lobby.mode` 가 항상 coopBoss라 명단을 지워도
@@ -1932,6 +2053,10 @@ final class MultiplayerRoomCenter {
                 }
             case .tournamentAction(let matchID, let pid, let action) where pid == id:
                 self.acceptTournamentAction(action, from: pid, matchID: matchID)
+            case .tftArmy(let pid, let army) where pid == id:
+                self.acceptPokemonTFTArmy(army, from: pid)
+            case .tftResult(let pid, let won) where pid == id:
+                self.acceptPokemonTFTResult(won: won, from: pid)
             case .gymChallenge(let pid, let lineup) where pid == id:
                 guard self.lobby?.activity == .gym else { break }
                 self.acceptGymChallenge(lineup, from: pid)
@@ -2005,6 +2130,14 @@ final class MultiplayerRoomCenter {
                 if state.currentMatch?.turn != previousTurn {
                     self.turnEndsAt = Date().addingTimeInterval(Self.turnDuration)
                 }
+            case .tftStart(let players, let round):
+                self.tftPlayers = players; self.tftRound = round
+                self.tftStarted = true; self.tftMatchup = nil; self.hasSubmittedTFTArmy = false
+            case .tftMatchup(let participantID, let matchup) where participantID == self.myID:
+                self.tftMatchup = matchup
+            case .tftStandings(let players, let round):
+                self.tftPlayers = players; self.tftRound = round; self.tftMatchup = nil
+                self.hasSubmittedTFTArmy = false
             // 체육관 상태는 `phase` 로 거르지 않는다 — 진행 중인 판에 관전으로 들어온 게스트도
             // 곧바로 화면을 그려야 한다(호스트가 입장 직후 현재 상태를 개별 전송한다).
             case .gymState(let match):
@@ -2192,6 +2325,7 @@ final class MultiplayerRoomCenter {
         guard let id = guestConnections.first(where: { $0.value === connection })?.key else { return }
         guestConnections.removeValue(forKey: id); snapshots.removeValue(forKey: id)
         tournamentPools.removeValue(forKey: id); tournamentTeams.removeValue(forKey: id)
+        if tftStarted { retirePokemonTFTPlayer(id) }
         if phase == .battling {
             retireFighter(id)
             // 명시적인 나가기와 연결 끊김이 같은 정리를 해야 한다. 특히 레이드 명단에

@@ -1,30 +1,131 @@
 import SwiftUI
 
 struct PokemonTFTView: View {
+    private enum PlayMode: String, CaseIterable { case solo = "혼자", multiplayer = "친구와" }
     let store: CompanionStore
     let onClose: () -> Void
+    @Environment(BattleCenter.self) private var battleCenter
     @State private var game = PokemonTFTGame()
     @State private var selectedUnit: UUID?
     @State private var battleReplay: PokemonTFTBattleReplay?
     @State private var battleFrameIndex = 0
     @State private var battleEffectProgress: CGFloat = 0
     @State private var showSynergyGuide = false
+    @State private var playMode: PlayMode = .solo
+
+    private var center: MultiplayerRoomCenter { battleCenter.multiplayer }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             PokedoroOverlayHeader(title: "포켓몬 TFT", systemImage: "square.grid.3x3.fill",
-                                  tint: .cyan, closeLabel: store.l.close, onClose: onClose)
-            status
-            switch game.phase {
-            case .shopping:
-                if battleReplay != nil { battleArena }
-                else if showSynergyGuide { synergyGuide }
-                else { board; selectedSynergy; bench; shop; controls }
-            case .finished(let won): ending(won: won)
+                                  tint: .cyan, closeLabel: store.l.close, onClose: close)
+            if !center.tftStarted && center.phase == .idle {
+                Picker("모드", selection: $playMode) {
+                    ForEach(PlayMode.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+                }.pickerStyle(.segmented)
+            }
+            if playMode == .multiplayer && !center.tftStarted { multiplayerEntry }
+            else {
+                status
+                if center.tftStarted { multiplayerStandings }
+                switch game.phase {
+                case .shopping:
+                    if battleReplay != nil { battleArena }
+                    else if showSynergyGuide { synergyGuide }
+                    else { board; selectedSynergy; bench; shop; controls }
+                case .finished(let won): ending(won: won)
+                }
             }
         }
         .padding(PopoverMetrics.padding)
         .frame(height: PopoverMetrics.currentHeight(for: .battle))
+        .onChange(of: center.tftStarted) { _, started in
+            guard started else { return }
+            playMode = .multiplayer; game = PokemonTFTGame(); selectedUnit = nil
+        }
+        .onChange(of: center.tftMatchup) { _, matchup in
+            guard let matchup, battleReplay == nil else { return }
+            startAnimatedBattle(opponent: matchup.army)
+        }
+        .onChange(of: center.tftPlayers) { _, players in
+            if let me = players.first(where: { $0.id == center.myID }) { game.health = me.health }
+        }
+    }
+
+    @ViewBuilder private var multiplayerEntry: some View {
+        switch center.phase {
+        case .idle: multiplayerBrowser
+        case .creating, .joining: ProgressView("TFT 방에 연결 중…").frame(maxWidth: .infinity, maxHeight: .infinity)
+        case .hosting, .joined: multiplayerLobby
+        default:
+            Text("다른 LAN 콘텐츠가 진행 중입니다.").foregroundStyle(.secondary)
+        }
+    }
+
+    private var multiplayerBrowser: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("같은 네트워크의 친구 2~8명과 플레이합니다.")
+                .font(.caption).foregroundStyle(.secondary)
+            Button("8인 TFT 방 만들기") { center.createPokemonTFTRoom() }
+                .buttonStyle(.borderedProminent).tint(.cyan)
+            Divider(); Text("참가 가능한 방").font(.caption.bold())
+            let rooms = center.rooms.filter {
+                LANRoomList.isVisible($0.serviceName, activity: .pokemonTFT, myTag: center.myRoomTag)
+            }
+            if rooms.isEmpty {
+                Text("TFT 방을 찾는 중…").font(.caption).foregroundStyle(.secondary)
+            } else {
+                ForEach(rooms) { room in
+                    HStack { Text(room.name).font(.caption); Spacer(); Button("참가") { center.join(room) } }
+                }
+            }
+            if let error = center.lastError { Text(error).font(.caption).foregroundStyle(.orange) }
+            Spacer()
+        }.padding(10).pokedoroCard()
+    }
+
+    private var multiplayerLobby: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack { Text("TFT 로비").font(.headline); Spacer(); Text("\(center.lobby?.runners.count ?? 0)/8") }
+            ForEach(center.lobby?.runners ?? []) { player in
+                HStack {
+                    Image(systemName: player.isHost ? "crown.fill" : "person.fill")
+                        .foregroundStyle(player.isHost ? .yellow : .secondary)
+                    Text(player.trainerName).font(.caption.bold())
+                    Spacer()
+                    Text(player.isReady ? "준비" : "대기").font(.caption2)
+                        .foregroundStyle(player.isReady ? .green : .secondary)
+                }.padding(7).pokedoroCard()
+            }
+            HStack {
+                Button("방 나가기") { center.leaveRoom() }
+                Spacer()
+                Button(center.myParticipant?.isReady == true ? "준비 취소" : "준비") { center.toggleReady() }
+                    .buttonStyle(.borderedProminent).tint(.cyan)
+                if center.isHost {
+                    Button("시작") { center.startPokemonTFT() }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(center.lobby?.canStart != true)
+                }
+            }.controlSize(.small)
+            Text("전원이 준비하면 호스트가 시작할 수 있습니다.")
+                .font(.caption2).foregroundStyle(.secondary)
+        }.padding(10).pokedoroCard()
+    }
+
+    private var multiplayerStandings: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 5) {
+                Text("R\(center.tftRound)").font(.caption.bold()).foregroundStyle(.cyan)
+                ForEach(center.tftPlayers.sorted { $0.health > $1.health }) { player in
+                    Text("\(player.trainerName) \(player.health)")
+                        .font(.system(size: 9).bold())
+                        .foregroundStyle(player.isEliminated ? .secondary : .primary)
+                        .padding(.horizontal, 6).padding(.vertical, 3)
+                        .background(Color.primary.opacity(0.06), in: Capsule())
+                }
+            }
+        }
     }
 
     private var status: some View {
@@ -155,8 +256,21 @@ struct PokemonTFTView: View {
             Button("XP +4 · 4G") { game.buyExperience() }.disabled(game.gold < 4 || game.level >= 6)
             if let selectedUnit { Button("판매") { game.sell(selectedUnit); self.selectedUnit = nil } }
             Spacer()
-            Button("자동 전투") { startAnimatedBattle() }
-                .buttonStyle(.borderedProminent).tint(.cyan).disabled(game.deployedCount == 0)
+            if center.tftStarted {
+                if let winner = center.tftWinner {
+                    Label("\(winner.trainerName) 우승!", systemImage: "trophy.fill").foregroundStyle(.yellow)
+                } else {
+                    Button(center.hasSubmittedTFTArmy ? "다른 참가자 대기 중…" : "배치 확정") {
+                        center.submitPokemonTFTArmy(game.armySnapshot)
+                    }
+                    .buttonStyle(.borderedProminent).tint(.cyan)
+                    .disabled(game.deployedCount == 0 || center.hasSubmittedTFTArmy ||
+                              center.tftPlayers.first(where: { $0.id == center.myID })?.isEliminated == true)
+                }
+            } else {
+                Button("자동 전투") { startAnimatedBattle() }
+                    .buttonStyle(.borderedProminent).tint(.cyan).disabled(game.deployedCount == 0)
+            }
         }.controlSize(.small)
     }
 
@@ -249,10 +363,10 @@ struct PokemonTFTView: View {
         .animation(.easeOut(duration: 0.2), value: fighter.hp)
     }
 
-    private func startAnimatedBattle() {
+    private func startAnimatedBattle(opponent: PokemonTFTArmy? = nil) {
         guard battleReplay == nil, game.deployedCount > 0 else { return }
         selectedUnit = nil
-        let replay = game.makeBattleReplay()
+        let replay = game.makeBattleReplay(opponent: opponent)
         battleReplay = replay
         battleFrameIndex = 0
         battleEffectProgress = 0
@@ -271,9 +385,19 @@ struct PokemonTFTView: View {
                 try? await Task.sleep(for: .milliseconds(210))
             }
             try? await Task.sleep(for: .milliseconds(650))
-            game.settleBattle(playerWon: replay.playerWon)
+            if center.tftStarted {
+                game.settleMultiplayerBattle(playerWon: replay.playerWon)
+                center.reportPokemonTFTResult(won: replay.playerWon)
+            } else {
+                game.settleBattle(playerWon: replay.playerWon)
+            }
             withAnimation { battleReplay = nil; battleFrameIndex = 0; battleEffectProgress = 0 }
         }
+    }
+
+    private func close() {
+        if center.roomActivity == .pokemonTFT { center.leaveRoom() }
+        onClose()
     }
 
     private func unitTile(_ unit: PokemonTFTUnit, compact: Bool) -> some View {
