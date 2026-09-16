@@ -3823,6 +3823,19 @@ final class CompanionStore {
 
     // MARK: 포코피아 — 만들기와 먹이기 (9단계)
 
+    /// 지금 보고 있는 마을에 있는 네임드 NPC (10단계). **조립은 여기 한 곳이다** — 뷰와 스토어가
+    /// 각자 조립하면 화면에 선 NPC 와 효과를 받는 NPC 가 갈린다(`canStartTownCraft` 가 판정을
+    /// 한 곳에 모으는 것과 같은 규칙).
+    ///
+    /// 설비 둘은 **전역**이다(`state.inventory`) — 마을 다섯 채가 같은 조리대를 본다. 지형·주민
+    /// 게이트 넷은 마을마다 갈린다. 의도한 비대칭이고 `PokopiaTownNPC.unlocked` 주석이 이유를 적는다.
+    var townNPCs: Set<TownNPC> {
+        PokopiaTownNPC.unlocked(terrain: memoryAlbum.town.terrain,
+                                residents: memoryAlbum.town.residents,
+                                hasKitchen: itemCount(.townKitchen) > 0,
+                                hasFurnace: itemCount(.townFurnace) > 0)
+    }
+
     /// 지금 이 레시피를 걸 수 있는가. 재고와 설비를 함께 본다 — **판정은 여기 하나다.** 시트가
     /// 자기 계산을 하면 버튼은 살아 있는데 눌러도 아무 일이 없는 상태가 생긴다
     /// (`ShopCatalog` 가 목록과 구매를 한 값으로 묶는 이유와 같다).
@@ -3842,9 +3855,12 @@ final class CompanionStore {
             let left = itemCount(input.item) - input.count
             state.inventory[input.item.rawValue] = left > 0 ? left : nil
         }
+        // 두드리짱 거장(장인)이 있으면 짧아진다. 재료·설비 판정(`canStartTownCraft`)은 안 건드린다 —
+        // 배율은 시간만 바꾼다.
+        let minutes = PokopiaTownNPC.craftMinutes(recipe.minutes, artisan: townNPCs.contains(.artisan))
         state.townCraft = TownCraftOrder(
             output: recipe.output,
-            readyAt: clock().addingTimeInterval(TimeInterval(recipe.minutes) * 60))
+            readyAt: clock().addingTimeInterval(TimeInterval(minutes) * 60))
         save()
         return true
     }
@@ -3868,8 +3884,11 @@ final class CompanionStore {
     /// 인벤토리를 모르므로 소비와 쓰기가 갈려 있고, 그래서 순서가 계약이다.
     @discardableResult
     func feedTown(_ kind: ItemKind) -> Date? {
-        guard let hours = PokopiaCrafting.recipe(making: kind)?.satietyHours,
+        guard let base = PokopiaCrafting.recipe(making: kind)?.satietyHours,
               itemCount(kind) > 0 else { return nil }
+        // 요씽셰프(파티)가 있으면 같은 요리가 더 오래 먹인다. 상한(`maxSatiety`)은 여전히
+        // `fedUntil` 이 자른다 — 읽는 자리를 늘리지 않는다.
+        let hours = PokopiaTownNPC.satietyHours(base, chef: townNPCs.contains(.chef))
         let until = PokopiaCrafting.fedUntil(after: memoryAlbum.town.fedUntil,
                                              hours: hours, now: clock())
         guard memoryAlbum.feedTown(until: until) else { return nil }

@@ -432,4 +432,70 @@ final class PokopiaCraftStoreTests: XCTestCase {
         XCTAssertEqual(CompanionAction.useItem(.townKitchen, companion: s), .notUsedThisWay)
         XCTAssertEqual(s.itemCount(.townWood), 9, "쓰지도 않았는데 재료가 빠졌다")
     }
+
+    // MARK: 네임드 NPC 배율 (10단계 — 켜진 쪽과 꺼진 쪽을 함께 센다)
+
+    /// 두드리짱 거장(용광로)이 없으면 레시피 시간 그대로다. **꺼진 쪽을 먼저 못 박는다** — 켜진 쪽만
+    /// 보면 배율을 상수 1 로 바꿔도 초록이다(#56 회귀의 부류).
+    func testACraftTakesItsRecipeTimeWithoutTheArtisan() {
+        let s = store()
+        let dish = recipe(.dishFruitSalad)
+        stock(s, for: dish)
+        XCTAssertFalse(s.townNPCs.contains(.artisan), "용광로가 없는데 장인이 있다")
+
+        XCTAssertTrue(s.startTownCraft(dish))
+        XCTAssertEqual(s.state.townCraft?.readyAt,
+                       now.addingTimeInterval(TimeInterval(dish.minutes) * 60))
+    }
+
+    /// 용광로를 가지면 두드리짱이 서고, 그 뒤 거는 제작이 짧아진다. 용광로 자체는 소모되지 않는다.
+    func testTheArtisanShortensTheCraftThatIsStartedAfterHim() {
+        let s = store()
+        let dish = recipe(.dishFruitSalad)
+        stock(s, for: dish)
+        s.debugSetItemCount(.townFurnace, 1)
+        XCTAssertTrue(s.townNPCs.contains(.artisan))
+
+        XCTAssertTrue(s.startTownCraft(dish))
+        let expected = PokopiaTownNPC.craftMinutes(dish.minutes, artisan: true)
+        XCTAssertEqual(s.state.townCraft?.readyAt, now.addingTimeInterval(TimeInterval(expected) * 60))
+        XCTAssertLessThan(try! XCTUnwrap(s.state.townCraft?.readyAt),
+                          now.addingTimeInterval(TimeInterval(dish.minutes) * 60))
+    }
+
+    /// 요씽셰프(조리대)가 없으면 포만감이 레시피 값 그대로다.
+    func testFeedingWithoutTheChefUsesTheRecipeHours() {
+        let s = store()
+        giveDish(s, .dishHerbSoup)
+        XCTAssertFalse(s.townNPCs.contains(.chef), "조리대가 없는데 셰프가 있다")
+        let hours = try! XCTUnwrap(recipe(.dishHerbSoup).satietyHours)
+
+        XCTAssertEqual(s.feedTown(.dishHerbSoup), now.addingTimeInterval(TimeInterval(hours) * 3600))
+    }
+
+    /// 조리대를 가지면 요씽셰프가 서고, 같은 요리가 더 오래 먹인다.
+    func testTheChefMakesTheSameDishFeedTheTownLonger() {
+        let s = store()
+        giveDish(s, .dishHerbSoup)
+        s.debugSetItemCount(.townKitchen, 1)
+        XCTAssertTrue(s.townNPCs.contains(.chef))
+        let hours = try! XCTUnwrap(recipe(.dishHerbSoup).satietyHours)
+        let lifted = PokopiaTownNPC.satietyHours(hours, chef: true)
+
+        let until = s.feedTown(.dishHerbSoup)
+
+        XCTAssertEqual(until, now.addingTimeInterval(TimeInterval(lifted) * 3600))
+        XCTAssertGreaterThan(try! XCTUnwrap(until), now.addingTimeInterval(TimeInterval(hours) * 3600))
+    }
+
+    /// 셰프가 있어도 **상한은 그대로다.** 배율이 상한 위로 새면 축 C 가 한 번 켜고 잊는 스위치가 된다.
+    func testTheChefCannotPushSatietyPastTheCeiling() {
+        let s = store()
+        s.debugSetItemCount(.townKitchen, 1)
+        giveDish(s, .dishPokopiaSet, 10)
+        for _ in 0..<10 { _ = s.feedTown(.dishPokopiaSet) }
+
+        let fedUntil = try! XCTUnwrap(s.memoryAlbum.town.fedUntil)
+        XCTAssertLessThanOrEqual(fedUntil, now.addingTimeInterval(PokopiaCrafting.maxSatiety))
+    }
 }
