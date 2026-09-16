@@ -67,7 +67,7 @@ struct PokemonTFTView: View {
             Text("같은 네트워크의 친구 2~8명과 플레이합니다.")
                 .font(.caption).foregroundStyle(.secondary)
             Button("8인 TFT 방 만들기") { center.createPokemonTFTRoom() }
-                .buttonStyle(.borderedProminent).tint(.cyan)
+                .buttonStyle(.borderedProminent).tint(PokedoroTheme.blue)
             Divider(); Text("참가 가능한 방").font(.caption.bold())
             let rooms = center.rooms.filter {
                 LANRoomList.isVisible($0.serviceName, activity: .pokemonTFT, myTag: center.myRoomTag)
@@ -101,7 +101,7 @@ struct PokemonTFTView: View {
                 Button("방 나가기") { center.leaveRoom() }
                 Spacer()
                 Button(center.myParticipant?.isReady == true ? "준비 취소" : "준비") { center.toggleReady() }
-                    .buttonStyle(.borderedProminent).tint(.cyan)
+                    .buttonStyle(.borderedProminent).tint(PokedoroTheme.blue)
                 if center.isHost {
                     Button("시작") { center.startPokemonTFT() }
                         .buttonStyle(.borderedProminent)
@@ -119,7 +119,7 @@ struct PokemonTFTView: View {
                 Text("R\(center.tftRound)").font(.caption.bold()).foregroundStyle(.cyan)
                 ForEach(center.tftPlayers.sorted { $0.health > $1.health }) { player in
                     Text("\(player.trainerName) \(player.health)")
-                        .font(.system(size: 9).bold())
+                        .font(.caption2.bold())
                         .foregroundStyle(player.isEliminated ? .secondary : .primary)
                         .padding(.horizontal, 6).padding(.vertical, 3)
                         .background(Color.primary.opacity(0.06), in: Capsule())
@@ -160,7 +160,7 @@ struct PokemonTFTView: View {
                     .font(.caption2.bold())
                 Spacer()
                 Text("\(synergy.deployed)/\(synergy.nextThreshold ?? 4) · \(synergy.effectText)")
-                    .font(.system(size: 9)).foregroundStyle(synergy.deployed >= 2 ? .cyan : .secondary)
+                    .font(.caption2).foregroundStyle(synergy.deployed >= 2 ? .cyan : .secondary)
             }.padding(.horizontal, 7).padding(.vertical, 5).pokedoroCard()
         }
     }
@@ -184,7 +184,7 @@ struct PokemonTFTView: View {
                                 }
                                 Text(synergy.effectText).font(.caption2)
                                 Text("포함: \(synergy.members.joined(separator: ", "))")
-                                    .font(.system(size: 9)).foregroundStyle(.secondary)
+                                    .font(.caption2).foregroundStyle(.secondary)
                             }
                             Spacer()
                         }.padding(8).pokedoroCard()
@@ -192,7 +192,7 @@ struct PokemonTFTView: View {
                 }
             }
             Button("배치판으로 돌아가기") { withAnimation { showSynergyGuide = false } }
-                .buttonStyle(.borderedProminent).tint(.cyan).frame(maxWidth: .infinity)
+                .buttonStyle(.borderedProminent).tint(PokedoroTheme.blue).frame(maxWidth: .infinity)
         }.transition(.opacity)
     }
 
@@ -210,6 +210,8 @@ struct PokemonTFTView: View {
                             else { Image(systemName: "plus").foregroundStyle(.tertiary) }
                         }.frame(height: 52)
                     }.buttonStyle(.plain)
+                        .accessibilityLabel(unit.map { "\(game.definition(for: $0.definitionID).name) 배치 칸" }
+                            ?? "빈 배치 칸 \(slot + 1)")
                 }
             }
         }
@@ -241,8 +243,8 @@ struct PokemonTFTView: View {
                         Button { _ = game.buy(shopIndex: index) } label: {
                             VStack(spacing: 0) {
                                 SpriteView(speciesID: id, size: 34, animated: false, shiny: false, back: false)
-                                Text(definition.name).font(.system(size: 9)).lineLimit(1)
-                                Text("\(definition.cost)G").font(.system(size: 9).bold()).foregroundStyle(.yellow)
+                                Text(definition.name).font(.caption2).lineLimit(1)
+                                Text("\(definition.cost)G").font(.caption2.bold()).foregroundStyle(.yellow)
                             }.frame(maxWidth: .infinity).padding(3).pokedoroCard()
                         }.buttonStyle(.plain).disabled(game.gold < definition.cost || game.benchCount >= PokemonTFTGame.benchLimit)
                     } else { Color.clear.frame(maxWidth: .infinity, minHeight: 52) }
@@ -263,13 +265,13 @@ struct PokemonTFTView: View {
                     Button(center.hasSubmittedTFTArmy ? "다른 참가자 대기 중…" : "배치 확정") {
                         center.submitPokemonTFTArmy(game.armySnapshot)
                     }
-                    .buttonStyle(.borderedProminent).tint(.cyan)
+                    .buttonStyle(.borderedProminent).tint(PokedoroTheme.blue)
                     .disabled(game.deployedCount == 0 || center.hasSubmittedTFTArmy ||
                               center.tftPlayers.first(where: { $0.id == center.myID })?.isEliminated == true)
                 }
             } else {
                 Button("자동 전투") { startAnimatedBattle() }
-                    .buttonStyle(.borderedProminent).tint(.cyan).disabled(game.deployedCount == 0)
+                    .buttonStyle(.borderedProminent).tint(PokedoroTheme.blue).disabled(game.deployedCount == 0)
             }
         }.controlSize(.small)
     }
@@ -404,8 +406,8 @@ struct PokemonTFTView: View {
         let definition = game.definition(for: unit.definitionID)
         return VStack(spacing: 0) {
             SpriteView(speciesID: definition.id, size: compact ? 31 : 34, animated: false, shiny: false, back: false)
-            Text(String(repeating: "★", count: unit.star)).font(.system(size: 8)).foregroundStyle(.yellow)
-            if !compact { Text(definition.name).font(.system(size: 9)).lineLimit(1) }
+            Text(String(repeating: "★", count: unit.star)).font(PokedoroTheme.glyphFont(size: 8)).foregroundStyle(.yellow)
+            if !compact { Text(definition.name).font(.caption2).lineLimit(1) }
         }.padding(2).background(selectedUnit == unit.id ? Color.cyan.opacity(0.12) : .clear).clipShape(RoundedRectangle(cornerRadius: 7))
     }
 
