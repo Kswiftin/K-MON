@@ -250,7 +250,7 @@ struct PokemonTFTGame: Sendable {
                 attack: Int(Double(definition.attack) * multiplier * synergy),
                 defense: max(4, definition.health / 12),
                 attackRange: Self.rangedTypes.contains(definition.type) ? 2 : 1,
-                speed: 45 + definition.attack / 4, mana: 0)
+                speed: 45 + definition.attack / 4, mana: 80)
         }
         let enemyScale = 1.0 + Double(round - 1) * 0.10
         fighters += enemyPreview.enumerated().map { index, definition in
@@ -260,7 +260,7 @@ struct PokemonTFTGame: Sendable {
                 maxHP: hp, hp: hp, attack: Int(Double(definition.attack) * enemyScale),
                 defense: max(4, Int(Double(definition.health / 12) * enemyScale)),
                 attackRange: Self.rangedTypes.contains(definition.type) ? 2 : 1,
-                speed: 45 + definition.attack / 4, mana: 0)
+                speed: 45 + definition.attack / 4, mana: 80)
         }
         var frames = [PokemonTFTBattleFrame(fighters: fighters, message: "전투 준비…", action: nil),
                       PokemonTFTBattleFrame(fighters: fighters, message: "전투 시작!", action: nil)]
@@ -292,8 +292,10 @@ struct PokemonTFTGame: Sendable {
                             fighters[splash].hp = max(0, fighters[splash].hp - damage / 2)
                         }
                     } else {
-                        fighters[actorIndex].mana = min(100, fighters[actorIndex].mana + 5)
-                        fighters[targetIndex].mana = min(100, fighters[targetIndex].mana + 8)
+                        // 전투가 짧은 소규모 모드라 스킬을 한 번도 못 보고 끝나지 않게
+                        // 공격·피격 모두에서 마나를 빠르게 채운다.
+                        fighters[actorIndex].mana = min(100, fighters[actorIndex].mana + 20)
+                        fighters[targetIndex].mana = min(100, fighters[targetIndex].mana + 15)
                     }
                     let kind: PokemonTFTBattleAction.Kind = usesSkill ? .skill : critical ? .critical : .attack
                     let action = PokemonTFTBattleAction(kind: kind, sourceID: source.id, targetID: target.id,
@@ -304,15 +306,7 @@ struct PokemonTFTGame: Sendable {
                 } else {
                     let source = fighters[actorIndex]
                     let occupied = Set(fighters.filter { $0.hp > 0 && $0.id != actorID }.map { "\($0.x),\($0.y)" })
-                    let dx = fighters[targetIndex].x == fighters[actorIndex].x ? 0 : (fighters[targetIndex].x > fighters[actorIndex].x ? 1 : -1)
-                    let dy = fighters[targetIndex].y == fighters[actorIndex].y ? 0 : (fighters[targetIndex].y > fighters[actorIndex].y ? 1 : -1)
-                    let candidates = [(fighters[actorIndex].x + dx, fighters[actorIndex].y),
-                                      (fighters[actorIndex].x, fighters[actorIndex].y + dy)]
-                    if let next = candidates.first(where: {
-                        (0..<Self.combatColumns).contains($0.0) &&
-                        (0..<Self.combatRows).contains($0.1) &&
-                        !occupied.contains("\($0.0),\($0.1)")
-                    }) {
+                    if let next = Self.nextStep(from: source, toward: fighters[targetIndex], occupied: occupied) {
                         fighters[actorIndex].x = next.0
                         fighters[actorIndex].y = next.1
                         let action = PokemonTFTBattleAction(kind: .move, sourceID: source.id, targetID: nil,
@@ -343,6 +337,24 @@ struct PokemonTFTGame: Sendable {
 
     private static func distance(_ lhs: PokemonTFTFighter, _ rhs: PokemonTFTFighter) -> Int {
         abs(lhs.x - rhs.x) + abs(lhs.y - rhs.y)
+    }
+
+    /// 직선 앞이 막히면 옆으로 우회한다. 기존 구현은 목표 방향의 가로·세로
+    /// 두 칸만 검사해, 앞줄이 겹치면 전원이 영원히 이동만 시도하는 교착이 생겼다.
+    private static func nextStep(from actor: PokemonTFTFighter, toward target: PokemonTFTFighter,
+                                 occupied: Set<String>) -> (Int, Int)? {
+        let neighbors = [(actor.x + 1, actor.y), (actor.x - 1, actor.y),
+                         (actor.x, actor.y + 1), (actor.x, actor.y - 1)]
+            .filter {
+                (0..<combatColumns).contains($0.0) && (0..<combatRows).contains($0.1) &&
+                !occupied.contains("\($0.0),\($0.1)")
+            }
+        return neighbors.min {
+            let lhs = abs($0.0 - target.x) + abs($0.1 - target.y)
+            let rhs = abs($1.0 - target.x) + abs($1.1 - target.y)
+            if lhs == rhs { return ($0.1, $0.0) < ($1.1, $1.0) }
+            return lhs < rhs
+        }
     }
 
     private mutating func combine(definitionID: Int) {

@@ -64,6 +64,8 @@ import Testing
         #expect(replay.frames.count <= 2 + 36 * 12)
         #expect(final.message != "전투 시작!")
         #expect(replay.frames.dropFirst(2).contains { $0.action != nil })
+        #expect(replay.frames.contains { $0.action?.kind == .attack || $0.action?.kind == .critical })
+        #expect(replay.frames.contains { $0.action?.kind == .skill })
     }
 
     @Test func synergyGuideShowsMembersThresholdAndActiveEffect() {
