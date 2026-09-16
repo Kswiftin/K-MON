@@ -35,7 +35,7 @@ struct PokemonTFTView: View {
                 case .shopping:
                     if battleReplay != nil { battleArena }
                     else if showSynergyGuide { synergyGuide }
-                    else { board; selectedSynergy; bench; shop; controls }
+                    else { board; bench; shop; controls }
                 case .finished(let won): ending(won: won)
                 }
             }
@@ -207,11 +207,23 @@ struct PokemonTFTView: View {
                     Label(showSynergyGuide ? "배치판" : "시너지 도감", systemImage: "books.vertical.fill")
                 }.buttonStyle(.plain).foregroundStyle(arenaBlue)
             }.font(.caption2).foregroundStyle(.white.opacity(0.7))
-            HStack {
-                Text(game.synergyText()).foregroundStyle(arenaBlue.opacity(0.9))
-                Spacer()
-                Text(game.lastBattleText).lineLimit(1)
-            }.font(.caption2)
+            HStack(spacing: 6) {
+                Text("활성 시너지").font(.caption2.bold()).foregroundStyle(.white.opacity(0.65))
+                if game.activeSynergies.isEmpty {
+                    Text("없음 · 같은 타입 2마리부터 활성")
+                        .font(.caption2).foregroundStyle(.white.opacity(0.42))
+                } else {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 5) {
+                            ForEach(game.activeSynergies) { synergy in
+                                activeSynergyChip(synergy)
+                            }
+                        }
+                    }
+                }
+                Spacer(minLength: 4)
+                Text(game.lastBattleText).font(.caption2).lineLimit(1).foregroundStyle(.white.opacity(0.8))
+            }
         }
         .padding(.horizontal, 10).padding(.vertical, 8)
         .background(LinearGradient(colors: [arenaPanel, arenaInk], startPoint: .leading, endPoint: .trailing),
@@ -227,20 +239,16 @@ struct PokemonTFTView: View {
             .overlay(Capsule().stroke(tint.opacity(0.7)))
     }
 
-    @ViewBuilder private var selectedSynergy: some View {
-        if let selectedUnit,
-           let unit = game.units.first(where: { $0.id == selectedUnit }) {
-            let definition = game.definition(for: unit.definitionID)
-            let synergy = game.synergyInfo(for: definition.type)
-            HStack(spacing: 6) {
-                Circle().fill(definition.type.battleColor).frame(width: 8, height: 8)
-                Text("\(definition.name) · \(definition.type.rawValue) 시너지")
-                    .font(.caption2.bold())
-                Spacer()
-                Text("\(synergy.deployed)/\(synergy.nextThreshold ?? 4) · \(synergy.effectText)")
-                    .font(.caption2).foregroundStyle(synergy.deployed >= 2 ? .cyan : .secondary)
-            }.padding(.horizontal, 7).padding(.vertical, 5).pokedoroCard()
+    private func activeSynergyChip(_ synergy: PokemonTFTGame.SynergyInfo) -> some View {
+        let tier = synergy.deployed >= 4 ? 25 : 10
+        return HStack(spacing: 4) {
+            Circle().fill(synergy.type.battleColor).frame(width: 7, height: 7)
+            Text("\(synergy.type.rawValue) \(synergy.deployed) · +\(tier)%")
         }
+        .font(.caption2.bold()).foregroundStyle(.white)
+        .padding(.horizontal, 7).padding(.vertical, 3)
+        .background(synergy.type.battleColor.opacity(0.28), in: Capsule())
+        .overlay(Capsule().stroke(synergy.type.battleColor.opacity(0.72)))
     }
 
     private var synergyGuide: some View {

@@ -124,6 +124,20 @@ import Testing
         #expect(game.synergyInfo(for: .electric).members.contains("메리프"))
     }
 
+    @Test func activeSynergiesOnlyUsePokemonDeployedOnTheBoard() {
+        var game = PokemonTFTGame(seed: 52)
+        game.units = [
+            PokemonTFTUnit(definitionID: 25, boardSlot: 0),
+            PokemonTFTUnit(definitionID: 179, boardSlot: 1),
+            PokemonTFTUnit(definitionID: 4),
+            PokemonTFTUnit(definitionID: 37)
+        ]
+
+        #expect(game.activeSynergies.map(\.type) == [.electric])
+        #expect(game.activeSynergies.first?.deployed == 2)
+        #expect(!game.activeSynergies.contains { $0.type == .fire })
+    }
+
     @Test func multiplayerArmyBecomesTheActualEnemyTeam() {
         var game = PokemonTFTGame(seed: 6)
         game.units = [PokemonTFTUnit(definitionID: 7, boardSlot: 0)]

@@ -222,6 +222,11 @@ struct PokemonTFTGame: Sendable {
             .sorted { $0.type.rawValue < $1.type.rawValue }
     }
 
+    /// 대기석은 제외하고 현재 배치판에서 실제 발동 중인 시너지만 반환한다.
+    var activeSynergies: [SynergyInfo] {
+        synergyGuide.filter { $0.deployed >= 2 }
+    }
+
     mutating func buy(shopIndex: Int) -> Bool {
         guard phase == .shopping, shop.indices.contains(shopIndex),
               let definitionID = shop[shopIndex] else { return false }
@@ -453,11 +458,9 @@ struct PokemonTFTGame: Sendable {
     }
 
     func synergyText() -> String {
-        let counts = Dictionary(grouping: units.filter { $0.boardSlot != nil }) {
-            definition(for: $0.definitionID).type
-        }.mapValues(\.count)
-        let active = counts.filter { $0.value >= 2 }.sorted { $0.key.rawValue < $1.key.rawValue }
-        return active.isEmpty ? "활성 시너지 없음" : active.map { "\($0.key.rawValue) \($0.value)" }.joined(separator: " · ")
+        activeSynergies.isEmpty
+            ? "활성 시너지 없음"
+            : activeSynergies.map { "\($0.type.rawValue) \($0.deployed)" }.joined(separator: " · ")
     }
 
     private static func distance(_ lhs: PokemonTFTFighter, _ rhs: PokemonTFTFighter) -> Int {
