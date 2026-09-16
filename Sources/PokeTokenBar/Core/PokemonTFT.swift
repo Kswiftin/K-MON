@@ -227,6 +227,11 @@ struct PokemonTFTGame: Sendable {
         synergyGuide.filter { $0.deployed >= 2 }
     }
 
+    /// 현재 필드에 한 마리라도 올라온 타입. 미발동 시너지 진행도(예: 1/2) 표시에 쓴다.
+    var fieldSynergies: [SynergyInfo] {
+        synergyGuide.filter { $0.deployed > 0 }
+    }
+
     mutating func buy(shopIndex: Int) -> Bool {
         guard phase == .shopping, shop.indices.contains(shopIndex),
               let definitionID = shop[shopIndex] else { return false }
@@ -271,6 +276,13 @@ struct PokemonTFTGame: Sendable {
             units[other].boardSlot = units[index].boardSlot
         } else if units[index].boardSlot == nil, deployedCount >= unitLimit { return }
         units[index].boardSlot = slot
+    }
+
+    mutating func moveToBench(_ id: UUID) {
+        guard phase == .shopping, benchCount < Self.benchLimit,
+              let index = units.firstIndex(where: { $0.id == id }),
+              units[index].boardSlot != nil else { return }
+        units[index].boardSlot = nil
     }
 
     mutating func sell(_ id: UUID) {

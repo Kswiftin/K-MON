@@ -35,7 +35,7 @@ struct PokemonTFTView: View {
                 case .shopping:
                     if battleReplay != nil { battleArena }
                     else if showSynergyGuide { synergyGuide }
-                    else { board; bench; shop; controls }
+                    else { board; bench; shop; controls; fieldSynergyBar }
                 case .finished(let won): ending(won: won)
                 }
             }
@@ -207,23 +207,7 @@ struct PokemonTFTView: View {
                     Label(showSynergyGuide ? "배치판" : "시너지 도감", systemImage: "books.vertical.fill")
                 }.buttonStyle(.plain).foregroundStyle(arenaBlue)
             }.font(.caption2).foregroundStyle(.white.opacity(0.7))
-            HStack(spacing: 6) {
-                Text("활성 시너지").font(.caption2.bold()).foregroundStyle(.white.opacity(0.65))
-                if game.activeSynergies.isEmpty {
-                    Text("없음 · 같은 타입 2마리부터 활성")
-                        .font(.caption2).foregroundStyle(.white.opacity(0.42))
-                } else {
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 5) {
-                            ForEach(game.activeSynergies) { synergy in
-                                activeSynergyChip(synergy)
-                            }
-                        }
-                    }
-                }
-                Spacer(minLength: 4)
-                Text(game.lastBattleText).font(.caption2).lineLimit(1).foregroundStyle(.white.opacity(0.8))
-            }
+            Text(game.lastBattleText).font(.caption2).lineLimit(1).foregroundStyle(.white.opacity(0.8))
         }
         .padding(.horizontal, 10).padding(.vertical, 8)
         .background(LinearGradient(colors: [arenaPanel, arenaInk], startPoint: .leading, endPoint: .trailing),
@@ -239,16 +223,38 @@ struct PokemonTFTView: View {
             .overlay(Capsule().stroke(tint.opacity(0.7)))
     }
 
-    private func activeSynergyChip(_ synergy: PokemonTFTGame.SynergyInfo) -> some View {
-        let tier = synergy.deployed >= 4 ? 25 : 10
+    private func fieldSynergyChip(_ synergy: PokemonTFTGame.SynergyInfo) -> some View {
+        let active = synergy.deployed >= 2
+        let target = synergy.deployed >= 2 ? 4 : 2
+        let tier = synergy.deployed >= 4 ? 25 : active ? 10 : 0
         return HStack(spacing: 4) {
             Circle().fill(synergy.type.battleColor).frame(width: 7, height: 7)
-            Text("\(synergy.type.rawValue) \(synergy.deployed) · +\(tier)%")
+            Text("\(synergy.type.rawValue) \(min(synergy.deployed, 4))/\(target)")
+            if active { Text("+\(tier)%") }
         }
-        .font(.caption2.bold()).foregroundStyle(.white)
+        .font(.caption2.bold()).foregroundStyle(active ? .white : .white.opacity(0.58))
         .padding(.horizontal, 7).padding(.vertical, 3)
-        .background(synergy.type.battleColor.opacity(0.28), in: Capsule())
-        .overlay(Capsule().stroke(synergy.type.battleColor.opacity(0.72)))
+        .background(synergy.type.battleColor.opacity(active ? 0.28 : 0.10), in: Capsule())
+        .overlay(Capsule().stroke(synergy.type.battleColor.opacity(active ? 0.72 : 0.30)))
+    }
+
+    private var fieldSynergyBar: some View {
+        HStack(spacing: 6) {
+            Label("필드 시너지", systemImage: "sparkles")
+                .font(.caption2.bold()).foregroundStyle(.white.opacity(0.7))
+            if game.fieldSynergies.isEmpty {
+                Text("포켓몬을 배치하면 조합이 표시됩니다")
+                    .font(.caption2).foregroundStyle(.white.opacity(0.4))
+            } else {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 5) {
+                        ForEach(game.fieldSynergies) { synergy in fieldSynergyChip(synergy) }
+                    }
+                }
+            }
+        }
+        .padding(.horizontal, 8).frame(height: 30)
+        .background(arenaInk.opacity(0.94), in: RoundedRectangle(cornerRadius: 9))
     }
 
     private var synergyGuide: some View {
@@ -287,7 +293,7 @@ struct PokemonTFTView: View {
             HStack {
                 Label("배치판", systemImage: "scope").font(.caption.bold()).foregroundStyle(.white)
                 Spacer()
-                Text("선택 후 칸을 눌러 이동").font(.caption2).foregroundStyle(.white.opacity(0.55))
+                Text("선택 후 이동 · 다시 누르면 대기석").font(.caption2).foregroundStyle(.white.opacity(0.55))
             }
             LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 4),
                                      count: PokemonTFTGame.boardColumns), spacing: 4) {
@@ -323,7 +329,15 @@ struct PokemonTFTView: View {
         return VStack(alignment: .leading, spacing: 3) {
             HStack {
                 Label("대기석", systemImage: "rectangle.stack.fill")
-                Spacer(); Text("\(game.benchCount)/\(PokemonTFTGame.benchLimit)")
+                Spacer()
+                if let selectedUnit,
+                   game.units.first(where: { $0.id == selectedUnit })?.boardSlot != nil {
+                    Button("선택 포켓몬 내리기") {
+                        game.moveToBench(selectedUnit)
+                        self.selectedUnit = nil
+                    }.buttonStyle(.plain).foregroundStyle(arenaBlue)
+                }
+                Text("\(game.benchCount)/\(PokemonTFTGame.benchLimit)")
             }.font(.caption2.bold()).foregroundStyle(.white.opacity(0.7))
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 5) {
@@ -584,7 +598,9 @@ struct PokemonTFTView: View {
     }
 
     private func boardTap(slot: Int, unit: PokemonTFTUnit?) {
-        if let selectedUnit { game.move(selectedUnit, to: slot); self.selectedUnit = nil }
+        if let selectedUnit, unit?.id == selectedUnit {
+            game.moveToBench(selectedUnit); self.selectedUnit = nil
+        } else if let selectedUnit { game.move(selectedUnit, to: slot); self.selectedUnit = nil }
         else if let unit { selectedUnit = unit.id }
     }
 

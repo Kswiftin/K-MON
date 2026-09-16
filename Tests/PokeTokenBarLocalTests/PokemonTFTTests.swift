@@ -136,6 +136,19 @@ import Testing
         #expect(game.activeSynergies.map(\.type) == [.electric])
         #expect(game.activeSynergies.first?.deployed == 2)
         #expect(!game.activeSynergies.contains { $0.type == .fire })
+        #expect(game.fieldSynergies.map(\.type) == [.electric])
+    }
+
+    @Test func aDeployedPokemonCanReturnToTheBench() {
+        var game = PokemonTFTGame(seed: 53)
+        let unit = PokemonTFTUnit(definitionID: 25, boardSlot: 0)
+        game.units = [unit]
+
+        game.moveToBench(unit.id)
+
+        #expect(game.deployedCount == 0)
+        #expect(game.benchCount == 1)
+        #expect(game.units.first?.boardSlot == nil)
     }
 
     @Test func multiplayerArmyBecomesTheActualEnemyTeam() {
