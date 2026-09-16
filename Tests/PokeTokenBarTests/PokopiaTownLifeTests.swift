@@ -29,9 +29,11 @@ final class PokopiaTownLifeTests: XCTestCase {
     private func line(_ residents: [TownResident], _ terrain: [TownTerrain],
                       season: MemoryHomeSeason = .spring,
                       timeOfDay: MemoryHomeTimeOfDay = .day,
-                      weather: TownWeather = .clear) -> String {
+                      weather: TownWeather = .clear,
+                      glowing: Bool = false) -> String {
         PokopiaTownLife.line(residents: residents, terrain: terrain,
-                            season: season, timeOfDay: timeOfDay, weather: weather, now: now)
+                            season: season, timeOfDay: timeOfDay, weather: weather,
+                            glowing: glowing, now: now)
     }
 
     // MARK: 우선순위 (좁은 조건이 먼저 이긴다)
@@ -268,5 +270,29 @@ final class PokopiaTownLifeTests: XCTestCase {
                 XCTAssertFalse(text.trimmingCharacters(in: .whitespaces).isEmpty)
             }
         }
+    }
+
+    // MARK: 발광 (창백카츄 — 10단계)
+
+    /// 밤은 밤 문장이다. **꺼진 쪽을 먼저 못 박는다** — 켜진 쪽만 보면 발광을 항등으로 바꿔도 초록이다.
+    func testNightStaysNightWithoutTheGlow() {
+        let settled = resident(7, "꼬부기", [.water], arrivedAgo: 60 * 60 * 24 * 30)
+        let text = line([settled], town(.water), timeOfDay: .night, glowing: false)
+        XCTAssertTrue(text.contains("달"), "밤 문장이 아니다: \(text)")
+    }
+
+    /// 창백카츄가 있으면 **밤이 낮으로 접힌다**. 원작의 발광 특기(하루 한 번 마을 전체를 밝힌다)다.
+    func testTheGlowTurnsNightIntoDay() {
+        let settled = resident(7, "꼬부기", [.water], arrivedAgo: 60 * 60 * 24 * 30)
+        let text = line([settled], town(.water), timeOfDay: .night, glowing: true)
+        XCTAssertTrue(text.contains("말리"), "낮 문장이 아니다: \(text)")
+        XCTAssertFalse(text.contains("달"), "밤 문장이 남았다: \(text)")
+    }
+
+    /// **아침은 안 건드린다.** 접으면 4단계의 특기 문장 18개가 화면에서 사라진다.
+    func testTheGlowLeavesTheMorningSpecialtyAlone() {
+        let settled = resident(7, "꼬부기", [.water], arrivedAgo: 60 * 60 * 24 * 30)
+        let text = line([settled], town(.water), timeOfDay: .morning, glowing: true)
+        XCTAssertTrue(text.contains(TownSpecialty.watering.name), "특기 문장이 아니다: \(text)")
     }
 }

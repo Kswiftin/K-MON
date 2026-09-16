@@ -46,7 +46,7 @@ struct PokopiaTownView: View {
                 regionPicker
                 header
                 brushBanner
-                PokopiaTownCanvas(town: town, residents: residentSprites,
+                PokopiaTownCanvas(town: town, residents: residentSprites + npcSprites,
                                   avatar: (cell: avatarCell, outfit: store.state.outfit),
                                   working: working,
                                   onTap: shape)
@@ -60,6 +60,7 @@ struct PokopiaTownView: View {
                 if let feedback {
                     Text(feedback).font(.caption).foregroundStyle(PokedoroTheme.red)
                 }
+                villagerSection
                 residentList
                 neighborTown
             }
@@ -333,6 +334,49 @@ struct PokopiaTownView: View {
         return "칸을 누르면 지형을 바꿔요. \(brush.name) \(status.tiles)/\(PokopiaTown.habitatThreshold)칸 — \(status.remaining)칸 더 밀면 손님이 와요."
     }
 
+    // MARK: 마을 사람들 (네임드 NPC · 10단계)
+
+    /// NPC 여섯 줄. **없어도 그린다** — 이웃 마을 절이 "없으면 아무것도 안 그린다" 인 것과 반대다.
+    /// 거기는 방문하지 않은 상태가 기본이라 빈 자리가 뜻이 없지만, 여기는 잠긴 줄이 곧 "무엇을
+    /// 하면 오는가" 라서 목표가 화면에 남아야 한다(서식 현황 표와 같은 판단).
+    ///
+    /// 해금 집합은 `store.townNPCs` 하나에서 온다 — 뷰가 `PokopiaTownNPC.unlocked` 를 직접 부르면
+    /// 조립이 둘이 되고, 화면에 선 NPC 와 효과를 받는 NPC 가 갈린다.
+    private var villagerSection: some View {
+        let open = store.townNPCs
+        return VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 6) {
+                Text("마을 사람들 \(open.count)/\(TownNPC.allCases.count)")
+                    .font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                Text("마을이 자라면 이름 있는 이웃이 하나씩 찾아와요")
+                    .font(.caption2).foregroundStyle(.secondary)
+            }
+            // `allCases` 순서를 지킨다 — 해금된 것을 위로 올리면 줄이 매번 움직여 어디를 보던
+            // 중이었는지 사라진다(서식 현황은 정렬하지만 거기는 항목이 상태 그 자체다).
+            ForEach(TownNPC.allCases) { npcRow($0, unlocked: open.contains($0)) }
+        }
+        .frame(maxWidth: 512, alignment: .leading)
+    }
+
+    private func npcRow(_ npc: TownNPC, unlocked: Bool) -> some View {
+        HStack(spacing: 8) {
+            PokopiaResidentView(speciesID: npc.speciesID, isShiny: false, side: 26)
+            VStack(alignment: .leading, spacing: 1) {
+                // 이름과 특기 사이에 공백을 둔다 — 보간 뒤에 조사를 붙이면 받침 없는 이름에서
+                // 틀린다(`PokopiaParticleGuardTests`).
+                Text("\(npc.name) · 특기 \(npc.specialtyName)")
+                    .font(.caption.weight(.medium)).lineLimit(1)
+                Text(unlocked ? npc.unlockedLine : npc.unlockHint)
+                    .font(.caption2).foregroundStyle(.secondary)
+            }
+            Spacer()
+        }
+        .padding(.horizontal, 8).padding(.vertical, 5)
+        .opacity(unlocked ? 1 : 0.45)
+        .background(unlocked ? PokedoroTheme.blue.opacity(0.10) : .clear,
+                    in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+
     // MARK: 주민 목록
 
     private var residentList: some View {
@@ -415,6 +459,7 @@ struct PokopiaTownView: View {
                                     timeOfDay: MemoryHomeTimeOfDay.current(now),
                                     weather: TownWeather.today(dayKey: CompanionStore.dayKey(now),
                                                                season: season),
+                                    glowing: store.townNPCs.contains(.glow),
                                     now: now)
     }
 
@@ -462,8 +507,19 @@ struct PokopiaTownView: View {
         let dayKey = CompanionStore.dayKey(Date())
         return town.residents.map { resident in
             let spot = PokopiaTown.residentSpot(resident, terrain: town.terrain, dayKey: dayKey)
-            return .init(id: resident.speciesID, speciesID: resident.speciesID,
-                         col: spot.col, row: spot.row)
+            return .resident(resident, at: spot)
+        }
+    }
+
+    /// 그릴 NPC (10단계). 주민과 **같은 배열에 실어** 캔버스에 넘긴다 — 따로 넘기면 깊이 정렬이
+    /// 두 번 돌아 NPC 가 늘 주민 앞이나 뒤에 선다.
+    ///
+    /// 자리는 지형을 안 본다(`PokopiaTownNPC.spot`) — NPC 는 타입이 없어 서식이라는 개념이 없다.
+    private var npcSprites: [PokopiaTownCanvas.Resident] {
+        let dayKey = CompanionStore.dayKey(Date())
+        return store.townNPCs.sorted { $0.speciesID < $1.speciesID }.map { npc in
+            let spot = PokopiaTownNPC.spot(npc, dayKey: dayKey)
+            return .npc(npc, at: spot)
         }
     }
 
@@ -508,12 +564,14 @@ struct PokopiaTownView: View {
     }
 
     /// 이웃 마을의 주민 자리. 내 마을(`residentSprites`)과 **같은 파생**이다.
+    ///
+    /// **NPC 를 더하지 않는다.** 게이트 여섯 중 둘(조리대·용광로)은 그 집의 인벤토리라 와이어에
+    /// 없다 — 넷만 판정해 그리면 "저 집엔 셰프가 없다" 는 거짓이 화면에 선다.
     private func neighborSprites(_ town: PokopiaTownState) -> [PokopiaTownCanvas.Resident] {
         let dayKey = CompanionStore.dayKey(Date())
         return town.residents.map { resident in
             let spot = PokopiaTown.residentSpot(resident, terrain: town.terrain, dayKey: dayKey)
-            return .init(id: resident.speciesID, speciesID: resident.speciesID,
-                         col: spot.col, row: spot.row)
+            return .resident(resident, at: spot)
         }
     }
 
@@ -550,11 +608,30 @@ struct PokopiaTownView: View {
 /// 타일을 굽지 않는다 — 도트 판은 8장을 `@State` 에 굽고 192번 그렸는데, 마름모는 `Path`
 /// 채우기라 구울 것이 없다. `CGImage` 캐시가 사라진 만큼 상태가 하나 줄었다.
 struct PokopiaTownCanvas: View {
+    /// 캔버스에 세우는 것 하나 — 주민이거나 네임드 NPC 다.
+    ///
+    /// **`id` 가 `speciesID` 가 아니다.** NPC 중 로토무(479)·루브도(235)는 base 종이라 같은 종이
+    /// 주민으로도 살 수 있고, 그러면 `ForEach` 의 id 가 겹쳐 화면이 깨진다(컴파일도 기존 테스트도
+    /// 안 잡는다). 접두로 갈래를 갈라 둔다.
     struct Resident: Identifiable {
-        let id: Int
+        let id: String
         let speciesID: Int
         let col: Int
         let row: Int
+
+        /// 주민 하나. 접두가 계약이다 — 아래 `npc(_:at:)` 와 **절대 같은 id 를 내지 않는다.**
+        /// 뷰 안에서 문자열을 조립하면 그 계약이 무테스트로 남는다(`PokopiaTownLife` 머리 주석이
+        /// 문구를 뷰 밖으로 뺀 이유와 같다).
+        static func resident(_ resident: TownResident, at spot: (col: Int, row: Int)) -> Resident {
+            Resident(id: "r-\(resident.speciesID)", speciesID: resident.speciesID,
+                     col: spot.col, row: spot.row)
+        }
+
+        /// NPC 하나.
+        static func npc(_ npc: TownNPC, at spot: (col: Int, row: Int)) -> Resident {
+            Resident(id: "npc-\(npc.speciesID)", speciesID: npc.speciesID,
+                     col: spot.col, row: spot.row)
+        }
     }
 
     let town: PokopiaTownState

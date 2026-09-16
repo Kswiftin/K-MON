@@ -12,6 +12,11 @@ import Foundation
 /// (`specialtyLine`), 낮·밤은 정착 지형(`settledLine`)이다.
 ///
 /// 이 사다리 **앞**에 날씨 접두가 항상 붙는다(6단계) — 분기 선택에는 관여하지 않는다.
+/// **발광은 관여한다**(10단계) — 창백카츄가 마을에 있으면 밤이 낮으로 접혀 ③ 의 밤 문장이
+/// 낮 문장이 된다. 날씨와 다른 자리인 이유는 그것이 원작의 발광 특기이기 때문이다(하루 한 번
+/// 마을 전체를 밝혀 밤에도 포켓몬이 낮처럼 지낸다). 사다리 **갈래는 늘지 않는다** — 해금은
+/// 사건이 아니라 상태라(저장이 없어 "방금 해금" 을 알 수 없다) 늘 참인 갈래를 끼우면 "좁은
+/// 조건이 먼저" 라는 규칙이 흐려진다. NPC 는 자기 절이 말한다.
 ///
 /// `season`·`timeOfDay`·`now` 를 **인자로 받는다.** 함수 안에서 시계를 읽으면 테스트가 실행
 /// 시각에 따라 다른 가지를 밟아, 밤에 돌린 CI 만 빨개진다. 날씨도 같은 이유로 인자다 — 접두는
@@ -30,13 +35,16 @@ enum PokopiaTownLife {
     /// 6시간은 "오늘 안에 마을을 다시 열면 아직 새 소식" 정도의 폭이다.
     static let freshArrivalWindow: TimeInterval = 60 * 60 * 6
 
+    /// - Parameter glowing: 창백카츄(`TownNPC.glow`)가 이 마을에 있는가. **기본값을 주지 않는다** —
+    ///   주면 호출부가 조용히 빼먹어도 컴파일되고 화면이 영영 어두운 밤이 된다(`weather` 를 기본값
+    ///   없이 둔 이유와 같다).
     static func line(residents: [TownResident], terrain: [TownTerrain],
                      season: MemoryHomeSeason, timeOfDay: MemoryHomeTimeOfDay,
-                     weather: TownWeather, now: Date) -> String {
+                     weather: TownWeather, glowing: Bool, now: Date) -> String {
         // 보간을 먼저 풀어 둔다 — 문자열 보간은 한 줄 안에서만 닫히므로 호출을 그 안에 접으면
         // 컴파일되지 않는다.
         let base = townLine(residents: residents, terrain: terrain,
-                            season: season, timeOfDay: timeOfDay, now: now)
+                            season: season, timeOfDay: timeOfDay, glowing: glowing, now: now)
         return "\(weather.prefix) \(base)"
     }
 
@@ -44,7 +52,10 @@ enum PokopiaTownLife {
     /// `private` 인 것이 계약이다: 출처가 둘이면 뷰가 날씨 없는 줄을 그릴 길이 열린다.
     private static func townLine(residents: [TownResident], terrain: [TownTerrain],
                                  season: MemoryHomeSeason, timeOfDay: MemoryHomeTimeOfDay,
-                                 now: Date) -> String {
+                                 glowing: Bool, now: Date) -> String {
+        // 발광은 **밤만** 접는다. 아침을 접으면 4단계의 특기 문장 18개가 화면에서 사라지고,
+        // 낮은 접을 것이 없다.
+        let lit: MemoryHomeTimeOfDay = (glowing && timeOfDay == .night) ? .day : timeOfDay
         // ① 갓 온 주민. 도착 순서를 지키므로 **가장 최근**을 뒤에서 찾는다.
         if let fresh = residents.last(where: { now.timeIntervalSince($0.arrivedAt) < freshArrivalWindow
                                                && now >= $0.arrivedAt }) {
@@ -61,10 +72,10 @@ enum PokopiaTownLife {
         // 뒤에 두면 영영 안 밟힌다.
         if let settled = residents.first,
            let home = PokopiaTown.settledTerrain(settled, terrain: terrain) {
-            if timeOfDay == .morning, let specialty = PokopiaTown.specialty(of: settled) {
+            if lit == .morning, let specialty = PokopiaTown.specialty(of: settled) {
                 return specialtyLine(settled.name, specialty: specialty)
             }
-            return settledLine(settled.name, terrain: home, timeOfDay: timeOfDay)
+            return settledLine(settled.name, terrain: home, timeOfDay: lit)
         }
         // ④ 주민은 없는데 부르는 환경은 됐다.
         if !PokopiaTown.welcomingTypes(terrain).isEmpty {

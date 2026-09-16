@@ -216,10 +216,19 @@ import Testing
         #expect(!code.contains("PokopiaCrafting"), "PokopiaTown 이 PokopiaCrafting 을 부른다 — 축이 섞였다")
     }
 
-    /// 가드가 실제로 잡는지 가드가 스스로 증명한다. 위 둘만 있으면 파일 읽기가 빈 문자열을
+    /// NPC 표도 제작 축을 **모른다**(10단계). 설비 보유는 `Bool` 인자로 받는다 — 이 가드가 없으면
+    /// 분리가 파일 하나 건너로 샌다: NPC 가 `PokopiaCrafting` 을 부르고 뷰가 NPC 를 부르면, 위 두
+    /// 가드는 초록인 채로 축이 섞인다.
+    @Test func theNamedNPCsDoNotReachIntoCrafting() throws {
+        let code = try Self.code("PokopiaTownNPC.swift")
+        #expect(!code.contains("PokopiaCrafting"), "PokopiaTownNPC 가 PokopiaCrafting 을 부른다 — 축이 섞였다")
+    }
+
+    /// 가드가 실제로 잡는지 가드가 스스로 증명한다. 위 셋만 있으면 파일 읽기가 빈 문자열을
     /// 돌려줘도 초록이라, 가드가 일하는지와 일하지 않는지를 구별할 수 없다.
     @Test func theSourceGuardsActuallyReadTheFiles() throws {
         #expect(try Self.code("PokopiaCrafting.swift").contains("static let recipes"))
         #expect(try Self.code("PokopiaTown.swift").contains("static func development"))
+        #expect(try Self.code("PokopiaTownNPC.swift").contains("static func unlocked"))
     }
 }
