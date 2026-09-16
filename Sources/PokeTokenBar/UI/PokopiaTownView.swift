@@ -358,11 +358,17 @@ struct PokopiaTownView: View {
         }
     }
 
+    /// 시계를 **한 번** 읽어 넷에 넘긴다. 따로 읽으면 자정 직전에 그린 화면이 계절·시각·dayKey 를
+    /// 서로 다른 날에서 받아, 문구 하나가 어제와 오늘에 걸친다.
     private var lifeLine: String {
-        PokopiaTownLife.line(residents: town.residents, terrain: town.terrain,
-                            season: MemoryHomeSeason.current(),
-                            timeOfDay: MemoryHomeTimeOfDay.current(),
-                            now: Date())
+        let now = Date()
+        let season = MemoryHomeSeason.current(now)
+        return PokopiaTownLife.line(residents: town.residents, terrain: town.terrain,
+                                    season: season,
+                                    timeOfDay: MemoryHomeTimeOfDay.current(now),
+                                    weather: TownWeather.today(dayKey: CompanionStore.dayKey(now),
+                                                               season: season),
+                                    now: now)
     }
 
     /// 그릴 주민. 자리는 `PokopiaTown.residentSpot` 이 정한다(자기 지형 위).

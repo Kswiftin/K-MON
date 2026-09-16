@@ -11,8 +11,11 @@ import Foundation
 /// 좁은 문장은 이 마을에만 있는 사실이다. 서식 만족 주민의 문장은 시각으로 갈린다 — **아침은 특기**
 /// (`specialtyLine`), 낮·밤은 정착 지형(`settledLine`)이다.
 ///
+/// 이 사다리 **앞**에 날씨 접두가 항상 붙는다(6단계) — 분기 선택에는 관여하지 않는다.
+///
 /// `season`·`timeOfDay`·`now` 를 **인자로 받는다.** 함수 안에서 시계를 읽으면 테스트가 실행
-/// 시각에 따라 다른 가지를 밟아, 밤에 돌린 CI 만 빨개진다.
+/// 시각에 따라 다른 가지를 밟아, 밤에 돌린 CI 만 빨개진다. 날씨도 같은 이유로 인자다 — 접두는
+/// `TownWeather.today(dayKey:season:)` 가 정하고 이 함수는 받은 값을 붙이기만 한다.
 ///
 /// 이름 뒤에 조사를 붙이지 않는다(`MemoryHomeRoomLife` 의 "와/과" 규칙). 주민 이름은 PokéAPI
 /// 한국어 종 이름이라 받침을 계산할 수는 있지만, 조사 계산기를 새로 만들 값이 아니고 문장을
@@ -29,7 +32,19 @@ enum PokopiaTownLife {
 
     static func line(residents: [TownResident], terrain: [TownTerrain],
                      season: MemoryHomeSeason, timeOfDay: MemoryHomeTimeOfDay,
-                     now: Date) -> String {
+                     weather: TownWeather, now: Date) -> String {
+        // 보간을 먼저 풀어 둔다 — 문자열 보간은 한 줄 안에서만 닫히므로 호출을 그 안에 접으면
+        // 컴파일되지 않는다.
+        let base = townLine(residents: residents, terrain: terrain,
+                            season: season, timeOfDay: timeOfDay, now: now)
+        return "\(weather.prefix) \(base)"
+    }
+
+    /// 날씨를 뺀 마을 한 줄 — 다섯 갈래 사다리는 여기 그대로다. `line` 이 앞에 날씨를 붙인다.
+    /// `private` 인 것이 계약이다: 출처가 둘이면 뷰가 날씨 없는 줄을 그릴 길이 열린다.
+    private static func townLine(residents: [TownResident], terrain: [TownTerrain],
+                                 season: MemoryHomeSeason, timeOfDay: MemoryHomeTimeOfDay,
+                                 now: Date) -> String {
         // ① 갓 온 주민. 도착 순서를 지키므로 **가장 최근**을 뒤에서 찾는다.
         if let fresh = residents.last(where: { now.timeIntervalSince($0.arrivedAt) < freshArrivalWindow
                                                && now >= $0.arrivedAt }) {
