@@ -745,6 +745,11 @@ final class BattleCenter {
     let multiplayer: MultiplayerRoomCenter
     let trading: PokemonTradeCenter
     let auction: PokemonAuctionCenter
+    /// TFT 경제와 보유 유닛은 오버레이의 수명보다 길다. 화면 안의 `@State`에 두면 팝오버를
+    /// 닫았다 다시 여는 순간 구매·배치 내역이 새 게임으로 바뀌므로 앱 세션에 보관한다.
+    var pokemonTFTGame = PokemonTFTGame()
+    var pokemonTFTResolvingRound: Int?
+    var isPokemonTFTSoloBattleRunning = false
     private var listener: NWListener?
     private var browser: NWBrowser?
     private var connection: NWConnection?

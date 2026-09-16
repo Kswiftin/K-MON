@@ -89,6 +89,7 @@ final class MultiplayerRoomCenter {
     private(set) var hasSubmittedTFTArmy = false
     private var tftArmies: [UUID: PokemonTFTArmy] = [:]
     private var tftResults: [UUID: Bool] = [:]
+    private var tftRoundTimeoutTask: Task<Void, Never>?
     var tftWinner: PokemonTFTPlayerState? {
         guard tftStarted else { return nil }
         let alive = tftPlayers.filter { !$0.isEliminated }
@@ -1076,6 +1077,7 @@ final class MultiplayerRoomCenter {
         guard isHost, let lobby, lobby.activity == .pokemonTFT, lobby.canStart,
               (2...8).contains(lobby.runners.count) else { return }
         tftStarted = true; tftRound = 1; tftMatchup = nil; hasSubmittedTFTArmy = false
+        tftRoundTimeoutTask?.cancel()
         tftArmies.removeAll(); tftResults.removeAll()
         tftPlayers = lobby.runners.map {
             PokemonTFTPlayerState(id: $0.id, trainerName: $0.trainerName, health: 100)
@@ -1132,6 +1134,24 @@ final class MultiplayerRoomCenter {
                 send(.tftMatchup(participantID: player.id, matchup: matchup), over: connection)
             }
         }
+        schedulePokemonTFTRoundTimeout(round: tftRound)
+    }
+
+    /// 화면을 닫거나 네트워크가 잠시 끊겨 한 참가자의 결과가 오지 않아도 방 전체가 영원히
+    /// `체력 정산 중`에 머물지 않게 한다. 정상 전투 연출(최대 약 50초)보다 긴 유예 뒤 미응답만
+    /// 패배 처리하며, 라운드가 이미 넘어갔다면 아무 일도 하지 않는다.
+    private func schedulePokemonTFTRoundTimeout(round: Int) {
+        tftRoundTimeoutTask?.cancel()
+        tftRoundTimeoutTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(75))
+            guard !Task.isCancelled, let self, self.isHost, self.tftStarted,
+                  self.tftRound == round else { return }
+            let alive = self.tftPlayers.filter { !$0.isEliminated }
+            for player in alive where self.tftResults[player.id] == nil {
+                self.tftResults[player.id] = false
+            }
+            self.finishPokemonTFTRoundIfReady()
+        }
     }
 
     private func acceptPokemonTFTResult(won: Bool, from participantID: UUID) {
@@ -1149,10 +1169,11 @@ final class MultiplayerRoomCenter {
             return
         }
         guard alive.allSatisfy({ tftResults[$0.id] != nil }) else { return }
+        tftRoundTimeoutTask?.cancel(); tftRoundTimeoutTask = nil
         let damage = max(8, 6 + tftRound * 2)
-        for index in tftPlayers.indices where tftResults[tftPlayers[index].id] == false {
-            tftPlayers[index].health = max(0, tftPlayers[index].health - damage)
-        }
+        tftPlayers = PokemonTFTRoundSettlement.apply(players: tftPlayers,
+                                                     results: tftResults,
+                                                     damage: damage)
         tftRound += 1; tftArmies.removeAll(); tftResults.removeAll(); tftMatchup = nil
         hasSubmittedTFTArmy = false
         broadcastPokemonTFTStandings()
@@ -1881,6 +1902,7 @@ final class MultiplayerRoomCenter {
         turnTimeoutTask?.cancel(); turnTimeoutTask = nil
         pokemonQuizTask?.cancel(); pokemonQuizTask = nil
         pokemonQuizBroadcastTask?.cancel(); pokemonQuizBroadcastTask = nil
+        tftRoundTimeoutTask?.cancel(); tftRoundTimeoutTask = nil
         lobby = nil; mySnapshot = nil; snapshots.removeAll(); battle = nil; pokeathlonRace = nil
         pokemonQuizGame = nil; isPreparingPokemonQuiz = false; lastPokemonQuizInputAt = .distantPast
         tournamentState = nil; tournamentTeams.removeAll(); tournamentPools.removeAll(); tournamentBracket = nil

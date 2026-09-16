@@ -40,6 +40,30 @@ struct PokemonTFTPlayerState: Codable, Sendable, Equatable, Identifiable {
     var isEliminated: Bool { health <= 0 }
 }
 
+enum PokemonTFTRoundSettlement {
+    /// 각 클라이언트의 전투는 독립 리플레이라 같은 매치의 양쪽이 모두 패배를 보고할 수 있다.
+    /// 마지막 생존자들이 동시에 0이 되면 우승자가 영원히 정해지지 않으므로, 라운드 시작 시 체력이
+    /// 가장 높았던 참가자 한 명을 1로 남긴다. 동률은 UUID 순으로 고정해 모든 실행에서 같다.
+    static func apply(players: [PokemonTFTPlayerState], results: [UUID: Bool], damage: Int)
+        -> [PokemonTFTPlayerState] {
+        let aliveBefore = players.filter { !$0.isEliminated }
+        var updated = players
+        for index in updated.indices where results[updated[index].id] == false {
+            updated[index].health = max(0, updated[index].health - damage)
+        }
+        if !aliveBefore.isEmpty, updated.allSatisfy(\.isEliminated),
+           let survivor = aliveBefore.sorted(by: {
+               $0.health == $1.health
+                   ? $0.id.uuidString < $1.id.uuidString
+                   : $0.health > $1.health
+           }).first,
+           let index = updated.firstIndex(where: { $0.id == survivor.id }) {
+            updated[index].health = 1
+        }
+        return updated
+    }
+}
+
 struct PokemonTFTMatchup: Codable, Sendable, Equatable {
     let round: Int
     let opponentID: UUID

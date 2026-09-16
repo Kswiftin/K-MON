@@ -1,30 +1,29 @@
 import SwiftUI
 
 struct PokemonTFTView: View {
-    private enum PlayMode: String, CaseIterable { case solo = "혼자", multiplayer = "친구와" }
+    private enum PlayMode { case solo, multiplayer }
     let store: CompanionStore
     let onClose: () -> Void
     @Environment(BattleCenter.self) private var battleCenter
-    @State private var game = PokemonTFTGame()
     @State private var selectedUnit: UUID?
     @State private var battleReplay: PokemonTFTBattleReplay?
     @State private var battleFrameIndex = 0
     @State private var battleEffectProgress: CGFloat = 0
     @State private var showSynergyGuide = false
-    @State private var playMode: PlayMode = .solo
+    @State private var playMode: PlayMode?
 
     private var center: MultiplayerRoomCenter { battleCenter.multiplayer }
+    private var game: PokemonTFTGame {
+        get { battleCenter.pokemonTFTGame }
+        nonmutating set { battleCenter.pokemonTFTGame = newValue }
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             PokedoroOverlayHeader(title: "포켓몬 TFT", systemImage: "square.grid.3x3.fill",
                                   tint: .cyan, closeLabel: store.l.close, onClose: close)
-            if !center.tftStarted && center.phase == .idle {
-                Picker("모드", selection: $playMode) {
-                    ForEach(PlayMode.allCases, id: \.self) { Text($0.rawValue).tag($0) }
-                }.pickerStyle(.segmented)
-            }
-            if playMode == .multiplayer && !center.tftStarted { multiplayerEntry }
+            if playMode == nil && !center.tftStarted { modeSelection }
+            else if playMode == .multiplayer && !center.tftStarted { multiplayerEntry }
             else {
                 status
                 if center.tftStarted { multiplayerStandings }
@@ -50,6 +49,36 @@ struct PokemonTFTView: View {
         .onChange(of: center.tftPlayers) { _, players in
             if let me = players.first(where: { $0.id == center.myID }) { game.health = me.health }
         }
+        .onAppear {
+            if center.tftStarted {
+                playMode = .multiplayer
+                resumeCurrentMatchupIfNeeded()
+            }
+        }
+    }
+
+    private var modeSelection: some View {
+        VStack(spacing: 14) {
+            Spacer()
+            Text("플레이 방식을 선택하세요").font(.headline)
+            Button {
+                playMode = .solo
+            } label: {
+                Label("혼자 하기", systemImage: "person.fill")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent).tint(PokedoroTheme.blue)
+            Button {
+                playMode = .multiplayer
+            } label: {
+                Label("친구랑 하기", systemImage: "person.3.fill")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.bordered)
+            Text("혼자 하기는 즉시 이어서 시작하고, 친구랑 하기는 같은 네트워크의 방을 찾습니다.")
+                .font(.caption).foregroundStyle(.secondary).multilineTextAlignment(.center)
+            Spacer()
+        }.padding(18).pokedoroCard()
     }
 
     @ViewBuilder private var multiplayerEntry: some View {
@@ -64,8 +93,12 @@ struct PokemonTFTView: View {
 
     private var multiplayerBrowser: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("같은 네트워크의 친구 2~8명과 플레이합니다.")
-                .font(.caption).foregroundStyle(.secondary)
+            HStack {
+                Text("같은 네트워크의 친구 2~8명과 플레이합니다.")
+                    .font(.caption).foregroundStyle(.secondary)
+                Spacer()
+                Button("방식 다시 선택") { playMode = nil }.controlSize(.mini)
+            }
             Button("8인 TFT 방 만들기") { center.createPokemonTFTRoom() }
                 .buttonStyle(.borderedProminent).tint(PokedoroTheme.blue)
             Divider(); Text("참가 가능한 방").font(.caption.bold())
@@ -133,7 +166,8 @@ struct PokemonTFTView: View {
             HStack {
                 Label("라운드 \(game.round)/\(PokemonTFTGame.finalRound)", systemImage: "flag.fill")
                 Spacer(); Label("\(game.health)", systemImage: "heart.fill").foregroundStyle(.red)
-                Label("\(game.gold)", systemImage: "circle.fill").foregroundStyle(.yellow)
+                Label("보유 골드 \(game.gold)G", systemImage: "dollarsign.circle.fill")
+                    .foregroundStyle(.yellow)
             }.font(.caption.bold())
             HStack {
                 Text("Lv.\(game.level) · 배치 \(game.deployedCount)/\(game.unitLimit)")
@@ -367,6 +401,13 @@ struct PokemonTFTView: View {
 
     private func startAnimatedBattle(opponent: PokemonTFTArmy? = nil) {
         guard battleReplay == nil, game.deployedCount > 0 else { return }
+        if let matchup = center.tftMatchup {
+            guard battleCenter.pokemonTFTResolvingRound != matchup.round else { return }
+            battleCenter.pokemonTFTResolvingRound = matchup.round
+        } else {
+            guard !battleCenter.isPokemonTFTSoloBattleRunning else { return }
+            battleCenter.isPokemonTFTSoloBattleRunning = true
+        }
         selectedUnit = nil
         let replay = game.makeBattleReplay(opponent: opponent)
         battleReplay = replay
@@ -390,16 +431,22 @@ struct PokemonTFTView: View {
             if center.tftStarted {
                 game.settleMultiplayerBattle(playerWon: replay.playerWon)
                 center.reportPokemonTFTResult(won: replay.playerWon)
+                battleCenter.pokemonTFTResolvingRound = nil
             } else {
                 game.settleBattle(playerWon: replay.playerWon)
+                battleCenter.isPokemonTFTSoloBattleRunning = false
             }
             withAnimation { battleReplay = nil; battleFrameIndex = 0; battleEffectProgress = 0 }
         }
     }
 
     private func close() {
-        if center.roomActivity == .pokemonTFT { center.leaveRoom() }
         onClose()
+    }
+
+    private func resumeCurrentMatchupIfNeeded() {
+        guard let matchup = center.tftMatchup, battleReplay == nil else { return }
+        startAnimatedBattle(opponent: matchup.army)
     }
 
     private func unitTile(_ unit: PokemonTFTUnit, compact: Bool) -> some View {

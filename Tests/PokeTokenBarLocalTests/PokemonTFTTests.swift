@@ -121,4 +121,19 @@ import Testing
         #expect(game.round == PokemonTFTGame.finalRound + 1)
         #expect(game.phase == .shopping)
     }
+
+    @Test func simultaneousEliminationStillLeavesOneWinner() {
+        let firstID = UUID(uuidString: "00000000-0000-0000-0000-000000000001")!
+        let secondID = UUID(uuidString: "00000000-0000-0000-0000-000000000002")!
+        let players = [
+            PokemonTFTPlayerState(id: firstID, trainerName: "A", health: 8),
+            PokemonTFTPlayerState(id: secondID, trainerName: "B", health: 8)
+        ]
+
+        let settled = PokemonTFTRoundSettlement.apply(
+            players: players, results: [firstID: false, secondID: false], damage: 8)
+
+        #expect(settled.filter { !$0.isEliminated }.count == 1)
+        #expect(settled.first(where: { $0.id == firstID })?.health == 1)
+    }
 }
