@@ -2,6 +2,10 @@ import SwiftUI
 
 struct PokemonTFTView: View {
     private enum PlayMode { case solo, multiplayer }
+    private let arenaInk = Color(red: 0.055, green: 0.075, blue: 0.13)
+    private let arenaPanel = Color(red: 0.09, green: 0.12, blue: 0.20)
+    private let arenaBlue = Color(red: 0.20, green: 0.66, blue: 0.96)
+    private let arenaGold = Color(red: 1.00, green: 0.76, blue: 0.22)
     let store: CompanionStore
     let onClose: () -> Void
     @Environment(BattleCenter.self) private var battleCenter
@@ -38,6 +42,11 @@ struct PokemonTFTView: View {
         }
         .padding(PopoverMetrics.padding)
         .frame(height: PopoverMetrics.currentHeight(for: .battle))
+        .background(
+            LinearGradient(colors: [Color(red: 0.93, green: 0.96, blue: 1),
+                                    Color(red: 0.86, green: 0.91, blue: 0.98)],
+                           startPoint: .topLeading, endPoint: .bottomTrailing)
+        )
         .onChange(of: center.tftStarted) { _, started in
             guard started else { return }
             playMode = .multiplayer; game = PokemonTFTGame(); selectedUnit = nil
@@ -58,27 +67,44 @@ struct PokemonTFTView: View {
     }
 
     private var modeSelection: some View {
-        VStack(spacing: 14) {
+        VStack(spacing: 18) {
             Spacer()
-            Text("플레이 방식을 선택하세요").font(.headline)
-            Button {
-                playMode = .solo
-            } label: {
-                Label("혼자 하기", systemImage: "person.fill")
-                    .frame(maxWidth: .infinity)
+            ZStack {
+                Circle().fill(arenaBlue.opacity(0.16)).frame(width: 82, height: 82)
+                Image(systemName: "square.grid.3x3.fill")
+                    .font(.system(size: 38, weight: .black)).foregroundStyle(arenaBlue)
             }
-            .buttonStyle(.borderedProminent).tint(PokedoroTheme.blue)
-            Button {
-                playMode = .multiplayer
-            } label: {
-                Label("친구랑 하기", systemImage: "person.3.fill")
-                    .frame(maxWidth: .infinity)
+            VStack(spacing: 4) {
+                Text("포켓몬 TFT").font(.title2.bold()).foregroundStyle(.white)
+                Text("포켓몬을 모으고 배치해 최후의 트레이너가 되세요")
+                    .font(.caption).foregroundStyle(.white.opacity(0.68))
             }
-            .buttonStyle(.bordered)
-            Text("혼자 하기는 즉시 이어서 시작하고, 친구랑 하기는 같은 네트워크의 방을 찾습니다.")
-                .font(.caption).foregroundStyle(.secondary).multilineTextAlignment(.center)
+            HStack(spacing: 10) {
+                modeCard(title: "혼자 하기", subtitle: "바로 이어서 플레이", icon: "person.fill",
+                         tint: arenaBlue) { playMode = .solo }
+                modeCard(title: "친구랑 하기", subtitle: "LAN 2~8인 대전", icon: "person.3.fill",
+                         tint: .purple) { playMode = .multiplayer }
+            }
             Spacer()
-        }.padding(18).pokedoroCard()
+        }
+        .padding(18)
+        .background(LinearGradient(colors: [arenaPanel, arenaInk], startPoint: .top, endPoint: .bottom),
+                    in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 18).stroke(arenaBlue.opacity(0.25)))
+    }
+
+    private func modeCard(title: String, subtitle: String, icon: String, tint: Color,
+                          action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            VStack(spacing: 7) {
+                Image(systemName: icon).font(.system(size: 25, weight: .bold))
+                Text(title).font(.headline)
+                Text(subtitle).font(.caption2).foregroundStyle(.white.opacity(0.64))
+            }
+            .foregroundStyle(.white).frame(maxWidth: .infinity).padding(.vertical, 15)
+            .background(tint.opacity(0.22), in: RoundedRectangle(cornerRadius: 13))
+            .overlay(RoundedRectangle(cornerRadius: 13).stroke(tint.opacity(0.72), lineWidth: 1.5))
+        }.buttonStyle(.plain)
     }
 
     @ViewBuilder private var multiplayerEntry: some View {
@@ -162,25 +188,43 @@ struct PokemonTFTView: View {
     }
 
     private var status: some View {
-        VStack(alignment: .leading, spacing: 3) {
+        VStack(alignment: .leading, spacing: 6) {
             HStack {
-                Label("라운드 \(game.round)/\(PokemonTFTGame.finalRound)", systemImage: "flag.fill")
-                Spacer(); Label("\(game.health)", systemImage: "heart.fill").foregroundStyle(.red)
-                Label("보유 골드 \(game.gold)G", systemImage: "dollarsign.circle.fill")
-                    .foregroundStyle(.yellow)
-            }.font(.caption.bold())
+                hudChip("ROUND \(game.round)", icon: "flag.checkered", tint: arenaBlue)
+                Spacer()
+                hudChip("\(game.health)", icon: "heart.fill", tint: .red)
+                hudChip("\(game.gold)G", icon: "dollarsign.circle.fill", tint: arenaGold)
+            }
             HStack {
-                Text("Lv.\(game.level) · 배치 \(game.deployedCount)/\(game.unitLimit)")
+                Text("Lv.\(game.level)").font(.caption.bold()).foregroundStyle(.white)
+                ProgressView(value: Double(game.experience), total: Double(max(1, game.experienceNeeded)))
+                    .tint(arenaBlue).frame(width: 76)
+                Text("배치 \(game.deployedCount)/\(game.unitLimit)")
                 Spacer()
                 Button {
                     withAnimation(.easeInOut(duration: 0.2)) { showSynergyGuide.toggle() }
                 } label: {
                     Label(showSynergyGuide ? "배치판" : "시너지 도감", systemImage: "books.vertical.fill")
-                }.buttonStyle(.plain).foregroundStyle(.cyan)
-            }.font(.caption2).foregroundStyle(.secondary)
-            Text(game.synergyText()).font(.caption2).foregroundStyle(.secondary)
-            Text(game.lastBattleText).font(.caption2).lineLimit(1)
-        }.padding(8).pokedoroCard()
+                }.buttonStyle(.plain).foregroundStyle(arenaBlue)
+            }.font(.caption2).foregroundStyle(.white.opacity(0.7))
+            HStack {
+                Text(game.synergyText()).foregroundStyle(arenaBlue.opacity(0.9))
+                Spacer()
+                Text(game.lastBattleText).lineLimit(1)
+            }.font(.caption2)
+        }
+        .padding(.horizontal, 10).padding(.vertical, 8)
+        .background(LinearGradient(colors: [arenaPanel, arenaInk], startPoint: .leading, endPoint: .trailing),
+                    in: RoundedRectangle(cornerRadius: 12))
+        .overlay(RoundedRectangle(cornerRadius: 12).stroke(.white.opacity(0.09)))
+    }
+
+    private func hudChip(_ text: String, icon: String, tint: Color) -> some View {
+        Label(text, systemImage: icon)
+            .font(.caption.bold()).foregroundStyle(.white)
+            .padding(.horizontal, 8).padding(.vertical, 5)
+            .background(tint.opacity(0.22), in: Capsule())
+            .overlay(Capsule().stroke(tint.opacity(0.7)))
     }
 
     @ViewBuilder private var selectedSynergy: some View {
@@ -232,16 +276,22 @@ struct PokemonTFTView: View {
 
     private var board: some View {
         VStack(alignment: .leading, spacing: 3) {
-            Text("배치판 · 포켓몬 선택 후 칸을 누르면 이동").font(.caption2).foregroundStyle(.secondary)
+            HStack {
+                Label("배치판", systemImage: "scope").font(.caption.bold()).foregroundStyle(.white)
+                Spacer()
+                Text("선택 후 칸을 눌러 이동").font(.caption2).foregroundStyle(.white.opacity(0.55))
+            }
             LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 4),
                                      count: PokemonTFTGame.boardColumns), spacing: 4) {
                 ForEach(0..<PokemonTFTGame.boardSlots, id: \.self) { slot in
                     let unit = game.units.first { $0.boardSlot == slot }
                     Button { boardTap(slot: slot, unit: unit) } label: {
                         ZStack {
-                            RoundedRectangle(cornerRadius: 7).fill(slot < 3 ? Color.blue.opacity(0.12) : Color.green.opacity(0.10))
+                            TFTArenaCell()
+                                .fill(slot < 4 ? arenaBlue.opacity(0.15) : Color.teal.opacity(0.12))
+                            TFTArenaCell().stroke(.white.opacity(0.12), lineWidth: 1)
                             if let unit { unitTile(unit, compact: true) }
-                            else { Image(systemName: "plus").foregroundStyle(.tertiary) }
+                            else { Circle().fill(.white.opacity(0.07)).frame(width: 6, height: 6) }
                         }.frame(height: 52)
                     }.buttonStyle(.plain)
                         .accessibilityLabel(unit.map { "\(game.definition(for: $0.definitionID).name) 배치 칸" }
@@ -249,11 +299,23 @@ struct PokemonTFTView: View {
                 }
             }
         }
+        .padding(8)
+        .background {
+            ZStack {
+                LinearGradient(colors: [arenaPanel, arenaInk], startPoint: .top, endPoint: .bottom)
+                RadialGradient(colors: [arenaBlue.opacity(0.18), .clear], center: .center,
+                               startRadius: 5, endRadius: 190)
+            }.clipShape(RoundedRectangle(cornerRadius: 14))
+        }
+        .overlay(RoundedRectangle(cornerRadius: 14).stroke(arenaBlue.opacity(0.22)))
     }
 
     private var bench: some View {
         VStack(alignment: .leading, spacing: 3) {
-            Text("대기석 \(game.benchCount)/\(PokemonTFTGame.benchLimit)").font(.caption2).foregroundStyle(.secondary)
+            HStack {
+                Label("대기석", systemImage: "rectangle.stack.fill")
+                Spacer(); Text("\(game.benchCount)/\(PokemonTFTGame.benchLimit)")
+            }.font(.caption2.bold()).foregroundStyle(.white.opacity(0.7))
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 5) {
                     ForEach(game.units.filter { $0.boardSlot == nil }) { unit in
@@ -264,32 +326,69 @@ struct PokemonTFTView: View {
                     }
                 }
             }.frame(height: 62)
-        }
+        }.padding(7).background(arenaInk.opacity(0.94), in: RoundedRectangle(cornerRadius: 11))
     }
 
     private var shop: some View {
         VStack(alignment: .leading, spacing: 3) {
-            HStack { Text("상점").font(.caption.bold()); Spacer(); Button("새로고침 2G") { game.refreshShop() }.controlSize(.mini) }
+            HStack {
+                Label("상점", systemImage: "cart.fill").font(.caption.bold())
+                Text("보유 \(game.gold)G").font(.caption2.bold()).foregroundStyle(arenaGold)
+                Spacer()
+                Button { game.refreshShop() } label: { Label("2G", systemImage: "arrow.clockwise") }
+                    .controlSize(.mini).buttonStyle(.bordered).tint(arenaBlue)
+            }.foregroundStyle(.white)
             HStack(spacing: 5) {
                 ForEach(game.shop.indices, id: \.self) { index in
                     if let id = game.shop[index] {
                         let definition = game.definition(for: id)
                         Button { _ = game.buy(shopIndex: index) } label: {
-                            VStack(spacing: 0) {
-                                SpriteView(speciesID: id, size: 34, animated: false, shiny: false, back: false)
-                                Text(definition.name).font(.caption2).lineLimit(1)
-                                Text("\(definition.cost)G").font(.caption2.bold()).foregroundStyle(.yellow)
-                            }.frame(maxWidth: .infinity).padding(3).pokedoroCard()
+                            shopCard(definition)
                         }.buttonStyle(.plain).disabled(game.gold < definition.cost || game.benchCount >= PokemonTFTGame.benchLimit)
-                    } else { Color.clear.frame(maxWidth: .infinity, minHeight: 52) }
+                    } else {
+                        RoundedRectangle(cornerRadius: 9).fill(.white.opacity(0.035))
+                            .frame(maxWidth: .infinity, minHeight: 61)
+                    }
                 }
             }
+        }.padding(8).background(arenaPanel, in: RoundedRectangle(cornerRadius: 12))
+            .overlay(RoundedRectangle(cornerRadius: 12).stroke(.white.opacity(0.09)))
+    }
+
+    private func shopCard(_ definition: PokemonTFTUnitDefinition) -> some View {
+        let rarity = rarityColor(cost: definition.cost)
+        return VStack(spacing: 1) {
+            ZStack(alignment: .topTrailing) {
+                SpriteView(speciesID: definition.id, size: 35, animated: false, shiny: false, back: false)
+                    .frame(maxWidth: .infinity)
+                Circle().fill(definition.type.battleColor).frame(width: 8, height: 8)
+            }
+            Text(definition.name).font(.caption2.bold()).lineLimit(1).foregroundStyle(.white)
+            Text("\(definition.cost)G").font(.caption2.bold()).foregroundStyle(arenaGold)
+        }
+        .frame(maxWidth: .infinity).padding(4)
+        .background(LinearGradient(colors: [rarity.opacity(0.35), arenaInk],
+                                   startPoint: .top, endPoint: .bottom),
+                    in: RoundedRectangle(cornerRadius: 9))
+        .overlay(RoundedRectangle(cornerRadius: 9).stroke(rarity.opacity(0.85), lineWidth: 1))
+    }
+
+    private func rarityColor(cost: Int) -> Color {
+        switch cost {
+        case 1: .gray
+        case 2: .green
+        case 3: arenaBlue
+        case 4: .purple
+        default: arenaGold
         }
     }
 
     private var controls: some View {
         HStack {
-            Button("XP +4 · 4G") { game.buyExperience() }.disabled(game.gold < 4 || game.level >= 6)
+            Button { game.buyExperience() } label: {
+                Label("XP +4", systemImage: "bolt.fill")
+            }.disabled(game.gold < 4 || game.level >= 6)
+            Text("4G").font(.caption2.bold()).foregroundStyle(arenaGold)
             if let selectedUnit { Button("판매") { game.sell(selectedUnit); self.selectedUnit = nil } }
             Spacer()
             if center.tftStarted {
@@ -307,14 +406,14 @@ struct PokemonTFTView: View {
                 Button("자동 전투") { startAnimatedBattle() }
                     .buttonStyle(.borderedProminent).tint(PokedoroTheme.blue).disabled(game.deployedCount == 0)
             }
-        }.controlSize(.small)
+        }.controlSize(.small).padding(.horizontal, 4)
     }
 
     private var battleArena: some View {
         let frames = battleReplay?.frames ?? []
         let frame = frames.indices.contains(battleFrameIndex) ? frames[battleFrameIndex] : frames.first
         return VStack(spacing: 6) {
-            Text(frame?.message ?? "전투 준비").font(.caption.bold())
+            Text(frame?.message ?? "전투 준비").font(.caption.bold()).foregroundStyle(.white)
                 .contentTransition(.numericText())
             GeometryReader { proxy in
                 let cellWidth = proxy.size.width / CGFloat(PokemonTFTGame.combatColumns)
@@ -335,11 +434,12 @@ struct PokemonTFTView: View {
                 }
             }
             .frame(height: 330)
-            Text("가장 가까운 상대를 추적해 이동하고, 사거리 안에서 공격합니다.")
-                .font(.caption2).foregroundStyle(.secondary)
+            Text("LIVE BATTLE · 가장 가까운 상대를 추적합니다")
+                .font(.caption2.bold()).foregroundStyle(arenaBlue)
         }
         .padding(10)
-        .pokedoroCard()
+        .background(arenaInk, in: RoundedRectangle(cornerRadius: 14))
+        .overlay(RoundedRectangle(cornerRadius: 14).stroke(arenaBlue.opacity(0.35)))
         .transition(.opacity.combined(with: .scale(scale: 0.98)))
     }
 
@@ -373,7 +473,8 @@ struct PokemonTFTView: View {
                 HStack(spacing: 1) {
                     ForEach(0..<PokemonTFTGame.combatColumns, id: \.self) { _ in
                         RoundedRectangle(cornerRadius: 3)
-                            .fill(row < 3 ? Color.red.opacity(0.07) : Color.blue.opacity(0.08))
+                            .fill(row < 3 ? Color.red.opacity(0.13) : arenaBlue.opacity(0.13))
+                            .overlay(RoundedRectangle(cornerRadius: 3).stroke(.white.opacity(0.06)))
                     }
                 }
             }
@@ -454,8 +555,13 @@ struct PokemonTFTView: View {
         return VStack(spacing: 0) {
             SpriteView(speciesID: definition.id, size: compact ? 31 : 34, animated: false, shiny: false, back: false)
             Text(String(repeating: "★", count: unit.star)).font(PokedoroTheme.glyphFont(size: 8)).foregroundStyle(.yellow)
-            if !compact { Text(definition.name).font(.caption2).lineLimit(1) }
-        }.padding(2).background(selectedUnit == unit.id ? Color.cyan.opacity(0.12) : .clear).clipShape(RoundedRectangle(cornerRadius: 7))
+            if !compact { Text(definition.name).font(.caption2).foregroundStyle(.white).lineLimit(1) }
+        }
+        .padding(2)
+        .background(selectedUnit == unit.id ? arenaBlue.opacity(0.25) : Color.white.opacity(compact ? 0 : 0.06))
+        .overlay(RoundedRectangle(cornerRadius: 7).stroke(selectedUnit == unit.id ? arenaBlue : .clear,
+                                                                lineWidth: 1.5))
+        .clipShape(RoundedRectangle(cornerRadius: 7))
     }
 
     private func boardTap(slot: Int, unit: PokemonTFTUnit?) {
@@ -471,5 +577,20 @@ struct PokemonTFTView: View {
             Button("새 게임") { game = PokemonTFTGame(); selectedUnit = nil }.buttonStyle(.borderedProminent)
             Spacer()
         }.frame(maxWidth: .infinity)
+    }
+}
+
+private struct TFTArenaCell: Shape {
+    func path(in rect: CGRect) -> Path {
+        let cut = min(rect.width, rect.height) * 0.14
+        var path = Path()
+        path.move(to: CGPoint(x: cut, y: 0))
+        path.addLine(to: CGPoint(x: rect.maxX - cut, y: 0))
+        path.addLine(to: CGPoint(x: rect.maxX, y: rect.midY))
+        path.addLine(to: CGPoint(x: rect.maxX - cut, y: rect.maxY))
+        path.addLine(to: CGPoint(x: cut, y: rect.maxY))
+        path.addLine(to: CGPoint(x: 0, y: rect.midY))
+        path.closeSubpath()
+        return path
     }
 }
