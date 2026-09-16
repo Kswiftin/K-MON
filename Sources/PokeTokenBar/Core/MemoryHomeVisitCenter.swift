@@ -22,15 +22,25 @@ struct MemoryHomeProfileCard: Codable, Sendable, Equatable {
     var roomStyle: MemoryHomeRoomStyle? = nil
     var placedDecor: [MemoryHomePlacedDecor] = []
     var featuredPhoto: MemoryHomePhoto? = nil
+    /// v3 — 포코피아 마을 한 채(보내는 쪽이 지금 보고 있는 지역). **다섯 마을을 안 싣는다**:
+    /// 최악 페이로드가 `maxFrameBytes`(16,384)를 넘고, 넘은 카드는 `send` 가 조용히 연결을
+    /// 끊어 방문이 무증상으로 실패한다. 한 채는 여유가 크다(`testWorstCaseCardWithATownFitsTheFrame`).
+    var town: PokopiaTownState? = nil
+    /// `town` 이 선 지역. 받는 쪽의 `PokopiaTown.normalized(_:region:)` 이 이 값을 읽어,
+    /// 길이가 틀린 지형을 **그 지역의** 바탕으로 되돌린다. 전역 기본으로 되돌리면 해안 마을이
+    /// 풀밭이 된다. `town` 이 nil 이면 이 값도 뜻이 없다.
+    var townRegion: TownRegion? = nil
 
-    private enum CodingKeys: String, CodingKey { case displayName, speciesID, isShiny, sharedMemoryBody, profileMessage, roomTheme, showcaseFurniture, roomStyle, placedDecor, featuredPhoto }
+    private enum CodingKeys: String, CodingKey { case displayName, speciesID, isShiny, sharedMemoryBody, profileMessage, roomTheme, showcaseFurniture, roomStyle, placedDecor, featuredPhoto, town, townRegion }
     init(displayName: String, speciesID: Int, isShiny: Bool, sharedMemoryBody: String?, profileMessage: String?,
          roomTheme: PokemonMemoryRoomTheme? = nil, showcaseFurniture: [ItemKind] = [], roomStyle: MemoryHomeRoomStyle? = nil,
-         placedDecor: [MemoryHomePlacedDecor] = [], featuredPhoto: MemoryHomePhoto? = nil) {
+         placedDecor: [MemoryHomePlacedDecor] = [], featuredPhoto: MemoryHomePhoto? = nil,
+         town: PokopiaTownState? = nil, townRegion: TownRegion? = nil) {
         self.displayName = displayName; self.speciesID = speciesID; self.isShiny = isShiny
         self.sharedMemoryBody = sharedMemoryBody; self.profileMessage = profileMessage
         self.roomTheme = roomTheme; self.showcaseFurniture = showcaseFurniture
         self.roomStyle = roomStyle; self.placedDecor = placedDecor; self.featuredPhoto = featuredPhoto
+        self.town = town; self.townRegion = townRegion
     }
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -44,6 +54,12 @@ struct MemoryHomeProfileCard: Codable, Sendable, Equatable {
         roomStyle = try c.decodeIfPresent(MemoryHomeRoomStyle.self, forKey: .roomStyle)
         placedDecor = try c.decodeIfPresent([MemoryHomePlacedDecor].self, forKey: .placedDecor) ?? []
         featuredPhoto = try c.decodeIfPresent(MemoryHomePhoto.self, forKey: .featuredPhoto)
+        town = try c.decodeIfPresent(PokopiaTownState.self, forKey: .town)
+        // **모르는 지역 이름에 던지지 않는다.** 합성 디코드는 `TownRegion(rawValue:)` 가 nil 이면
+        // `dataCorrupted` 를 던지고, 그 예외 하나가 **카드 전체**를 죽여 `receiveResponse` 의
+        // `try? decode` 가 nil 이 된다 — 화면엔 "Invalid Memory Home response." 만 남는다.
+        // `PokopiaState.init(from:)` 이 같은 처방을 쓴다.
+        townRegion = (try? c.decodeIfPresent(TownRegion.self, forKey: .townRegion)).flatMap { $0 }
     }
 
     /// Shown in the visit sheet. This was inline in the view with the interpolation backslash
@@ -61,6 +77,15 @@ enum MemoryHomeVisitResponse: Codable, Sendable, Equatable {
     case rejected(protocolVersion: Int)
 }
 
+/// 방금 방문한 집의 포코피아 마을. **`MemoryHomeProfileCard` 를 그대로 들지 않는다** —
+/// 원격 마을은 받는 순간 `PokopiaTown.normalized` 를 통과해야 하고, 카드에 고친 마을을
+/// 되넣으면 "정규화 전 카드" 와 "정규화 후 카드" 두 진실이 생긴다. 정규화한 값 하나만 든다.
+struct MemoryHomeVisitedTown: Equatable, Sendable {
+    let ownerName: String
+    let region: TownRegion
+    let town: PokopiaTownState
+}
+
 struct MemoryHomePeer: Identifiable, Equatable {
     let id: String
     let displayName: String
@@ -70,7 +95,10 @@ struct MemoryHomePeer: Identifiable, Equatable {
 @MainActor @Observable
 final class MemoryHomeVisitCenter {
     nonisolated static let serviceType = "_kmonhome._tcp"
-    nonisolated static let protocolVersion = 2
+    /// v2 = 미니룸 쇼룸(`roomStyle`·`placedDecor`·`featuredPhoto`), v3 = 포코피아 마을 한 채
+    /// (`town`·`townRegion`). 구버전 피어는 자기가 말한 버전으로 카드를 받으므로 모르는 키가
+    /// 안 실린다(`profileCard(version:)`).
+    nonisolated static let protocolVersion = 3
     nonisolated static let maxFrameBytes: UInt32 = 16 * 1024
     /// 진열장·배치 상한. 가구 종류가 12개(`ItemKind.memoryHomeFurniture`)라 그 이상은 로컬에서
     /// 만들 수 없는 값이다 — 원격만 보낼 수 있으니 곧 남이 보낸 쓰레기다.
@@ -84,6 +112,10 @@ final class MemoryHomeVisitCenter {
 
     private(set) var homes: [MemoryHomePeer] = []
     private(set) var selectedProfile: MemoryHomeProfileCard?
+    /// 이웃 마을. **`stop()` 이 지우지 않는다** — 화면이 다른 창(포코피아)에 있어서, VISIT 탭을
+    /// 떠나는 것(= `stop()`)이 곧 "그만 보겠다" 가 아니기 때문이다. 지우는 것은 다음 방문
+    /// (마을을 안 보내는 집을 방문하면 nil 로 덮인다)과 `shutdown()` 둘뿐이다.
+    private(set) var visitedTown: MemoryHomeVisitedTown?
     private(set) var lastError: String?
     /// `isActive` is the visit-browser state. Hosting has a separate app-lifetime.
     private(set) var isActive = false
@@ -120,6 +152,9 @@ final class MemoryHomeVisitCenter {
         guard !isActive else { return }; isActive = true; lastError = nil
         startBrowsing()
     }
+    /// **`visitedTown` 을 안 건드린다.** 이웃 마을은 포코피아 창에 그려지므로, VISIT 탭을
+    /// 떠나는 것이 "그만 보겠다" 가 아니다 — 여기서 지우면 방문 → 포코피아 창으로 가서 보기가
+    /// 통째로 불가능해진다.
     func stop() {
         isActive = false; homes = []; selectedProfile = nil
         browser?.cancel(); browser = nil; browserRestartAttempts = 0
@@ -132,6 +167,7 @@ final class MemoryHomeVisitCenter {
     /// The feature being disabled or the app ending is the only normal host teardown path.
     func shutdown() {
         stop()
+        visitedTown = nil
         stopHosting()
         cancelConnections()
     }
@@ -324,7 +360,7 @@ final class MemoryHomeVisitCenter {
             guard let self else { return }
             switch response {
             case let .profileCard(version, card) where (1...Self.protocolVersion).contains(version) && Self.valid(card):
-                self.selectedProfile = card
+                self.acceptProfileCard(card)
                 if let homeID = self.visitHomeIDs[key] { self.companion.memoryAlbum.recordMemoryHomeVisitStamp(homeID: homeID) }
             case let .rejected(version) where (1...Self.protocolVersion).contains(version):
                 self.lastError = "This home is not accepting visits."
@@ -332,6 +368,22 @@ final class MemoryHomeVisitCenter {
             }
         }
     }
+    /// 검증을 통과한 원격 카드를 화면 상태에 앉힌다. **`internal` 인 것은 `handleBrowserState`
+    /// 와 같은 이유다** — 네트워크 콜백 클로저 안에 두면 원격 마을의 정규화·수명이 통째로
+    /// 무테스트로 남는다.
+    ///
+    /// 원격 마을은 **여기 한 곳에서** 정규화한다. 다른 데서 딴 검증을 쓰면 "한 경로에만 검사를
+    /// 두면 형제 경로가 무검사로 남는다" 부류가 된다.
+    ///
+    /// 마을을 안 보낸 집을 방문하면 `visitedTown` 을 nil 로 **덮는다** — 안 덮으면 오래된 이웃이
+    /// 남아, 화면이 방금 방문한 집의 마을을 보여 주는 것처럼 읽힌다.
+    func acceptProfileCard(_ card: MemoryHomeProfileCard) {
+        selectedProfile = card
+        guard let town = card.town, let region = card.townRegion else { visitedTown = nil; return }
+        visitedTown = MemoryHomeVisitedTown(ownerName: card.displayName, region: region,
+                                            town: PokopiaTown.normalized(town, region: region))
+    }
+
     /// Do not fall back to the trainer name: malformed/legacy payloads still get a safe album
     /// fallback, never an accidental disclosure.
     private var localDisplayName: String { companion.memoryAlbum.memoryHomePublicNickname }
@@ -378,6 +430,9 @@ final class MemoryHomeVisitCenter {
     /// 대표 기억·대표 사진이 셋 다 빈 채로 릴리스된 동안 앨범 테스트는 전부 초록불이었다.
     func profileCard(version: Int = protocolVersion) -> MemoryHomeProfileCard {
         let sharedMessage = companion.memoryAlbum.profileMessageForSharing
+        // **v2·v3 층을 통째로 건너뛴다.** 지금은 `receiveRequest` 가 `companion.state.active != nil`
+        // 을 요구해 이 경로로 카드가 나가지 않으므로 무해하다 — 그 가드를 푸는 사람은 이 조기
+        // 반환을 같이 봐야 한다(마을·쇼룸이 소리 없이 안 실리게 된다).
         guard let mon = companion.state.active else {
             return .init(displayName: localDisplayName, speciesID: 1, isShiny: false,
                          sharedMemoryBody: nil, profileMessage: sharedMessage)
@@ -388,11 +443,20 @@ final class MemoryHomeVisitCenter {
                      profileMessage: sharedMessage, roomTheme: companion.memoryAlbum.theme(for: mon.id),
                      showcaseFurniture: access.placedDecor.map(\.item))
         guard version >= 2 else { return base }
-        return .init(displayName: base.displayName, speciesID: base.speciesID, isShiny: base.isShiny,
+        let v2 = MemoryHomeProfileCard(displayName: base.displayName, speciesID: base.speciesID, isShiny: base.isShiny,
                      sharedMemoryBody: base.sharedMemoryBody, profileMessage: base.profileMessage,
                      roomTheme: base.roomTheme, showcaseFurniture: base.showcaseFurniture,
                      roomStyle: access.roomStyle, placedDecor: access.placedDecor,
                      featuredPhoto: access.featuredPhotoID.flatMap { id in access.photos.first { $0.id == id } })
+        // 마을은 `townForSharing` 파생 하나만 지난다 — `pokopia.town(...)` 을 직접 읽으면
+        // 동의 없이 새어 나간다(대문 문구와 같은 규칙).
+        guard version >= 3, let shared = companion.memoryAlbum.townForSharing else { return v2 }
+        return .init(displayName: v2.displayName, speciesID: v2.speciesID, isShiny: v2.isShiny,
+                     sharedMemoryBody: v2.sharedMemoryBody, profileMessage: v2.profileMessage,
+                     roomTheme: v2.roomTheme, showcaseFurniture: v2.showcaseFurniture,
+                     roomStyle: v2.roomStyle, placedDecor: v2.placedDecor,
+                     featuredPhoto: v2.featuredPhoto,
+                     town: shared.town, townRegion: shared.region)
     }
     /// 신뢰경계 클램프다 — `private` 로 두면 원격 페이로드 검증이 무테스트로 남는다.
     nonisolated static func valid(_ card: MemoryHomeProfileCard) -> Bool {
@@ -413,6 +477,18 @@ final class MemoryHomeVisitCenter {
                     && [photo.frame, photo.background, photo.composition, photo.trainerStyle]
                         .allSatisfy { $0.count <= Self.styleTagLimit }
             } ?? true)
+            // 마을은 **거절이 아니라 수리**다 — `PokopiaTown.normalized` 가 지형 길이·주민 중복·
+            // 인구 상한·스프라이트를 전부 고치고, `receiveResponse` 가 한 번 통과시킨다. 그 조건을
+            // 여기 베껴 적지 않는다: 베끼면 두 자리가 갈리고, 갈린 쪽으로 들어온 마을이 화면과
+            // 저장에서 다르게 보인다.
+            //
+            // 길이 상한도 안 적는다 — 프레임 상한(`maxFrameBytes`)이 사실상의 상한이고
+            // (지형 한 칸이 최소 6바이트라 2,700칸을 못 넘는다), 여기 또 적으면 상한이 두 개가
+            // 되어 프레임을 키우는 날 한쪽만 바뀐다.
+            //
+            // 여기서 보는 것은 **정규화가 고칠 수 없는 것 하나**다: 지역 없이 온 마을.
+            // `normalized(_:region:)` 은 지역을 인자로 요구하므로, 지역이 없으면 그릴 바탕을 모른다.
+            && (card.town == nil) == (card.townRegion == nil)
     }
     nonisolated static func clean(_ value: String, limit: Int) -> String? {
         let value = value.trimmingCharacters(in: .whitespacesAndNewlines)

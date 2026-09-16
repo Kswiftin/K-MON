@@ -211,6 +211,142 @@ final class MemoryHomeVisitProtocolTests: XCTestCase {
                        "cancel 로 끝난 연결이 회수되지 않았다 — 거절·프레임 오류도 같은 경로로 샌다")
     }
 
+
+    // MARK: - v3 포코피아 마을 (8단계)
+
+    /// 마을을 그릴 수 있는 종만 쓴다 — 번호를 손으로 적으면 스프라이트 구멍에 걸린 테스트가
+    /// "정규화가 잘랐다" 처럼 보인다(`PokopiaRegionTests.drawableSpeciesIDs` 와 같은 헬퍼).
+    private func drawableSpeciesIDs(_ count: Int) -> [Int] {
+        var ids: [Int] = []
+        var candidate = 1
+        while ids.count < count && candidate < 2_000 {
+            if PokemonAssets.hasAnimatedSprite(speciesID: candidate) { ids.append(candidate) }
+            candidate += 1
+        }
+        XCTAssertEqual(ids.count, count, "그릴 수 있는 종이 \(count)개가 안 된다")
+        return ids
+    }
+
+    private func town(residents: [TownResident] = [], terrain: TownTerrain? = nil) -> PokopiaTownState {
+        var town = PokopiaTownState(region: .coast, residents: residents)
+        if let terrain { town.terrain = Array(repeating: terrain, count: PokopiaTown.tileCount) }
+        return town
+    }
+
+    /// v2 피어가 요청하면 **마을이 안 실린다.** `receiveRequest` 는 상대가 말한 버전을 그대로
+    /// 넘기므로(`profileRequest(version:)`), 여기서 `Self.protocolVersion` 을 넘기도록 고치면
+    /// 구버전 피어가 모르는 키를 받는다.
+    func testV2PeerDoesNotReceiveATown() async throws {
+        let store = CompanionStore(fileURL: storeStateURL("v3-gate"))
+        await store.hatch(baseID: 1)
+        store.memoryAlbum.setSharesTown(true)
+        let center = MemoryHomeVisitCenter(companion: store, peerID: UUID())
+
+        let v2 = center.profileCard(version: 2)
+        XCTAssertNil(v2.town, "v2 피어에게 마을이 실려 나갔다")
+        XCTAssertNil(v2.townRegion, "v2 피어에게 지역이 실려 나갔다")
+
+        let v3 = center.profileCard(version: 3)
+        XCTAssertNotNil(v3.town, "공유를 켰는데 v3 카드에 마을이 없다")
+        XCTAssertEqual(v3.townRegion, store.memoryAlbum.pokopia.home, "카드의 지역이 보고 있는 지역과 다르다")
+    }
+
+    /// 공유를 안 켜면 v3 로 물어도 안 나간다 — 카드는 `townForSharing` 파생 하나만 지난다.
+    func testV3CardOmitsTheTownUntilSharingIsOn() async throws {
+        let store = CompanionStore(fileURL: storeStateURL("v3-consent"))
+        await store.hatch(baseID: 1)
+        let center = MemoryHomeVisitCenter(companion: store, peerID: UUID())
+
+        XCTAssertNil(center.profileCard(version: 3).town, "동의 없이 마을이 나갔다")
+        store.memoryAlbum.setSharesTown(true)
+        XCTAssertNotNil(center.profileCard(version: 3).town, "동의를 켰는데 마을이 안 나간다")
+        store.memoryAlbum.setSharesTown(false)
+        XCTAssertNil(center.profileCard(version: 3).town, "동의를 껐는데도 마을이 계속 나간다")
+    }
+
+    /// 마을이 전선을 왕복한다. 필드를 더할 때 고쳐야 할 네 자리(필드·`CodingKeys`·`init(from:)`·
+    /// 편의 `init`) 중 하나라도 빠지면 컴파일은 되고 값만 안 실린다 — 그것을 여기가 잡는다.
+    func testV3CardRoundTripsTheTown() throws {
+        let ids = drawableSpeciesIDs(2)
+        let residents = ids.map { TownResident(speciesID: $0, name: "이웃\($0)", types: [.water],
+                                               arrivedAt: Date(timeIntervalSince1970: 1_700_000_000)) }
+        let sent = card {
+            $0.town = self.town(residents: residents)
+            $0.townRegion = .coast
+        }
+        let decoded = try JSONDecoder().decode(MemoryHomeProfileCard.self,
+                                               from: JSONEncoder().encode(sent))
+        XCTAssertEqual(decoded.town, sent.town, "마을이 왕복에서 달라졌다")
+        XCTAssertEqual(decoded.townRegion, .coast, "지역이 왕복에서 달라졌다")
+    }
+
+    /// v3 이전 피어의 페이로드. `town` 키가 없어도 카드가 그대로 디코드되고 통과해야 한다.
+    func testPreV3CardPayloadStillDecodes() throws {
+        let legacy = #"{"displayName":"MemoryHome","speciesID":25,"isShiny":false}"#
+        let card = try JSONDecoder().decode(MemoryHomeProfileCard.self, from: Data(legacy.utf8))
+        XCTAssertNil(card.town)
+        XCTAssertNil(card.townRegion)
+        XCTAssertTrue(MemoryHomeVisitCenter.valid(card), "마을 없는 구버전 카드가 거부됐다")
+    }
+
+    /// **모르는 지역 이름이 카드 전체를 죽이면 안 된다.** 합성 디코드는 `TownRegion(rawValue:)`
+    /// 가 nil 이면 `dataCorrupted` 를 던지고, `receiveResponse` 의 `try? decode` 가 nil 이 되어
+    /// 화면엔 "Invalid Memory Home response." 만 남는다 — 미니룸까지 통째로 사라진다.
+    func testUnknownTownRegionDoesNotKillTheWholeCard() throws {
+        let payload = #"{"displayName":"MemoryHome","speciesID":25,"isShiny":false,"townRegion":"volcano"}"#
+        let card = try JSONDecoder().decode(MemoryHomeProfileCard.self, from: Data(payload.utf8))
+        XCTAssertEqual(card.displayName, "MemoryHome", "모르는 지역 하나가 카드 전체를 죽였다")
+        XCTAssertNil(card.townRegion, "모르는 지역이 지역으로 살아남았다")
+    }
+
+    /// 지역 없는 마을은 그릴 바탕을 모른다 — `normalized(_:region:)` 이 지역을 요구한다.
+    /// **양방향**으로 막는다: 지역만 오고 마을이 없는 것도 앞뒤가 안 맞는 카드다.
+    func testValidRejectsATownWithoutItsRegion() {
+        XCTAssertTrue(MemoryHomeVisitCenter.valid(card()), "마을이 둘 다 없는 카드가 거부됐다")
+        XCTAssertTrue(MemoryHomeVisitCenter.valid(card {
+            $0.town = self.town(); $0.townRegion = .coast
+        }), "마을과 지역이 다 있는 카드가 거부됐다")
+        XCTAssertFalse(MemoryHomeVisitCenter.valid(card { $0.town = self.town() }),
+                       "지역 없는 마을이 통과했다")
+        XCTAssertFalse(MemoryHomeVisitCenter.valid(card { $0.townRegion = .coast }),
+                       "마을 없는 지역이 통과했다")
+    }
+
+    /// **프레임 예산.** 상한을 넘은 카드는 오류를 내지 않는다 — `send` 가 조용히
+    /// `connection.cancel()` 하고 방문자 쪽은 응답 없이 끝난다. 격자·주민 상한·카드 필드를
+    /// 키우는 사람이 방문 기능을 무증상으로 끄지 못하게 여기가 숫자를 못 박는다.
+    func testWorstCaseCardWithATownFitsTheFrame() throws {
+        let furniture = Array(ItemKind.memoryHomeFurniture)
+        XCTAssertEqual(furniture.count, MemoryHomeVisitCenter.maxShowcaseItems,
+                       "가구 종수가 진열 상한과 달라 최악 카드가 최악이 아니다")
+        let decor = furniture.map {
+            MemoryHomePlacedDecor(item: $0, position: MemoryHomeRoomPosition(x: 1, y: 1))
+        }
+        let photo = MemoryHomePhoto(speciesID: 10_000, isShiny: true,
+                                    caption: String(repeating: "가", count: 60),
+                                    frame: String(repeating: "a", count: MemoryHomeVisitCenter.styleTagLimit),
+                                    background: String(repeating: "a", count: MemoryHomeVisitCenter.styleTagLimit),
+                                    composition: String(repeating: "a", count: MemoryHomeVisitCenter.styleTagLimit),
+                                    trainerStyle: String(repeating: "a", count: MemoryHomeVisitCenter.styleTagLimit))
+        // 가장 긴 rawValue 를 가진 지형으로 192칸을 채운다 — 어느 지형이 가장 긴지 손으로
+        // 적지 않는다(지형을 더하는 사람이 여기를 같이 고쳐야 하는 자리를 만들지 않는다).
+        let longest = try XCTUnwrap(TownTerrain.allCases.max { $0.rawValue.count < $1.rawValue.count })
+        let residents = drawableSpeciesIDs(PokopiaTown.populationLimit).map {
+            TownResident(speciesID: $0, name: String(repeating: "가", count: 7),
+                         types: [.water, .ice], arrivedAt: Date(timeIntervalSince1970: 1_700_000_000))
+        }
+        let card = MemoryHomeProfileCard(
+            displayName: String(repeating: "가", count: 40), speciesID: 10_000, isShiny: true,
+            sharedMemoryBody: String(repeating: "가", count: 280),
+            profileMessage: String(repeating: "가", count: MemoryHomeAccessSettings.profileMessageLimit),
+            roomTheme: .blue, showcaseFurniture: furniture, roomStyle: .retro,
+            placedDecor: decor, featuredPhoto: photo,
+            town: town(residents: residents, terrain: longest), townRegion: .coast)
+
+        let bytes = try JSONEncoder().encode(card).count
+        XCTAssertLessThan(bytes, Int(MemoryHomeVisitCenter.maxFrameBytes),
+                          "최악 카드가 프레임 상한을 넘는다 — 넘은 카드는 오류 없이 연결이 끊겨 방문이 무증상으로 실패한다 (\(bytes) B)")
+    }
 }
 
 /// Bonjour 광고 이름의 고유성. `BattleNet`·`PokemonTrade`·`MultiplayerRoomCenter` 는 셋 다
