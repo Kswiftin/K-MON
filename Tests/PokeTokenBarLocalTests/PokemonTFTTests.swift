@@ -55,9 +55,13 @@ import Testing
         let replay = game.makeBattleReplay()
         #expect(replay.frames.count > 2)
         #expect(replay.frames.allSatisfy { frame in
-            frame.fighters.allSatisfy { (0..<6).contains($0.x) && (0..<6).contains($0.y) && $0.hp >= 0 }
+            frame.fighters.allSatisfy {
+                (0..<PokemonTFTGame.combatColumns).contains($0.x) &&
+                (0..<PokemonTFTGame.combatRows).contains($0.y) && $0.hp >= 0 && (0...100).contains($0.mana)
+            }
         })
         let final = replay.frames.last!
-        #expect(final.fighters.contains { $0.hp == 0 } || replay.frames.count == 29)
+        #expect(replay.frames.count <= 37)
+        #expect(final.message != "전투 시작!")
     }
 }

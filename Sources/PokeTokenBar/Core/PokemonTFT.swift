@@ -36,6 +36,8 @@ struct PokemonTFTFighter: Identifiable, Sendable, Equatable {
     let attack: Int
     let defense: Int
     let attackRange: Int
+    let speed: Int
+    var mana: Int
 }
 
 struct PokemonTFTBattleFrame: Sendable, Equatable {
@@ -53,7 +55,11 @@ struct PokemonTFTBattleReplay: Sendable {
 struct PokemonTFTGame: Sendable {
     enum Phase: Sendable, Equatable { case shopping, finished(won: Bool) }
 
-    static let boardSlots = 9
+    static let boardColumns = 4
+    static let boardRows = 3
+    static let boardSlots = boardColumns * boardRows
+    static let combatColumns = 8
+    static let combatRows = 6
     static let benchLimit = 8
     static let finalRound = 12
     private static let rangedTypes: Set<PokemonType> = [.fire, .water, .grass, .electric, .psychic, .ghost, .dragon]
@@ -185,7 +191,7 @@ struct PokemonTFTGame: Sendable {
         refreshShop(free: true)
     }
 
-    /// 6×6 격자에서 가장 가까운 적을 찾아 이동하고 사거리 안이면 공격하는 전투 리플레이.
+    /// 8×6 격자에서 가장 가까운 적을 찾아 이동하고 사거리 안이면 공격하는 전투 리플레이.
     /// pokemonAutoChess의 보드/상태 머신 개념을 참고했지만 Swift로 독립 구현했다.
     func makeBattleReplay() -> PokemonTFTBattleReplay {
         var fighters: [PokemonTFTFighter] = units.filter { $0.boardSlot != nil }.map { unit in
@@ -193,34 +199,61 @@ struct PokemonTFTGame: Sendable {
             let slot = unit.boardSlot ?? 0
             let multiplier = pow(1.65, Double(unit.star - 1))
             let hp = Int(Double(definition.health) * multiplier)
+            let typeCount = units.filter { candidate in
+                candidate.boardSlot != nil && self.definition(for: candidate.definitionID).type == definition.type
+            }.count
+            let synergy = typeCount >= 4 ? 1.25 : typeCount >= 2 ? 1.10 : 1
             return PokemonTFTFighter(id: unit.id, speciesID: definition.id, name: definition.name,
-                team: .player, x: (slot % 3) * 2, y: 5 - slot / 3,
-                maxHP: hp, hp: hp, attack: Int(Double(definition.attack) * multiplier),
-                defense: max(4, definition.health / 14),
-                attackRange: Self.rangedTypes.contains(definition.type) ? 2 : 1)
+                team: .player, x: (slot % Self.boardColumns) * 2, y: 5 - slot / Self.boardColumns,
+                maxHP: Int(Double(hp) * synergy), hp: Int(Double(hp) * synergy),
+                attack: Int(Double(definition.attack) * multiplier * synergy),
+                defense: max(4, definition.health / 12),
+                attackRange: Self.rangedTypes.contains(definition.type) ? 2 : 1,
+                speed: 45 + definition.attack / 4, mana: 0)
         }
         let enemyScale = 1.0 + Double(round - 1) * 0.10
         fighters += enemyPreview.enumerated().map { index, definition in
             let hp = Int(Double(definition.health) * enemyScale)
             return PokemonTFTFighter(id: UUID(), speciesID: definition.id, name: definition.name,
-                team: .enemy, x: (index % 3) * 2 + 1, y: index / 3,
+                team: .enemy, x: (index % 4) * 2, y: index / 4,
                 maxHP: hp, hp: hp, attack: Int(Double(definition.attack) * enemyScale),
-                defense: max(4, Int(Double(definition.health / 14) * enemyScale)),
-                attackRange: Self.rangedTypes.contains(definition.type) ? 2 : 1)
+                defense: max(4, Int(Double(definition.health / 12) * enemyScale)),
+                attackRange: Self.rangedTypes.contains(definition.type) ? 2 : 1,
+                speed: 45 + definition.attack / 4, mana: 0)
         }
         var frames = [PokemonTFTBattleFrame(fighters: fighters, message: "전투 시작!")]
-        for _ in 0..<28 {
+        for tick in 0..<36 {
             var firstMessage: String?
-            for actorID in fighters.filter({ $0.hp > 0 }).map(\.id) {
+            let turnOrder = fighters.filter { $0.hp > 0 }
+                .sorted { $0.speed > $1.speed }.map(\.id)
+            for (turn, actorID) in turnOrder.enumerated() {
                 guard let actorIndex = fighters.firstIndex(where: { $0.id == actorID && $0.hp > 0 }) else { continue }
                 let enemies = fighters.indices.filter { fighters[$0].team != fighters[actorIndex].team && fighters[$0].hp > 0 }
                 guard let targetIndex = enemies.min(by: {
                     Self.distance(fighters[actorIndex], fighters[$0]) < Self.distance(fighters[actorIndex], fighters[$1])
                 }) else { break }
                 if Self.distance(fighters[actorIndex], fighters[targetIndex]) <= fighters[actorIndex].attackRange {
-                    let damage = max(1, fighters[actorIndex].attack - fighters[targetIndex].defense)
+                    let usesSkill = fighters[actorIndex].mana >= 100
+                    let critical = !usesSkill && ((tick * 17 + turn * 31 + fighters[actorIndex].speciesID) % 10 == 0)
+                    let rawDamage = Double(fighters[actorIndex].attack) * (usesSkill ? 1.65 : critical ? 2 : 1)
+                    let damage = max(1, Int(rawDamage / (1 + Double(fighters[targetIndex].defense) * 0.05)))
                     fighters[targetIndex].hp = max(0, fighters[targetIndex].hp - damage)
-                    firstMessage = firstMessage ?? "\(fighters[actorIndex].name)의 공격!"
+                    if usesSkill {
+                        fighters[actorIndex].mana = 0
+                        // 간단한 범위기: 대상과 인접한 적에게 절반 피해.
+                        let splashTargets = fighters.indices.filter {
+                            $0 != targetIndex && fighters[$0].team != fighters[actorIndex].team &&
+                            fighters[$0].hp > 0 && Self.distance(fighters[$0], fighters[targetIndex]) <= 1
+                        }
+                        for splash in splashTargets {
+                            fighters[splash].hp = max(0, fighters[splash].hp - damage / 2)
+                        }
+                        firstMessage = firstMessage ?? "\(fighters[actorIndex].name)의 스킬!"
+                    } else {
+                        fighters[actorIndex].mana = min(100, fighters[actorIndex].mana + 5)
+                        fighters[targetIndex].mana = min(100, fighters[targetIndex].mana + 8)
+                        firstMessage = firstMessage ?? "\(fighters[actorIndex].name)의 \(critical ? "급소 공격" : "공격")!"
+                    }
                 } else {
                     let occupied = Set(fighters.filter { $0.hp > 0 && $0.id != actorID }.map { "\($0.x),\($0.y)" })
                     let dx = fighters[targetIndex].x == fighters[actorIndex].x ? 0 : (fighters[targetIndex].x > fighters[actorIndex].x ? 1 : -1)
@@ -228,7 +261,9 @@ struct PokemonTFTGame: Sendable {
                     let candidates = [(fighters[actorIndex].x + dx, fighters[actorIndex].y),
                                       (fighters[actorIndex].x, fighters[actorIndex].y + dy)]
                     if let next = candidates.first(where: {
-                        (0..<6).contains($0.0) && (0..<6).contains($0.1) && !occupied.contains("\($0.0),\($0.1)")
+                        (0..<Self.combatColumns).contains($0.0) &&
+                        (0..<Self.combatRows).contains($0.1) &&
+                        !occupied.contains("\($0.0),\($0.1)")
                     }) {
                         fighters[actorIndex].x = next.0
                         fighters[actorIndex].y = next.1
@@ -254,25 +289,6 @@ struct PokemonTFTGame: Sendable {
         }.mapValues(\.count)
         let active = counts.filter { $0.value >= 2 }.sorted { $0.key.rawValue < $1.key.rawValue }
         return active.isEmpty ? "활성 시너지 없음" : active.map { "\($0.key.rawValue) \($0.value)" }.joined(separator: " · ")
-    }
-
-    private func combatPower(of deployed: [PokemonTFTUnit]) -> Double {
-        let typeCounts = Dictionary(grouping: deployed) { definition(for: $0.definitionID).type }.mapValues(\.count)
-        let synergy = typeCounts.values.reduce(0.0) { value, count in
-            value + (count >= 4 ? 0.25 : count >= 2 ? 0.10 : 0)
-        }
-        return deployed.reduce(0) { total, unit in
-            let definition = definition(for: unit.definitionID)
-            let stars = pow(1.65, Double(unit.star - 1))
-            let rowBonus = (unit.boardSlot ?? 0) >= 6 ? Double(definition.attack) * 0.08 : Double(definition.health) * 0.04
-            return total + (Double(definition.attack) + Double(definition.health) / 3 + rowBonus) * stars
-        } * (1 + synergy)
-    }
-
-    private func enemyPower(round: Int) -> Double {
-        let count = min(2 + round / 2, 6)
-        let base = 105.0 + Double(round * 24)
-        return Double(count) * base * (round.isMultiple(of: 4) ? 1.14 : 1)
     }
 
     private static func distance(_ lhs: PokemonTFTFighter, _ rhs: PokemonTFTFighter) -> Int {

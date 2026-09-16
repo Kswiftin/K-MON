@@ -42,7 +42,8 @@ struct PokemonTFTView: View {
     private var board: some View {
         VStack(alignment: .leading, spacing: 3) {
             Text("배치판 · 포켓몬 선택 후 칸을 누르면 이동").font(.caption2).foregroundStyle(.secondary)
-            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 4), count: 3), spacing: 4) {
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 4),
+                                     count: PokemonTFTGame.boardColumns), spacing: 4) {
                 ForEach(0..<PokemonTFTGame.boardSlots, id: \.self) { slot in
                     let unit = game.units.first { $0.boardSlot == slot }
                     Button { boardTap(slot: slot, unit: unit) } label: {
@@ -110,8 +111,8 @@ struct PokemonTFTView: View {
             Text(frame?.message ?? "전투 준비").font(.caption.bold())
                 .contentTransition(.numericText())
             GeometryReader { proxy in
-                let cellWidth = proxy.size.width / 6
-                let cellHeight = proxy.size.height / 6
+                let cellWidth = proxy.size.width / CGFloat(PokemonTFTGame.combatColumns)
+                let cellHeight = proxy.size.height / CGFloat(PokemonTFTGame.combatRows)
                 ZStack(alignment: .topLeading) {
                     battleGrid
                     ForEach(frame?.fighters ?? []) { fighter in
@@ -135,9 +136,9 @@ struct PokemonTFTView: View {
 
     private var battleGrid: some View {
         VStack(spacing: 1) {
-            ForEach(0..<6, id: \.self) { row in
+            ForEach(0..<PokemonTFTGame.combatRows, id: \.self) { row in
                 HStack(spacing: 1) {
-                    ForEach(0..<6, id: \.self) { _ in
+                    ForEach(0..<PokemonTFTGame.combatColumns, id: \.self) { _ in
                         RoundedRectangle(cornerRadius: 3)
                             .fill(row < 3 ? Color.red.opacity(0.07) : Color.blue.opacity(0.08))
                     }
