@@ -236,6 +236,37 @@ import Testing
         #expect(enemies.first(where: { $0.speciesID == 25 })?.maxHP ?? 0 > 88)
     }
 
+    @Test func multiplayerReplayLetsBothTeamsAttack() {
+        var game = PokemonTFTGame(seed: 61)
+        game.units = [PokemonTFTUnit(definitionID: 7, boardSlot: 0)]
+        let opponent = PokemonTFTArmy(units: [
+            PokemonTFTArmyUnit(definitionID: 7, star: 1, boardSlot: 0)
+        ])
+
+        let replay = game.makeBattleReplay(opponent: opponent)
+        let attackTeams = replay.frames.compactMap { frame -> PokemonTFTFighter.Team? in
+            guard let action = frame.action, action.kind != .move else { return nil }
+            return frame.fighters.first(where: { $0.id == action.sourceID })?.team
+        }
+
+        #expect(attackTeams.contains(.player))
+        #expect(attackTeams.contains(.enemy))
+    }
+
+    @Test func multiplayerOpponentReceivesItsOwnSynergyBonus() {
+        var game = PokemonTFTGame(seed: 62)
+        game.units = [PokemonTFTUnit(definitionID: 7, boardSlot: 0)]
+        let opponent = PokemonTFTArmy(units: [
+            PokemonTFTArmyUnit(definitionID: 81, star: 1, boardSlot: 0),
+            PokemonTFTArmyUnit(definitionID: 100, star: 1, boardSlot: 1)
+        ])
+
+        let replay = game.makeBattleReplay(opponent: opponent)
+        let coil = replay.frames[0].fighters.first { $0.team == .enemy && $0.speciesID == 81 }
+
+        #expect(coil?.maxHP == 118) // 기본 108 × 전기 2시너지 1.1
+    }
+
     @Test func tftLobbyAcceptsEightPlayersAndCanStart() throws {
         func player(_ number: Int) -> LobbyParticipant {
             LobbyParticipant(id: UUID(), trainerName: "P\(number)", speciesID: 25,

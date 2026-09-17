@@ -584,12 +584,13 @@ struct PokemonTFTGame: Sendable {
     /// 8×6 격자에서 가장 가까운 적을 찾아 이동하고 사거리 안이면 공격하는 전투 리플레이.
     /// pokemonAutoChess의 보드/상태 머신 개념을 참고했지만 Swift로 독립 구현했다.
     func makeBattleReplay(opponent: PokemonTFTArmy? = nil) -> PokemonTFTBattleReplay {
+        let playerArmy = armySnapshot
         var fighters: [PokemonTFTFighter] = units.filter { $0.boardSlot != nil }.map { unit in
             let definition = definition(for: unit.definitionID)
             let slot = unit.boardSlot ?? 0
             let multiplier = pow(1.65, Double(unit.star - 1))
             let hp = Int(Double(definition.health) * multiplier)
-            let synergy = synergyMultiplier(for: definition)
+            let synergy = synergyMultiplier(for: definition, in: playerArmy)
             return PokemonTFTFighter(id: unit.id, speciesID: definition.id, name: definition.name,
                 type: definition.type, team: .player,
                 x: (slot % Self.boardColumns) * 2, y: 5 - slot / Self.boardColumns,
@@ -607,11 +608,16 @@ struct PokemonTFTGame: Sendable {
         fighters += enemyUnits.enumerated().map { index, entry in
             let (definition, star, slot) = entry
             let starScale = pow(1.65, Double(max(0, star - 1)))
-            let hp = Int(Double(definition.health) * enemyScale * starScale)
+            let enemyArmy = opponent ?? PokemonTFTArmy(units: enemyUnits.map {
+                PokemonTFTArmyUnit(definitionID: $0.0.id, star: $0.1, boardSlot: $0.2)
+            })
+            let synergy = synergyMultiplier(for: definition, in: enemyArmy)
+            let hp = Int(Double(definition.health) * enemyScale * starScale * synergy)
             return PokemonTFTFighter(id: UUID(), speciesID: definition.id, name: definition.name,
                 type: definition.type, team: .enemy,
                 x: (slot % Self.boardColumns) * 2, y: min(2, slot / Self.boardColumns),
-                maxHP: hp, hp: hp, attack: Int(Double(definition.attack) * enemyScale * starScale),
+                maxHP: hp, hp: hp,
+                attack: Int(Double(definition.attack) * enemyScale * starScale * synergy),
                 defense: max(4, Int(Double(definition.health / 12) * enemyScale)),
                 attackRange: Self.rangedTypes.contains(definition.type) ? 2 : 1,
                 speed: 45 + definition.attack / 4, mana: 80)
@@ -619,8 +625,9 @@ struct PokemonTFTGame: Sendable {
         var frames = [PokemonTFTBattleFrame(fighters: fighters, message: "전투 준비…", action: nil),
                       PokemonTFTBattleFrame(fighters: fighters, message: "전투 시작!", action: nil)]
         for tick in 0..<36 {
-            let turnOrder = fighters.filter { $0.hp > 0 }
-                .sorted { $0.speed > $1.speed }.map(\.id)
+            // 같은 속도에서 배열 앞쪽(항상 내 진영)만 연속 행동하면 첫 공격으로 상대를 지워
+            // 한쪽이 한 번도 공격하지 않는 것처럼 보인다. 동률은 양 진영을 번갈아 배치한다.
+            let turnOrder = Self.interleavedTurnOrder(fighters: fighters, tick: tick)
             for (turn, actorID) in turnOrder.enumerated() {
                 guard let actorIndex = fighters.firstIndex(where: { $0.id == actorID && $0.hp > 0 }) else { continue }
                 let enemies = fighters.indices.filter { fighters[$0].team != fighters[actorIndex].team && fighters[$0].hp > 0 }
@@ -687,16 +694,48 @@ struct PokemonTFTGame: Sendable {
             : activeSynergies.map { "\($0.type.rawValue) \($0.deployed)" }.joined(separator: " · ")
     }
 
-    private func synergyMultiplier(for definition: PokemonTFTUnitDefinition) -> Double {
+    private func synergyMultiplier(for definition: PokemonTFTUnitDefinition,
+                                   in army: PokemonTFTArmy) -> Double {
         let supportedTypes = Set(Self.shopCatalog.map(\.type))
         let bonus = definition.types.filter { supportedTypes.contains($0) }.reduce(0.0) { total, type in
-            let count = synergyInfo(for: type).deployed
+            let count = Set(army.units.compactMap { unit -> Int? in
+                guard Self.catalog.first(where: { $0.id == unit.definitionID })?.types.contains(type) == true
+                else { return nil }
+                return Self.familyRoot(for: unit.definitionID)
+            }).count
             if count >= 6 { return total + 0.45 }
             if count >= 4 { return total + 0.25 }
             if count >= 2 { return total + 0.10 }
             return total
         }
         return 1 + bonus
+    }
+
+    private static func interleavedTurnOrder(fighters: [PokemonTFTFighter], tick: Int) -> [UUID] {
+        func ordered(_ team: PokemonTFTFighter.Team) -> [PokemonTFTFighter] {
+            fighters.filter { $0.hp > 0 && $0.team == team }.sorted {
+                if $0.speed != $1.speed { return $0.speed > $1.speed }
+                if $0.speciesID != $1.speciesID { return $0.speciesID < $1.speciesID }
+                if $0.y != $1.y { return $0.y < $1.y }
+                return $0.x < $1.x
+            }
+        }
+        var player = ordered(.player)
+        var enemy = ordered(.enemy)
+        var result: [UUID] = []
+        var preferPlayer = tick.isMultiple(of: 2)
+        while !player.isEmpty || !enemy.isEmpty {
+            let playerSpeed = player.first?.speed ?? Int.min
+            let enemySpeed = enemy.first?.speed ?? Int.min
+            if !player.isEmpty, enemy.isEmpty || playerSpeed > enemySpeed || (playerSpeed == enemySpeed && preferPlayer) {
+                result.append(player.removeFirst().id)
+                preferPlayer = false
+            } else if !enemy.isEmpty {
+                result.append(enemy.removeFirst().id)
+                preferPlayer = true
+            }
+        }
+        return result
     }
 
     private static func distance(_ lhs: PokemonTFTFighter, _ rhs: PokemonTFTFighter) -> Int {
