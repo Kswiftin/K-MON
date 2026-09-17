@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 struct PokemonTFTView: View {
@@ -14,7 +15,6 @@ struct PokemonTFTView: View {
     @State private var battleFrameIndex = 0
     @State private var battleEffectProgress: CGFloat = 0
     @State private var showSynergyGuide = false
-    @State private var showBeginnerGuide = false
     @State private var playMode: PlayMode?
     @State private var planningSeconds = PokemonTFTGame.planningDuration
 
@@ -243,16 +243,11 @@ struct PokemonTFTView: View {
                 Text("배치 \(game.deployedCount)/\(game.unitLimit)")
                 Spacer()
                 Button {
-                    showBeginnerGuide.toggle()
+                    TFTBeginnerGuidePanel.shared.showBesideGame()
                 } label: {
                     Label("가이드", systemImage: "questionmark.circle.fill")
                 }
                 .buttonStyle(.plain).foregroundStyle(.mint).disabled(battleReplay != nil)
-                .popover(isPresented: $showBeginnerGuide, arrowEdge: .trailing) {
-                    beginnerGuide
-                        .frame(width: 300, height: 390)
-                        .padding(14)
-                }
                 Button {
                     withAnimation(.easeInOut(duration: 0.2)) { showSynergyGuide.toggle() }
                 } label: {
@@ -352,36 +347,6 @@ struct PokemonTFTView: View {
             Button("배치판으로 돌아가기") { withAnimation { showSynergyGuide = false } }
                 .buttonStyle(.borderedProminent).tint(PokedoroTheme.blue).frame(maxWidth: .infinity)
         }.transition(.opacity)
-    }
-
-    private var beginnerGuide: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                Label("처음 하는 트레이너 가이드", systemImage: "graduationcap.fill").font(.headline)
-                Spacer()
-                Button("닫기") { withAnimation { showBeginnerGuide = false } }
-            }
-            Divider()
-            ScrollView {
-                VStack(alignment: .leading, spacing: 11) {
-                    guideRow("1", "상점에서 포켓몬을 사고 대기석에 모으세요. 새로고침은 2G입니다.")
-                    guideRow("2", "같은 포켓몬 3마리를 모으면 2성이 되며 다음 진화체로 진화합니다.")
-                    guideRow("3", "필드에는 레벨만큼 배치할 수 있습니다. 같은 타입 2·4·6마리로 시너지가 강화됩니다.")
-                    guideRow("4", "매 라운드 자동으로 2 XP를 받고, 4G를 쓰면 XP 4를 추가로 살 수 있습니다.")
-                    guideRow("5", "승패와 무관하게 기본 수입과 이자를 받으며 연승·연패 보너스도 쌓입니다.")
-                    guideRow("6", "멀티에서는 배치를 확정하면 상대가 정해집니다. 체력이 0이 되면 탈락합니다.")
-                }
-            }
-        }
-        .padding(12).pokedoroCard()
-    }
-
-    private func guideRow(_ number: String, _ text: String) -> some View {
-        HStack(alignment: .top, spacing: 8) {
-            Text(number).font(.caption.bold()).foregroundStyle(.white)
-                .frame(width: 22, height: 22).background(arenaBlue, in: Circle())
-            Text(text).font(.caption).fixedSize(horizontal: false, vertical: true)
-        }
     }
 
     private var board: some View {
@@ -693,6 +658,7 @@ struct PokemonTFTView: View {
     }
 
     private func close() {
+        TFTBeginnerGuidePanel.shared.close()
         onClose()
     }
 
@@ -788,6 +754,86 @@ struct PokemonTFTView: View {
             Button("새 게임") { game = PokemonTFTGame(); selectedUnit = nil }.buttonStyle(.borderedProminent)
             Spacer()
         }.frame(maxWidth: .infinity)
+    }
+}
+
+@MainActor
+private final class TFTBeginnerGuidePanel {
+    static let shared = TFTBeginnerGuidePanel()
+    private var panel: NSPanel?
+
+    func showBesideGame() {
+        if let panel {
+            panel.orderFrontRegardless()
+            return
+        }
+        let size = NSSize(width: 320, height: 430)
+        let panel = NSPanel(contentRect: NSRect(origin: .zero, size: size),
+                            styleMask: [.titled, .closable, .utilityWindow],
+                            backing: .buffered, defer: false)
+        panel.title = "포켓몬 TFT 초보자 가이드"
+        panel.isFloatingPanel = true
+        panel.level = .floating
+        panel.hidesOnDeactivate = false
+        panel.isReleasedWhenClosed = false
+        panel.contentView = NSHostingView(rootView: TFTBeginnerGuidePanelView())
+
+        if let gameWindow = NSApp.keyWindow ?? NSApp.windows.first(where: { $0.isVisible }) {
+            let screenFrame = gameWindow.screen?.visibleFrame ?? NSScreen.main?.visibleFrame ?? .zero
+            let preferredX = gameWindow.frame.maxX + 10
+            let x = min(preferredX, screenFrame.maxX - size.width)
+            let y = min(gameWindow.frame.maxY, screenFrame.maxY) - size.height
+            panel.setFrameOrigin(NSPoint(x: max(screenFrame.minX, x), y: max(screenFrame.minY, y)))
+        } else {
+            panel.center()
+        }
+        self.panel = panel
+        panel.orderFrontRegardless()
+    }
+
+    func close() {
+        panel?.close()
+        panel = nil
+    }
+}
+
+private struct TFTBeginnerGuidePanelView: View {
+    private let steps = [
+        "상점에서 포켓몬을 사고 대기석에 모으세요. 새로고침은 2G입니다.",
+        "같은 포켓몬 3마리를 모으면 2성이 되며 다음 진화체로 진화합니다.",
+        "필드에는 레벨만큼 배치할 수 있습니다. 같은 타입 2·4·6마리로 시너지가 강화됩니다.",
+        "매 라운드 자동으로 2 XP를 받고, 4G를 쓰면 XP 4를 추가로 살 수 있습니다.",
+        "승패와 무관하게 기본 수입과 이자를 받으며 연승·연패 보너스도 쌓입니다.",
+        "멀티에서는 배치를 확정하면 상대가 정해집니다. 체력이 0이 되면 탈락합니다."
+    ]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Label("처음 하는 트레이너 가이드", systemImage: "graduationcap.fill")
+                .font(.headline).foregroundStyle(Color(red: 0.08, green: 0.20, blue: 0.34))
+            Text("가이드 창을 옆에 둔 채 게임을 계속 조작할 수 있습니다.")
+                .font(.caption).foregroundStyle(Color.black.opacity(0.62))
+            Divider()
+            ScrollView {
+                VStack(alignment: .leading, spacing: 13) {
+                    ForEach(Array(steps.enumerated()), id: \.offset) { index, text in
+                        HStack(alignment: .top, spacing: 9) {
+                            Text("\(index + 1)")
+                                .font(.caption.bold()).foregroundStyle(.white)
+                                .frame(width: 24, height: 24)
+                                .background(Color(red: 0.15, green: 0.48, blue: 0.82), in: Circle())
+                            Text(text)
+                                .font(.callout).foregroundStyle(Color(red: 0.10, green: 0.12, blue: 0.15))
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                }
+            }
+        }
+        .padding(18)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .background(Color(red: 0.97, green: 0.98, blue: 0.99))
+        .preferredColorScheme(.light)
     }
 }
 
