@@ -1105,6 +1105,17 @@ final class MultiplayerRoomCenter {
         else if let hostConnection { send(.tftResult(participantID: myID, won: won), over: hostConnection) }
     }
 
+    func forfeitPokemonTFT() {
+        guard tftStarted,
+              tftPlayers.contains(where: { $0.id == myID && !$0.isEliminated }) else { return }
+        if isHost {
+            retirePokemonTFTPlayer(myID)
+            broadcastPokemonTFTStandings()
+        } else if let hostConnection {
+            send(.tftForfeit(participantID: myID), over: hostConnection)
+        }
+    }
+
     private func acceptPokemonTFTArmy(_ army: PokemonTFTArmy, from participantID: UUID) {
         guard isHost, tftStarted, army.units.count <= 6,
               army.units.allSatisfy({ Self.catalogContainsTFTUnit($0) }),
@@ -2079,6 +2090,9 @@ final class MultiplayerRoomCenter {
                 self.acceptPokemonTFTArmy(army, from: pid)
             case .tftResult(let pid, let won) where pid == id:
                 self.acceptPokemonTFTResult(won: won, from: pid)
+            case .tftForfeit(let pid) where pid == id:
+                self.retirePokemonTFTPlayer(pid)
+                self.broadcastPokemonTFTStandings()
             case .gymChallenge(let pid, let lineup) where pid == id:
                 guard self.lobby?.activity == .gym else { break }
                 self.acceptGymChallenge(lineup, from: pid)

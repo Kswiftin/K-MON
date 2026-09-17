@@ -3,6 +3,10 @@ import Testing
 @testable import PokeTokenBar
 
 @Suite struct PokemonTFTTests {
+    @Test func planningRoundUsesThirtySecondTimeout() {
+        #expect(PokemonTFTGame.planningDuration == 30)
+    }
+
     @Test func threeCopiesCombineIntoTwoStarUnit() {
         var game = PokemonTFTGame(seed: 1)
         game.gold = 20
@@ -13,8 +17,9 @@ import Testing
         let third = game.buy(shopIndex: 2)
         #expect(first && second && third)
         #expect(game.units.count == 1)
-        #expect(game.units.first?.definitionID == 1)
+        #expect(game.units.first?.definitionID == 2)
         #expect(game.units.first?.star == 2)
+        #expect(game.definition(for: game.units.first!.definitionID).name == "이상해풀")
     }
 
     @Test func deploymentRespectsLevelLimitAndCanMoveBetweenSlots() {
@@ -42,6 +47,7 @@ import Testing
         #expect(game.round == 2)
         #expect(game.shop.count == 6)
         #expect(game.health > 0)
+        #expect(game.experience == 2)
     }
 
     @Test func losingStillReceivesBaseIncomeAndInterest() {
@@ -122,6 +128,57 @@ import Testing
         #expect(game.synergyGuide.allSatisfy { Set($0.members).count >= 2 })
         #expect(game.synergyInfo(for: .electric).members.contains("피카츄"))
         #expect(game.synergyInfo(for: .electric).members.contains("메리프"))
+        #expect(!game.synergyInfo(for: .electric).members.contains("라이츄"))
+        #expect(game.synergyGuide.allSatisfy { Set($0.members).count >= 6 })
+    }
+
+    @Test func evolutionRelativesCountAsOneSynergyFamily() {
+        var game = PokemonTFTGame(seed: 56)
+        game.units = [
+            PokemonTFTUnit(definitionID: 25, boardSlot: 0),
+            PokemonTFTUnit(definitionID: 26, star: 2, boardSlot: 1)
+        ]
+
+        #expect(game.synergyInfo(for: .electric).deployed == 1)
+        #expect(game.activeSynergies.isEmpty)
+
+        game.units.append(PokemonTFTUnit(definitionID: 179, boardSlot: 2))
+        #expect(game.synergyInfo(for: .electric).deployed == 2)
+        #expect(game.activeSynergies.map(\.type) == [.electric])
+    }
+
+    @Test func aFinalEvolutionCannotGainAnotherStarTier() {
+        var game = PokemonTFTGame(seed: 54)
+        game.gold = 99
+        game.shop = [27, 27, 27, nil, nil, nil]
+        _ = game.buy(shopIndex: 0)
+        _ = game.buy(shopIndex: 1)
+        _ = game.buy(shopIndex: 2)
+        #expect(game.units.count == 1)
+        #expect(game.units.first?.definitionID == 28)
+        #expect(game.units.first?.star == 2)
+
+        game.units.append(PokemonTFTUnit(definitionID: 28, star: 2))
+        game.units.append(PokemonTFTUnit(definitionID: 28, star: 2))
+        game.shop = [27, 27, 27, nil, nil, nil]
+        _ = game.buy(shopIndex: 0)
+        _ = game.buy(shopIndex: 1)
+        _ = game.buy(shopIndex: 2)
+        #expect(game.units.filter { $0.definitionID == 28 && $0.star == 2 }.count == 4)
+        #expect(!game.units.contains { $0.star == 3 })
+    }
+
+    @Test func roundXPIsAutomaticAndPurchasedXPStacksOnTop() {
+        var game = PokemonTFTGame(seed: 55)
+        game.gold = 20
+        game.units = [PokemonTFTUnit(definitionID: 1, boardSlot: 0)]
+        game.settleBattle(playerWon: false)
+        #expect(game.experience == 2)
+
+        let goldBeforePurchase = game.gold
+        game.buyExperience()
+        #expect(game.gold == goldBeforePurchase - 4)
+        #expect(game.experience == 6)
     }
 
     @Test func activeSynergiesOnlyUsePokemonDeployedOnTheBoard() {
