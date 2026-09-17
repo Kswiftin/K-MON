@@ -156,7 +156,48 @@ struct PokemonTFTGame: Sendable {
         .init(id: 355, name: "해골몽",   type: .ghost,    cost: 3, attack: 86, health: 112),
         .init(id: 137, name: "폴리곤",   type: .normal,   cost: 3, attack: 84, health: 108),
         .init(id: 509, name: "쌔비냥",   type: .dark,     cost: 2, attack: 76, health: 90),
-        .init(id: 111, name: "뿔카노",   type: .ground,   cost: 3, attack: 90, health: 148)
+        .init(id: 111, name: "뿔카노",   type: .ground,   cost: 3, attack: 90, health: 148),
+        .init(id: 43, name: "뚜벅쵸", type: .grass, cost: 1, attack: 46, health: 98),
+        .init(id: 69, name: "모다피", type: .grass, cost: 1, attack: 52, health: 94),
+        .init(id: 187, name: "통통코", type: .grass, cost: 1, attack: 42, health: 102),
+        .init(id: 252, name: "나무지기", type: .grass, cost: 2, attack: 64, health: 92),
+        .init(id: 155, name: "브케인", type: .fire, cost: 1, attack: 58, health: 92),
+        .init(id: 218, name: "마그마그", type: .fire, cost: 2, attack: 70, health: 112),
+        .init(id: 255, name: "아차모", type: .fire, cost: 2, attack: 72, health: 94),
+        .init(id: 54, name: "고라파덕", type: .water, cost: 1, attack: 52, health: 106),
+        .init(id: 60, name: "발챙이", type: .water, cost: 1, attack: 48, health: 104),
+        .init(id: 258, name: "물짱이", type: .water, cost: 2, attack: 66, health: 112),
+        .init(id: 393, name: "팽도리", type: .water, cost: 2, attack: 68, health: 108),
+        .init(id: 50, name: "디그다", type: .ground, cost: 1, attack: 54, health: 82),
+        .init(id: 104, name: "탕구리", type: .ground, cost: 2, attack: 68, health: 118),
+        .init(id: 231, name: "코코리", type: .ground, cost: 2, attack: 70, health: 126),
+        .init(id: 96, name: "슬리프", type: .psychic, cost: 2, attack: 72, health: 110),
+        .init(id: 177, name: "네이티", type: .psychic, cost: 2, attack: 76, health: 90),
+        .init(id: 325, name: "피그점프", type: .psychic, cost: 2, attack: 82, health: 96),
+        .init(id: 574, name: "고디탱", type: .psychic, cost: 3, attack: 90, health: 104),
+        .init(id: 100, name: "찌리리공", type: .electric, cost: 1, attack: 58, health: 102),
+        .init(id: 403, name: "꼬링크", type: .electric, cost: 2, attack: 72, health: 102),
+        .init(id: 522, name: "줄뮤마", type: .electric, cost: 2, attack: 78, health: 94),
+        .init(id: 296, name: "마크탕", type: .fighting, cost: 2, attack: 76, health: 132),
+        .init(id: 307, name: "요가랑", type: .fighting, cost: 2, attack: 72, health: 104),
+        .init(id: 532, name: "으랏차", type: .fighting, cost: 3, attack: 88, health: 136),
+        .init(id: 374, name: "메탕", type: .steel, cost: 3, attack: 86, health: 128),
+        .init(id: 436, name: "동미러", type: .steel, cost: 2, attack: 66, health: 142),
+        .init(id: 599, name: "기어르", type: .steel, cost: 3, attack: 84, health: 126),
+        .init(id: 624, name: "자망칼", type: .steel, cost: 4, attack: 112, health: 118),
+        .init(id: 200, name: "무우마", type: .ghost, cost: 2, attack: 84, health: 94),
+        .init(id: 425, name: "흔들풍손", type: .ghost, cost: 2, attack: 80, health: 116),
+        .init(id: 607, name: "불켜미", type: .ghost, cost: 3, attack: 92, health: 98),
+        .init(id: 52, name: "나옹", type: .normal, cost: 1, attack: 56, health: 94),
+        .init(id: 506, name: "요테리", type: .normal, cost: 1, attack: 58, health: 104),
+        .init(id: 427, name: "이어롤", type: .normal, cost: 2, attack: 68, health: 102),
+        .init(id: 371, name: "아공이", type: .dragon, cost: 3, attack: 94, health: 120),
+        .init(id: 328, name: "톱치", type: .dragon, cost: 2, attack: 82, health: 106),
+        .init(id: 333, name: "파비코", type: .dragon, cost: 2, attack: 72, health: 108),
+        .init(id: 633, name: "모노두", type: .dragon, cost: 4, attack: 118, health: 122),
+        .init(id: 228, name: "델빌", type: .dark, cost: 2, attack: 78, health: 96),
+        .init(id: 261, name: "포챠나", type: .dark, cost: 1, attack: 60, health: 96),
+        .init(id: 551, name: "깜눈크", type: .dark, cost: 3, attack: 88, health: 112)
     ]
 
     private static let evolvedCatalog: [PokemonTFTUnitDefinition] = [
@@ -209,7 +250,48 @@ struct PokemonTFTGame: Sendable {
         .init(id: 474, name: "폴리곤Z", type: .normal, cost: 3, attack: 172, health: 218),
         .init(id: 510, name: "레파르다스", type: .dark, cost: 2, attack: 116, health: 138),
         .init(id: 112, name: "코뿌리", type: .ground, cost: 3, attack: 134, health: 218),
-        .init(id: 464, name: "거대코뿌리", type: .ground, cost: 3, attack: 184, health: 298)
+        .init(id: 464, name: "거대코뿌리", type: .ground, cost: 3, attack: 184, health: 298),
+        .init(id: 44, name: "냄새꼬", type: .grass, cost: 1, attack: 72, health: 142),
+        .init(id: 70, name: "우츠동", type: .grass, cost: 1, attack: 78, health: 136),
+        .init(id: 188, name: "두코", type: .grass, cost: 1, attack: 66, health: 144),
+        .init(id: 253, name: "나무돌이", type: .grass, cost: 2, attack: 98, health: 138),
+        .init(id: 156, name: "마그케인", type: .fire, cost: 1, attack: 88, health: 136),
+        .init(id: 219, name: "마그카르고", type: .fire, cost: 2, attack: 108, health: 174),
+        .init(id: 256, name: "영치코", type: .fire, cost: 2, attack: 108, health: 142),
+        .init(id: 55, name: "골덕", type: .water, cost: 1, attack: 92, health: 164),
+        .init(id: 61, name: "슈륙챙이", type: .water, cost: 1, attack: 78, health: 156),
+        .init(id: 259, name: "늪짱이", type: .water, cost: 2, attack: 102, health: 168),
+        .init(id: 394, name: "팽태자", type: .water, cost: 2, attack: 102, health: 162),
+        .init(id: 51, name: "닥트리오", type: .ground, cost: 1, attack: 92, health: 126),
+        .init(id: 105, name: "텅구리", type: .ground, cost: 2, attack: 106, health: 176),
+        .init(id: 232, name: "코리갑", type: .ground, cost: 2, attack: 112, health: 190),
+        .init(id: 97, name: "슬리퍼", type: .psychic, cost: 2, attack: 112, health: 166),
+        .init(id: 178, name: "네이티오", type: .psychic, cost: 2, attack: 116, health: 138),
+        .init(id: 326, name: "피그킹", type: .psychic, cost: 2, attack: 124, health: 150),
+        .init(id: 575, name: "고디보미", type: .psychic, cost: 3, attack: 130, health: 154),
+        .init(id: 101, name: "붐볼", type: .electric, cost: 1, attack: 92, health: 154),
+        .init(id: 404, name: "럭시오", type: .electric, cost: 2, attack: 108, health: 152),
+        .init(id: 523, name: "제브라이카", type: .electric, cost: 2, attack: 118, health: 142),
+        .init(id: 297, name: "하리뭉", type: .fighting, cost: 2, attack: 118, health: 206),
+        .init(id: 308, name: "요가램", type: .fighting, cost: 2, attack: 110, health: 158),
+        .init(id: 533, name: "토쇠골", type: .fighting, cost: 3, attack: 132, health: 198),
+        .init(id: 375, name: "메탕구", type: .steel, cost: 3, attack: 128, health: 190),
+        .init(id: 437, name: "동탁군", type: .steel, cost: 2, attack: 102, health: 214),
+        .init(id: 600, name: "기기어르", type: .steel, cost: 3, attack: 126, health: 186),
+        .init(id: 625, name: "절각참", type: .steel, cost: 4, attack: 166, health: 174),
+        .init(id: 429, name: "무우마직", type: .ghost, cost: 2, attack: 128, health: 142),
+        .init(id: 426, name: "둥실라이드", type: .ghost, cost: 2, attack: 122, health: 176),
+        .init(id: 608, name: "램프라", type: .ghost, cost: 3, attack: 136, health: 146),
+        .init(id: 53, name: "페르시온", type: .normal, cost: 1, attack: 90, health: 142),
+        .init(id: 507, name: "하데리어", type: .normal, cost: 1, attack: 92, health: 156),
+        .init(id: 428, name: "이어롭", type: .normal, cost: 2, attack: 106, health: 154),
+        .init(id: 372, name: "쉘곤", type: .dragon, cost: 3, attack: 140, health: 180),
+        .init(id: 329, name: "비브라바", type: .dragon, cost: 2, attack: 124, health: 158),
+        .init(id: 334, name: "파비코리", type: .dragon, cost: 2, attack: 110, health: 164),
+        .init(id: 634, name: "디헤드", type: .dragon, cost: 4, attack: 170, health: 184),
+        .init(id: 229, name: "헬가", type: .dark, cost: 2, attack: 120, health: 146),
+        .init(id: 262, name: "그라에나", type: .dark, cost: 1, attack: 94, health: 146),
+        .init(id: 552, name: "악비르", type: .dark, cost: 3, attack: 132, health: 166)
     ]
 
     static let catalog = shopCatalog + evolvedCatalog
@@ -222,8 +304,16 @@ struct PokemonTFTGame: Sendable {
         304: 305, 305: 306, 353: 354, 443: 444, 444: 445, 446: 143,
         447: 448, 570: 571, 610: 611, 611: 612, 58: 59, 125: 126, 126: 466,
         56: 57, 355: 356, 356: 477, 137: 233, 233: 474, 509: 510,
-        111: 112, 112: 464
+        111: 112, 112: 464, 43: 44, 69: 70, 187: 188, 252: 253,
+        155: 156, 218: 219, 255: 256, 54: 55, 60: 61, 258: 259, 393: 394,
+        50: 51, 104: 105, 231: 232, 96: 97, 177: 178, 325: 326, 574: 575,
+        100: 101, 403: 404, 522: 523, 296: 297, 307: 308, 532: 533,
+        374: 375, 436: 437, 599: 600, 624: 625, 200: 429, 425: 426, 607: 608,
+        52: 53, 506: 507, 427: 428, 371: 372, 328: 329, 333: 334, 633: 634,
+        228: 229, 261: 262, 551: 552
     ]
+    private static let evolutionParents: [Int: Int] = Dictionary(
+        uniqueKeysWithValues: evolutionRoutes.map { ($0.value, $0.key) })
 
     struct SynergyInfo: Identifiable, Sendable {
         var id: String { type.rawValue }
@@ -283,16 +373,19 @@ struct PokemonTFTGame: Sendable {
     }
 
     func synergyInfo(for type: PokemonType) -> SynergyInfo {
-        let members = Self.catalog.filter { $0.type == type }.map(\.name)
-        let deployed = units.filter {
-            $0.boardSlot != nil && definition(for: $0.definitionID).type == type
-        }.count
+        // 도감은 진화체를 별도 구성원으로 부풀리지 않고 상점에 등장하는 진화계열 대표만 보여 준다.
+        let members = Self.shopCatalog.filter { $0.type == type }.map(\.name)
+        // 같은 계열의 진화 전·후를 동시에 배치해도 시너지 한 자리만 차지한다.
+        let deployed = Set(units.compactMap { unit -> Int? in
+            guard unit.boardSlot != nil, definition(for: unit.definitionID).type == type else { return nil }
+            return Self.familyRoot(for: unit.definitionID)
+        }).count
         return SynergyInfo(type: type, members: members, deployed: deployed)
     }
 
     var synergyGuide: [SynergyInfo] {
-        Array(Set(Self.catalog.map(\.type))).map(synergyInfo(for:))
-            .filter { $0.members.count >= 2 }
+        Array(Set(Self.shopCatalog.map(\.type))).map(synergyInfo(for:))
+            .filter { $0.members.count >= 6 }
             .sorted { $0.type.rawValue < $1.type.rawValue }
     }
 
@@ -456,9 +549,11 @@ struct PokemonTFTGame: Sendable {
             let slot = unit.boardSlot ?? 0
             let multiplier = pow(1.65, Double(unit.star - 1))
             let hp = Int(Double(definition.health) * multiplier)
-            let typeCount = units.filter { candidate in
-                candidate.boardSlot != nil && self.definition(for: candidate.definitionID).type == definition.type
-            }.count
+            let typeCount = Set(units.compactMap { candidate -> Int? in
+                guard candidate.boardSlot != nil,
+                      self.definition(for: candidate.definitionID).type == definition.type else { return nil }
+                return Self.familyRoot(for: candidate.definitionID)
+            }).count
             let synergy = typeCount >= 6 ? 1.45 : typeCount >= 4 ? 1.25 : typeCount >= 2 ? 1.10 : 1
             return PokemonTFTFighter(id: unit.id, speciesID: definition.id, name: definition.name,
                 type: definition.type, team: .player,
@@ -559,6 +654,15 @@ struct PokemonTFTGame: Sendable {
 
     private static func distance(_ lhs: PokemonTFTFighter, _ rhs: PokemonTFTFighter) -> Int {
         abs(lhs.x - rhs.x) + abs(lhs.y - rhs.y)
+    }
+
+    private static func familyRoot(for definitionID: Int) -> Int {
+        var current = definitionID
+        var visited: Set<Int> = []
+        while let parent = evolutionParents[current], visited.insert(current).inserted {
+            current = parent
+        }
+        return current
     }
 
     /// 직선 앞이 막히면 옆으로 우회한다. 기존 구현은 목표 방향의 가로·세로

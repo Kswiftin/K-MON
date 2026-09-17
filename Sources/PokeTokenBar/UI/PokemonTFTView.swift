@@ -404,8 +404,12 @@ struct PokemonTFTView: View {
                 Label("상점", systemImage: "cart.fill").font(.caption.bold())
                 Text("보유 \(game.gold)G").font(.caption2.bold()).foregroundStyle(arenaGold)
                 Spacer()
-                Button { game.refreshShop() } label: { Label("2G", systemImage: "arrow.clockwise") }
-                    .controlSize(.mini).buttonStyle(.bordered).tint(arenaBlue)
+                Button { game.refreshShop() } label: {
+                    Label("상점 리롤 · 2G", systemImage: "arrow.clockwise.circle.fill")
+                        .font(.caption.bold())
+                }
+                .controlSize(.small).buttonStyle(.borderedProminent).tint(arenaBlue)
+                .disabled(game.gold < 2)
             }.foregroundStyle(.white)
             HStack(spacing: 5) {
                 ForEach(game.shop.indices, id: \.self) { index in

@@ -124,7 +124,23 @@ import Testing
         #expect(game.synergyGuide.allSatisfy { Set($0.members).count >= 2 })
         #expect(game.synergyInfo(for: .electric).members.contains("피카츄"))
         #expect(game.synergyInfo(for: .electric).members.contains("메리프"))
+        #expect(!game.synergyInfo(for: .electric).members.contains("라이츄"))
         #expect(game.synergyGuide.allSatisfy { Set($0.members).count >= 6 })
+    }
+
+    @Test func evolutionRelativesCountAsOneSynergyFamily() {
+        var game = PokemonTFTGame(seed: 56)
+        game.units = [
+            PokemonTFTUnit(definitionID: 25, boardSlot: 0),
+            PokemonTFTUnit(definitionID: 26, star: 2, boardSlot: 1)
+        ]
+
+        #expect(game.synergyInfo(for: .electric).deployed == 1)
+        #expect(game.activeSynergies.isEmpty)
+
+        game.units.append(PokemonTFTUnit(definitionID: 179, boardSlot: 2))
+        #expect(game.synergyInfo(for: .electric).deployed == 2)
+        #expect(game.activeSynergies.map(\.type) == [.electric])
     }
 
     @Test func aFinalEvolutionCannotGainAnotherStarTier() {
