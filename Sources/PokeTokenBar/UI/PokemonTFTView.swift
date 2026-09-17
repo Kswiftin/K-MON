@@ -459,7 +459,12 @@ struct PokemonTFTView: View {
             ZStack(alignment: .topTrailing) {
                 SpriteView(speciesID: definition.id, size: 35, animated: false, shiny: false, back: false)
                     .frame(maxWidth: .infinity)
-                Circle().fill(definition.type.battleColor).frame(width: 8, height: 8)
+                HStack(spacing: 2) {
+                    ForEach(definition.types, id: \.self) { type in
+                        Circle().fill(type.battleColor).frame(width: 8, height: 8)
+                            .overlay(Circle().stroke(.white.opacity(0.7), lineWidth: 0.5))
+                    }
+                }
             }
             Text(definition.name).font(.caption2.bold()).lineLimit(1).foregroundStyle(.white)
             Text("\(definition.cost)G").font(.caption2.bold()).foregroundStyle(arenaGold)
