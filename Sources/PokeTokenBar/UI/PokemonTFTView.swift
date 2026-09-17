@@ -37,7 +37,7 @@ struct PokemonTFTView: View {
             try? await Task.sleep(for: .seconds(1))
             guard !Task.isCancelled, battleReplay == nil, case .shopping = game.phase,
                   !center.hasSubmittedTFTArmy else { return }
-            if showBeginnerGuide || showSynergyGuide { continue }
+            if showSynergyGuide { continue }
             planningSeconds -= 1
         }
         if game.deployedCount == 0,
@@ -64,14 +64,17 @@ struct PokemonTFTView: View {
             else {
                 status
                 if center.tftStarted { multiplayerStandings }
-                if showBeginnerGuide {
-                    beginnerGuide
+                if center.tftStarted, let winner = center.tftWinner {
+                    multiplayerResult(winner: winner)
                 } else {
+                    if battleReplay == nil, !showSynergyGuide, case .shopping = game.phase {
+                        fieldSynergyBar
+                    }
                     switch game.phase {
                     case .shopping:
                         if battleReplay != nil { battleArena }
                         else if showSynergyGuide { synergyGuide }
-                        else { board; bench; shop; controls; fieldSynergyBar }
+                        else { board; bench; shop; controls }
                     case .finished(let won): ending(won: won)
                     }
                 }
@@ -240,10 +243,16 @@ struct PokemonTFTView: View {
                 Text("배치 \(game.deployedCount)/\(game.unitLimit)")
                 Spacer()
                 Button {
-                    withAnimation { showBeginnerGuide = true; showSynergyGuide = false }
+                    showBeginnerGuide.toggle()
                 } label: {
                     Label("가이드", systemImage: "questionmark.circle.fill")
-                }.buttonStyle(.plain).foregroundStyle(.mint).disabled(battleReplay != nil)
+                }
+                .buttonStyle(.plain).foregroundStyle(.mint).disabled(battleReplay != nil)
+                .popover(isPresented: $showBeginnerGuide, arrowEdge: .trailing) {
+                    beginnerGuide
+                        .frame(width: 300, height: 390)
+                        .padding(14)
+                }
                 Button {
                     withAnimation(.easeInOut(duration: 0.2)) { showSynergyGuide.toggle() }
                 } label: {
@@ -270,34 +279,48 @@ struct PokemonTFTView: View {
         let active = synergy.deployed >= 2
         let target = synergy.deployed >= 4 ? 6 : synergy.deployed >= 2 ? 4 : 2
         let tier = synergy.deployed >= 6 ? 45 : synergy.deployed >= 4 ? 25 : active ? 10 : 0
-        return HStack(spacing: 4) {
-            Circle().fill(synergy.type.battleColor).frame(width: 7, height: 7)
-            Text("\(synergy.type.rawValue) \(min(synergy.deployed, 6))/\(target)")
-            if active { Text("+\(tier)%") }
+        return HStack(spacing: 6) {
+            Image(systemName: active ? "bolt.fill" : "circle.dashed")
+                .font(.caption.bold())
+            VStack(alignment: .leading, spacing: 0) {
+                Text(synergy.type.rawValue).font(.caption.bold())
+                Text(active ? "\(min(synergy.deployed, 6))명 · +\(tier)%" : "\(synergy.deployed)/\(target) 필요")
+                    .font(.system(size: 9, weight: .bold))
+            }
         }
-        .font(.caption2.bold()).foregroundStyle(active ? .white : .white.opacity(0.58))
-        .padding(.horizontal, 7).padding(.vertical, 3)
-        .background(synergy.type.battleColor.opacity(active ? 0.28 : 0.10), in: Capsule())
-        .overlay(Capsule().stroke(synergy.type.battleColor.opacity(active ? 0.72 : 0.30)))
+        .foregroundStyle(active ? .white : .white.opacity(0.62))
+        .padding(.horizontal, 9).padding(.vertical, 6)
+        .background(synergy.type.battleColor.opacity(active ? 0.52 : 0.14),
+                    in: RoundedRectangle(cornerRadius: 9))
+        .overlay(RoundedRectangle(cornerRadius: 9)
+            .stroke(synergy.type.battleColor.opacity(active ? 1 : 0.38), lineWidth: active ? 2 : 1))
+        .shadow(color: active ? synergy.type.battleColor.opacity(0.65) : .clear, radius: 5)
     }
 
     private var fieldSynergyBar: some View {
-        HStack(spacing: 6) {
-            Label("필드 시너지", systemImage: "sparkles")
-                .font(.caption2.bold()).foregroundStyle(.white.opacity(0.7))
+        VStack(alignment: .leading, spacing: 5) {
+            HStack {
+                Label("현재 타입 시너지", systemImage: "sparkles")
+                    .font(.caption.bold()).foregroundStyle(arenaGold)
+                Spacer()
+                Text("2 · 4 · 6명 달성 시 강화")
+                    .font(.system(size: 9, weight: .semibold)).foregroundStyle(.white.opacity(0.6))
+            }
             if game.fieldSynergies.isEmpty {
-                Text("포켓몬을 배치하면 조합이 표시됩니다")
-                    .font(.caption2).foregroundStyle(.white.opacity(0.4))
+                Text("포켓몬을 필드에 배치하면 시너지 진행도가 표시됩니다")
+                    .font(.caption2).foregroundStyle(.white.opacity(0.5))
+                    .frame(maxWidth: .infinity, alignment: .leading)
             } else {
                 ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 5) {
+                    HStack(spacing: 7) {
                         ForEach(game.fieldSynergies) { synergy in fieldSynergyChip(synergy) }
                     }
                 }
             }
         }
-        .padding(.horizontal, 8).frame(height: 30)
-        .background(arenaInk.opacity(0.94), in: RoundedRectangle(cornerRadius: 9))
+        .padding(.horizontal, 9).padding(.vertical, 7)
+        .background(arenaInk.opacity(0.98), in: RoundedRectangle(cornerRadius: 11))
+        .overlay(RoundedRectangle(cornerRadius: 11).stroke(arenaGold.opacity(0.36), lineWidth: 1.5))
     }
 
     private var synergyGuide: some View {
@@ -338,13 +361,17 @@ struct PokemonTFTView: View {
                 Spacer()
                 Button("닫기") { withAnimation { showBeginnerGuide = false } }
             }
-            guideRow("1", "상점에서 포켓몬을 사고 대기석에 모으세요. 새로고침은 2G입니다.")
-            guideRow("2", "같은 포켓몬 3마리를 모으면 2성이 되며 다음 진화체로 진화합니다.")
-            guideRow("3", "필드에는 레벨만큼 배치할 수 있습니다. 같은 타입 2·4·6마리로 시너지가 강화됩니다.")
-            guideRow("4", "매 라운드 자동으로 2 XP를 받고, 4G를 쓰면 XP 4를 추가로 살 수 있습니다.")
-            guideRow("5", "승패와 무관하게 기본 수입과 이자를 받으며 연승·연패 보너스도 쌓입니다.")
-            guideRow("6", "멀티에서는 배치를 확정하면 상대가 정해집니다. 체력이 0이 되면 탈락합니다.")
-            Spacer()
+            Divider()
+            ScrollView {
+                VStack(alignment: .leading, spacing: 11) {
+                    guideRow("1", "상점에서 포켓몬을 사고 대기석에 모으세요. 새로고침은 2G입니다.")
+                    guideRow("2", "같은 포켓몬 3마리를 모으면 2성이 되며 다음 진화체로 진화합니다.")
+                    guideRow("3", "필드에는 레벨만큼 배치할 수 있습니다. 같은 타입 2·4·6마리로 시너지가 강화됩니다.")
+                    guideRow("4", "매 라운드 자동으로 2 XP를 받고, 4G를 쓰면 XP 4를 추가로 살 수 있습니다.")
+                    guideRow("5", "승패와 무관하게 기본 수입과 이자를 받으며 연승·연패 보너스도 쌓입니다.")
+                    guideRow("6", "멀티에서는 배치를 확정하면 상대가 정해집니다. 체력이 0이 되면 탈락합니다.")
+                }
+            }
         }
         .padding(12).pokedoroCard()
     }
@@ -693,6 +720,64 @@ struct PokemonTFTView: View {
             game.moveToBench(selectedUnit); self.selectedUnit = nil
         } else if let selectedUnit { game.move(selectedUnit, to: slot); self.selectedUnit = nil }
         else if let unit { selectedUnit = unit.id }
+    }
+
+    private func multiplayerResult(winner: PokemonTFTPlayerState) -> some View {
+        let standings = center.tftPlayers.sorted {
+            if $0.isEliminated != $1.isEliminated { return !$0.isEliminated }
+            if $0.health != $1.health { return $0.health > $1.health }
+            return $0.trainerName.localizedCompare($1.trainerName) == .orderedAscending
+        }
+        return multiplayerResultContent(winner: winner, standings: standings)
+    }
+
+    private func multiplayerResultContent(winner: PokemonTFTPlayerState,
+                                          standings: [PokemonTFTPlayerState]) -> some View {
+        let didWin = winner.id == center.myID
+        return VStack(spacing: 12) {
+            Spacer(minLength: 8)
+            Image(systemName: didWin ? "trophy.fill" : "flag.checkered")
+                .font(.system(size: 44, weight: .bold))
+                .foregroundStyle(didWin ? arenaGold : arenaBlue)
+            Text(didWin ? "TFT 우승!" : "TFT 경기 종료")
+                .font(.title2.bold())
+            Text("최후의 트레이너 · \(winner.trainerName)")
+                .font(.headline).foregroundStyle(didWin ? arenaGold : .secondary)
+            VStack(spacing: 5) {
+                ForEach(Array(standings.enumerated()), id: \.element.id) { index, player in
+                    multiplayerStandingRow(position: index + 1, player: player)
+                }
+            }
+            Button("로비로 돌아가기") {
+                center.leaveRoom()
+                playMode = .multiplayer
+                game = PokemonTFTGame()
+            }
+            .buttonStyle(.borderedProminent).tint(PokedoroTheme.blue)
+            Spacer(minLength: 8)
+        }
+        .padding(12).frame(maxWidth: .infinity)
+        .background(arenaPanel.opacity(0.12), in: RoundedRectangle(cornerRadius: 14))
+    }
+
+    private func multiplayerStandingRow(position: Int, player: PokemonTFTPlayerState) -> some View {
+        HStack {
+            Text("\(position)위").font(.caption.bold()).frame(width: 32, alignment: .leading)
+            Text(player.trainerName).font(.caption.bold())
+            if player.id == center.myID {
+                Text("나").font(.system(size: 9, weight: .bold))
+                    .padding(.horizontal, 5).padding(.vertical, 2)
+                    .background(arenaBlue.opacity(0.18), in: Capsule())
+            }
+            Spacer()
+            if player.isEliminated {
+                Text("탈락").font(.caption2).foregroundStyle(.secondary)
+            } else {
+                Text("HP \(player.health)").font(.caption2).foregroundStyle(.green)
+            }
+        }
+        .padding(.horizontal, 10).padding(.vertical, 6)
+        .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 8))
     }
 
     private func ending(won: Bool) -> some View {
