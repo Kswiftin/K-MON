@@ -7,6 +7,11 @@ struct PokemonTFTUnitDefinition: Identifiable, Sendable, Equatable {
     let cost: Int
     let attack: Int
     let health: Int
+
+    /// 전투 연출에는 대표 타입을 쓰되, TFT 시너지는 본가의 복합타입을 모두 센다.
+    var types: [PokemonType] {
+        PokemonTFTGame.typeOverrides[id] ?? [type]
+    }
 }
 
 struct PokemonTFTUnit: Identifiable, Sendable, Equatable {
@@ -297,6 +302,39 @@ struct PokemonTFTGame: Sendable {
 
     static let catalog = shopCatalog + evolvedCatalog
 
+    /// 카탈로그의 `type`은 기존 전투 연출용 대표 타입이다. 아래에는 본가 기준 두 번째 타입을
+    /// 별도로 둬 기존 세이브·네트워크 포맷을 바꾸지 않고 두 타입 시너지를 모두 적용한다.
+    static let typeOverrides: [Int: [PokemonType]] = [
+        1: [.grass, .poison], 2: [.grass, .poison], 3: [.grass, .poison],
+        6: [.fire, .flying],
+        43: [.grass, .poison], 44: [.grass, .poison],
+        69: [.grass, .poison], 70: [.grass, .poison],
+        81: [.electric, .steel], 82: [.electric, .steel], 462: [.electric, .steel],
+        92: [.ghost, .poison], 93: [.ghost, .poison], 94: [.ghost, .poison],
+        111: [.ground, .rock], 112: [.ground, .rock], 464: [.ground, .rock],
+        149: [.dragon, .flying],
+        187: [.grass, .flying], 188: [.grass, .flying],
+        215: [.dark, .ice], 461: [.dark, .ice],
+        219: [.fire, .rock],
+        228: [.dark, .fire], 229: [.dark, .fire],
+        256: [.fire, .fighting],
+        259: [.water, .ground],
+        280: [.psychic, .fairy], 281: [.psychic, .fairy], 282: [.psychic, .fairy],
+        304: [.steel, .rock], 305: [.steel, .rock], 306: [.steel, .rock],
+        307: [.fighting, .psychic], 308: [.fighting, .psychic],
+        328: [.ground], 329: [.ground, .dragon],
+        333: [.normal, .flying], 334: [.dragon, .flying],
+        374: [.steel, .psychic], 375: [.steel, .psychic],
+        425: [.ghost, .flying], 426: [.ghost, .flying],
+        436: [.steel, .psychic], 437: [.steel, .psychic],
+        443: [.dragon, .ground], 444: [.dragon, .ground], 445: [.dragon, .ground],
+        448: [.fighting, .steel],
+        551: [.ground, .dark], 552: [.ground, .dark],
+        607: [.ghost, .fire], 608: [.ghost, .fire],
+        624: [.dark, .steel], 625: [.dark, .steel],
+        633: [.dark, .dragon], 634: [.dark, .dragon]
+    ]
+
     private static let evolutionRoutes: [Int: Int] = [
         1: 2, 2: 3, 4: 5, 5: 6, 7: 8, 8: 9, 27: 28, 37: 38,
         63: 64, 64: 65, 25: 26, 66: 67, 67: 68, 81: 82, 82: 462,
@@ -375,17 +413,18 @@ struct PokemonTFTGame: Sendable {
 
     func synergyInfo(for type: PokemonType) -> SynergyInfo {
         // 도감은 진화체를 별도 구성원으로 부풀리지 않고 상점에 등장하는 진화계열 대표만 보여 준다.
-        let members = Self.shopCatalog.filter { $0.type == type }.map(\.name)
+        let members = Self.shopCatalog.filter { $0.types.contains(type) }.map(\.name)
         // 같은 계열의 진화 전·후를 동시에 배치해도 시너지 한 자리만 차지한다.
         let deployed = Set(units.compactMap { unit -> Int? in
-            guard unit.boardSlot != nil, definition(for: unit.definitionID).type == type else { return nil }
+            guard unit.boardSlot != nil, definition(for: unit.definitionID).types.contains(type) else { return nil }
             return Self.familyRoot(for: unit.definitionID)
         }).count
         return SynergyInfo(type: type, members: members, deployed: deployed)
     }
 
     var synergyGuide: [SynergyInfo] {
-        Array(Set(Self.shopCatalog.map(\.type))).map(synergyInfo(for:))
+        let supportedTypes = Set(Self.shopCatalog.map(\.type))
+        return supportedTypes.map(synergyInfo(for:))
             .filter { $0.members.count >= 6 }
             .sorted { $0.type.rawValue < $1.type.rawValue }
     }
@@ -550,12 +589,7 @@ struct PokemonTFTGame: Sendable {
             let slot = unit.boardSlot ?? 0
             let multiplier = pow(1.65, Double(unit.star - 1))
             let hp = Int(Double(definition.health) * multiplier)
-            let typeCount = Set(units.compactMap { candidate -> Int? in
-                guard candidate.boardSlot != nil,
-                      self.definition(for: candidate.definitionID).type == definition.type else { return nil }
-                return Self.familyRoot(for: candidate.definitionID)
-            }).count
-            let synergy = typeCount >= 6 ? 1.45 : typeCount >= 4 ? 1.25 : typeCount >= 2 ? 1.10 : 1
+            let synergy = synergyMultiplier(for: definition)
             return PokemonTFTFighter(id: unit.id, speciesID: definition.id, name: definition.name,
                 type: definition.type, team: .player,
                 x: (slot % Self.boardColumns) * 2, y: 5 - slot / Self.boardColumns,
@@ -651,6 +685,18 @@ struct PokemonTFTGame: Sendable {
         activeSynergies.isEmpty
             ? "활성 시너지 없음"
             : activeSynergies.map { "\($0.type.rawValue) \($0.deployed)" }.joined(separator: " · ")
+    }
+
+    private func synergyMultiplier(for definition: PokemonTFTUnitDefinition) -> Double {
+        let supportedTypes = Set(Self.shopCatalog.map(\.type))
+        let bonus = definition.types.filter { supportedTypes.contains($0) }.reduce(0.0) { total, type in
+            let count = synergyInfo(for: type).deployed
+            if count >= 6 { return total + 0.45 }
+            if count >= 4 { return total + 0.25 }
+            if count >= 2 { return total + 0.10 }
+            return total
+        }
+        return 1 + bonus
     }
 
     private static func distance(_ lhs: PokemonTFTFighter, _ rhs: PokemonTFTFighter) -> Int {

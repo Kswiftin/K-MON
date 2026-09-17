@@ -147,6 +147,20 @@ import Testing
         #expect(game.activeSynergies.map(\.type) == [.electric])
     }
 
+    @Test func dualTypePokemonCountTowardBothSynergies() {
+        var game = PokemonTFTGame(seed: 57)
+        game.units = [
+            PokemonTFTUnit(definitionID: 81, boardSlot: 0),   // 코일: 전기/강철
+            PokemonTFTUnit(definitionID: 100, boardSlot: 1),  // 찌리리공: 전기
+            PokemonTFTUnit(definitionID: 374, boardSlot: 2)   // 메탕: 강철/에스퍼
+        ]
+
+        #expect(game.definition(for: 81).types == [.electric, .steel])
+        #expect(game.synergyInfo(for: .electric).deployed == 2)
+        #expect(game.synergyInfo(for: .steel).deployed == 2)
+        #expect(Set(game.activeSynergies.map(\.type)) == Set([.electric, .steel]))
+    }
+
     @Test func aFinalEvolutionCannotGainAnotherStarTier() {
         var game = PokemonTFTGame(seed: 54)
         game.gold = 99
