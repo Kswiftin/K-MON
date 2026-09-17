@@ -280,7 +280,7 @@ struct PokemonTFTView: View {
             VStack(alignment: .leading, spacing: 0) {
                 Text(synergy.type.rawValue).font(.caption.bold())
                 Text(active ? "\(min(synergy.deployed, 6))명 · +\(tier)%" : "\(synergy.deployed)/\(target) 필요")
-                    .font(.system(size: 9, weight: .bold))
+                    .font(.system(size: 10, weight: .bold))
             }
         }
         .foregroundStyle(active ? .white : .white.opacity(0.62))
@@ -299,7 +299,7 @@ struct PokemonTFTView: View {
                     .font(.caption.bold()).foregroundStyle(arenaGold)
                 Spacer()
                 Text("2 · 4 · 6명 달성 시 강화")
-                    .font(.system(size: 9, weight: .semibold)).foregroundStyle(.white.opacity(0.6))
+                    .font(.system(size: 10, weight: .semibold)).foregroundStyle(.white.opacity(0.6))
             }
             if game.fieldSynergies.isEmpty {
                 Text("포켓몬을 필드에 배치하면 시너지 진행도가 표시됩니다")
@@ -736,7 +736,7 @@ struct PokemonTFTView: View {
             Text("\(position)위").font(.caption.bold()).frame(width: 32, alignment: .leading)
             Text(player.trainerName).font(.caption.bold())
             if player.id == center.myID {
-                Text("나").font(.system(size: 9, weight: .bold))
+                Text("나").font(.system(size: 10, weight: .bold))
                     .padding(.horizontal, 5).padding(.vertical, 2)
                     .background(arenaBlue.opacity(0.18), in: Capsule())
             }
