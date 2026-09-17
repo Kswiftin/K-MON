@@ -16,11 +16,43 @@ struct PokemonTFTView: View {
     @State private var showSynergyGuide = false
     @State private var showBeginnerGuide = false
     @State private var playMode: PlayMode?
+    @State private var planningSeconds = PokemonTFTGame.planningDuration
 
     private var center: MultiplayerRoomCenter { battleCenter.multiplayer }
     private var game: PokemonTFTGame {
         get { battleCenter.pokemonTFTGame }
         nonmutating set { battleCenter.pokemonTFTGame = newValue }
+    }
+
+    private var planningTimerID: String {
+        let mode = playMode == .multiplayer ? "multi" : playMode == .solo ? "solo" : "none"
+        return "\(mode)-\(game.round)-\(center.tftRound)-\(center.hasSubmittedTFTArmy)-\(battleReplay != nil)"
+    }
+
+    @MainActor private func runPlanningTimer() async {
+        guard playMode != nil, battleReplay == nil, case .shopping = game.phase,
+              !center.hasSubmittedTFTArmy else { return }
+        planningSeconds = PokemonTFTGame.planningDuration
+        while planningSeconds > 0 {
+            try? await Task.sleep(for: .seconds(1))
+            guard !Task.isCancelled, battleReplay == nil, case .shopping = game.phase,
+                  !center.hasSubmittedTFTArmy else { return }
+            if showBeginnerGuide || showSynergyGuide { continue }
+            planningSeconds -= 1
+        }
+        if game.deployedCount == 0,
+           let firstBench = game.units.first(where: { $0.boardSlot == nil }) {
+            game.toggleDeployment(firstBench.id)
+        }
+        guard game.deployedCount > 0 else {
+            game.lastBattleText = "시간 종료 · 전투할 포켓몬을 먼저 구매하세요."
+            return
+        }
+        if center.tftStarted {
+            center.submitPokemonTFTArmy(game.armySnapshot)
+        } else {
+            startAnimatedBattle()
+        }
     }
 
     var body: some View {
@@ -69,6 +101,7 @@ struct PokemonTFTView: View {
                 resumeCurrentMatchupIfNeeded()
             }
         }
+        .task(id: planningTimerID) { await runPlanningTimer() }
     }
 
     private var modeSelection: some View {
@@ -469,7 +502,7 @@ struct PokemonTFTView: View {
                 if let winner = center.tftWinner {
                     Label("\(winner.trainerName) 우승!", systemImage: "trophy.fill").foregroundStyle(.yellow)
                 } else {
-                    Button(center.hasSubmittedTFTArmy ? "다른 참가자 대기 중…" : "배치 확정") {
+                    Button(center.hasSubmittedTFTArmy ? "다른 참가자 대기 중…" : "배치 확정 · \(planningSeconds)초") {
                         center.submitPokemonTFTArmy(game.armySnapshot)
                     }
                     .buttonStyle(.borderedProminent).tint(PokedoroTheme.blue)
@@ -477,7 +510,7 @@ struct PokemonTFTView: View {
                               center.tftPlayers.first(where: { $0.id == center.myID })?.isEliminated == true)
                 }
             } else {
-                Button("자동 전투") { startAnimatedBattle() }
+                Button("자동 전투 · \(planningSeconds)초") { startAnimatedBattle() }
                     .buttonStyle(.borderedProminent).tint(PokedoroTheme.blue).disabled(game.deployedCount == 0)
             }
         }.controlSize(.small).padding(.horizontal, 4)

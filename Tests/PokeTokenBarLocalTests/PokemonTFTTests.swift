@@ -3,6 +3,10 @@ import Testing
 @testable import PokeTokenBar
 
 @Suite struct PokemonTFTTests {
+    @Test func planningRoundUsesThirtySecondTimeout() {
+        #expect(PokemonTFTGame.planningDuration == 30)
+    }
+
     @Test func threeCopiesCombineIntoTwoStarUnit() {
         var game = PokemonTFTGame(seed: 1)
         game.gold = 20

@@ -124,6 +124,7 @@ struct PokemonTFTGame: Sendable {
     static let combatRows = 6
     static let benchLimit = 8
     static let finalRound = 12
+    static let planningDuration = 30
     private static let rangedTypes: Set<PokemonType> = [.fire, .water, .grass, .electric, .psychic, .ghost, .dragon]
     private static let shopCatalog: [PokemonTFTUnitDefinition] = [
         .init(id: 1,   name: "이상해씨", type: .grass,    cost: 1, attack: 42, health: 105),
