@@ -1582,6 +1582,13 @@ struct L {
         "\(item) 필요"
     }
 
+    /// 성별 때문에 막힌 진화의 설명. 세꿀버리·야도뇽처럼 진화 갈래가 한쪽 성별에만 있는 종은,
+    /// 반대 성별 개체에게 그냥 `finalForm` 만 보이면 왜 못 가는지 알 길이 없다 — 본가에서 이
+    /// 종이 진화한다는 걸 아는 사용자가 자기 개체를 결함으로 오해한다.
+    func evolutionGenderLocked(_ requiredGender: String, _ targetName: String) -> String {
+        "\(requiredGender)만 \(targetName)로 진화"
+    }
+
     /// 아이템 표시명 — species 처럼 공식 현지명.
     func itemName(_ kind: ItemKind) -> String {
         switch kind {

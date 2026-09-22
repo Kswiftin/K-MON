@@ -712,6 +712,14 @@ private struct PokemonDetailCard: View {
 
     private var evolutionText: String {
         guard let node = line?.tree.node(withID: mon.currentID), !node.children.isEmpty else { return store.l.finalForm }
+        // 세꿀버리·야도뇽처럼 진화 갈래가 한쪽 성별에만 있는 종의 반대 성별 개체 — 홈의
+        // `CompanionStore.evolutionRequirementText` 와 같은 말을 해야 두 화면이 어긋나지 않는다.
+        let nonShed = node.children.filter { $0.evolutionTrigger != "shed" }
+        if let blocked = nonShed.first, let gender = blocked.evolutionGender,
+           nonShed.allSatisfy({ $0.evolutionGender != nil && $0.evolutionGender != mon.gender }) {
+            let targetName = line?.localizedName(blocked.speciesID) ?? "?"
+            return store.l.finalForm + " · " + store.l.evolutionGenderLocked(gender.name, targetName)
+        }
         let nextIndex = mon.stageIndex + 1
         let next = mon.plannedPathIDs.indices.contains(nextIndex)
             ? node.children.first(where: { $0.speciesID == mon.plannedPathIDs[nextIndex] }) ?? node.children[0]

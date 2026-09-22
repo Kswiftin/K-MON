@@ -19,8 +19,8 @@ private func chainNames(_ tree: EvoNode) -> [Int: [String: String]] {
     for id in ids(tree) { out[id] = ["ko": "포\(id)"] }
     return out
 }
-private func line(base: Int, tree: EvoNode) -> EvoLine {
-    EvoLine(baseID: base, tree: tree, rarity: .common, names: chainNames(tree))
+private func line(base: Int, tree: EvoNode, genderRate: Int = -1) -> EvoLine {
+    EvoLine(baseID: base, tree: tree, rarity: .common, names: chainNames(tree), genderRate: genderRate)
 }
 
 /// 슈륙챙이 → 강챙이(물의돌) / 왕구리(교환 + 왕의징표석).
@@ -41,6 +41,14 @@ private let mixedConditionTree = EvoNode(speciesID: 133, children: [
     EvoNode(speciesID: 470, children: [], evolutionTrigger: "level-up"),
 ])
 private let mixedConditionLine = line(base: 133, tree: mixedConditionTree)
+
+/// 세꿀버리·야도뇽류 — 진화 갈래가 **하나뿐이고 그 갈래가 특정 성별 전용**인 종.
+/// `genderRate: 0` 이라 부화 개체는 항상 수컷이고, 이 갈래는 암컷 전용이라 영영 못 연다.
+private let genderLockedTree = EvoNode(speciesID: 757, children: [
+    EvoNode(speciesID: 758, children: [], evolutionTrigger: "level-up",
+           evolutionLevel: 33, evolutionGender: .female),
+])
+private let genderLockedLine = line(base: 757, tree: genderLockedTree, genderRate: 0)
 
 private let fixedNow = Date(timeIntervalSince1970: 1_700_000_000)
 
@@ -135,6 +143,19 @@ final class EvolutionBranchTests: XCTestCase {
         let companion = store(poliwhirlLine)
         await companion.hatch(baseID: 61)
         return companion.evolutionBranches
+    }
+
+    // MARK: 성별 잠김 — 세꿀버리·야도뇽류
+
+    /// 진화 갈래가 하나뿐이고 그 갈래가 특정 성별 전용이면, 반대 성별 개체는 안내가
+    /// "최종 진화체" 로만 뭉개지면 안 된다 — 왜 못 가는지(필요 성별·대상)가 붙어야 한다.
+    func testGenderLockedEvolutionExplainsWhyItStopped() async {
+        let companion = store(genderLockedLine)
+        await companion.hatch(baseID: 757)
+        XCTAssertEqual(companion.currentGender, .male, "genderRate: 0 은 항상 수컷이어야 한다")
+        let expected = "\(companion.l.finalForm) · "
+            + companion.l.evolutionGenderLocked(PokemonGender.female.name, "포758")
+        XCTAssertEqual(companion.evolutionRequirementText, expected)
     }
 
     // MARK: 문구
