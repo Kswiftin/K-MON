@@ -422,6 +422,24 @@ final class CompanionStore {
             || node.evolutionTrigger == "level-up"
     }
 
+    /// `nextEvolutionNode` 가 성별 때문에 비었을 때, 그 이유를 보여줄 노드.
+    ///
+    /// 세꿀버리·야도뇽처럼 진화 갈래가 **한쪽 성별에만** 있는 종은, 반대 성별 개체에게 그냥
+    /// "최종 진화체"만 보이면 왜 못 가는지 알 길이 없다 — 본가에서 이 종이 진화한다는 걸 아는
+    /// 사용자는 자기 개체가 막힌 이유를 몰라 결함으로 오해한다.
+    ///
+    /// 성별이 갈래마다 다른 종(스노런트류)은 대상이 아니다 — 그쪽은 반대 갈래로 가므로
+    /// `nextEvolutionNode` 가 이미 값을 낸다. 여기 걸리는 건 "모든 갈래가 같은 성별을 요구하고
+    /// 이 개체는 그 성별이 아닐 때"뿐이다.
+    private var genderBlockedNextNode: EvoNode? {
+        guard let mon = state.active, let node = currentLine?.tree.node(withID: mon.currentID) else { return nil }
+        let candidates = node.children.filter { $0.evolutionTrigger != "shed" }
+        guard !candidates.isEmpty,
+              candidates.allSatisfy({ $0.evolutionGender != nil && $0.evolutionGender != mon.gender })
+        else { return nil }
+        return candidates.first
+    }
+
     var nextEvolutionLevel: Int? { nextEvolutionNode?.evolutionLevel }
 
     /// 다음 진화에 필요한 아이템 — 레벨이 아니라 돌·교환으로 넘어가는 종에만 있다.
@@ -503,6 +521,10 @@ final class CompanionStore {
     var evolutionRequirementText: String? {
         guard state.active != nil else { return nil }
         guard let next = nextEvolutionNode else {
+            if let blocked = genderBlockedNextNode, let gender = blocked.evolutionGender {
+                let targetName = currentLine?.localizedName(blocked.speciesID) ?? "?"
+                return l.finalForm + " · " + l.evolutionGenderLocked(gender.name, targetName)
+            }
             if let level = graduationLevelRequirement {
                 return "\(l.finalForm) · \(l.graduatesAtLevel(level))"
             }
