@@ -45,8 +45,8 @@ private let mixedConditionLine = line(base: 133, tree: mixedConditionTree)
 /// 세꿀버리·야도뇽류 — 진화 갈래가 **하나뿐이고 그 갈래가 특정 성별 전용**인 종.
 /// `genderRate: 0` 이라 부화 개체는 항상 수컷이고, 이 갈래는 암컷 전용이라 영영 못 연다.
 private let genderLockedTree = EvoNode(speciesID: 757, children: [
-    EvoNode(speciesID: 758, children: [], evolutionTrigger: "level-up",
-           evolutionLevel: 33, evolutionGender: .female),
+    EvoNode(speciesID: 758, children: [], evolutionLevel: 33,
+           evolutionTrigger: "level-up", evolutionGender: .female),
 ])
 private let genderLockedLine = line(base: 757, tree: genderLockedTree, genderRate: 0)
 
