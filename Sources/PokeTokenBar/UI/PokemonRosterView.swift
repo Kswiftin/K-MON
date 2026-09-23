@@ -59,15 +59,20 @@ struct PokemonRosterView: View {
         _evoLines = State(initialValue: store.rosterEvoLineCache)
     }
 
-    /// 도감·상점·가방과 같은 520. 탭을 넘나들어도 팝오버가 리사이즈되지 않는다.
+    /// 도감·상점·가방(520)에 `professorToolbar` 한 줄(18 + 간격 6 = 24)을 더한 값.
     ///
     /// `PopoverLayoutTests` 가 읽는다(`CollectionView.contentHeight` 와 같은 이유로 internal) —
     /// 이 값이 팝오버 뷰포트보다 크다는 사실이 페이저를 격자 위에 두는 근거다.
-    static let contentHeight: CGFloat = 520
+    ///
+    /// 고정값이라 이 화면에 첫 줄(`professorToolbar`)을 얹으면서 늘리지 않으면, 격자에 주어지는
+    /// 세로가 그만큼 줄어 마지막 행이 찌그러지거나 스크롤 끝에서 잘려 보인다(2026-09-22 사용자
+    /// 보고) — 예전에 260 → 520 으로 늘렸던 것과 같은 부류다.
+    static let contentHeight: CGFloat = 544
     private static let columns = 3
     private static let rows = 5
-    /// 한 페이지 15칸. 격자에 주어지는 세로(520 − 헤더 − 페이저 − 간격 ≈ 468)를 5행이 나누면
-    /// 행이 약 90pt 라 카드(스프라이트 28 + 이름·레벨·타입·상태)가 찌그러지지 않는다.
+    /// 한 페이지 15칸. 격자에 주어지는 세로(`professorToolbar` 를 뺀 나머지 520 에서
+    /// 헤더 − 페이저 − 간격을 더 빼면 ≈ 468)를 5행이 나누면 행이 약 90pt 라 카드(스프라이트 28 +
+    /// 이름·레벨·타입·상태)가 찌그러지지 않는다.
     static let pageSize = columns * rows
     private static let spacing: CGFloat = 5
 

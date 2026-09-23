@@ -262,6 +262,16 @@ final class PopoverLayoutTests: XCTestCase {
         }
     }
 
+    /// **트리거 재현 (2026-09-22 사용자 보고).** 포켓몬 탭에 `professorToolbar` 첫 줄(높이 18 +
+    /// `VStack` 간격 6 = 24)이 생겼는데 `contentHeight` 를 그만큼 늘리지 않으면, 격자에 주어지는
+    /// 세로가 원래 예산(≈468pt)보다 좁아져 마지막 행이 찌그러지거나 스크롤 끝에서 잘려 보인다 —
+    /// "260 → 520" 때와 같은 부류다. 이 값이 도로 520 으로 줄면 재발이다.
+    func testRosterContentHeightAccountsForProfessorToolbar() {
+        let professorToolbarBudget: CGFloat = 18 + 6
+        XCTAssertGreaterThanOrEqual(PokemonRosterView.contentHeight, 520 + professorToolbarBudget,
+                                    "professorToolbar 줄이 생겼는데 예산을 안 늘리면 격자가 찌그러진다")
+    }
+
     // MARK: 근처 트레이너 — 페이지 도달성
 
     /// 트리거 재현: 한 페이지를 넘긴 상대 수. 상한(5명)까지만 그리고 나머지는 "그 밖에 n명 더" 문구로만
