@@ -337,7 +337,7 @@ struct RoomBattleView: View {
             BattleChatPanel(configuration: BattleChatConfiguration(
                 messages: center.multiplayer.chatMessages, mySenderID: center.multiplayer.myID,
                 isEnabled: true, unavailableMessage: nil,
-                turnSignal: center.multiplayer.combatRound, l: l,
+                l: l, turnSignal: center.multiplayer.combatRound,
                 onSend: center.multiplayer.sendChat))
         }
         .onAppear {

@@ -346,7 +346,7 @@ struct PlayerGymView: View {
             chat: BattleChatConfiguration(
                 messages: center.chatMessages, mySenderID: center.myID,
                 isEnabled: true, unavailableMessage: nil,
-                turnSignal: match.turn, l: l, onSend: center.sendChat))
+                l: l, turnSignal: match.turn, onSend: center.sendChat))
     }
 
     /// 관전은 콜백이 없는 조합으로 만든다 — `BattleArenaView` 를 쓰면 항복 버튼이 늘 그려지고
@@ -369,7 +369,7 @@ struct PlayerGymView: View {
             BattleChatPanel(configuration: BattleChatConfiguration(
                 messages: center.chatMessages, mySenderID: center.myID,
                 isEnabled: true, unavailableMessage: nil,
-                turnSignal: match.turn, l: l, onSend: center.sendChat))
+                l: l, turnSignal: match.turn, onSend: center.sendChat))
         }
     }
 
