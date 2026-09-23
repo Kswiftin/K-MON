@@ -2186,6 +2186,8 @@ struct L {
     var heldItemSectionTitle: String { "지닌 물건" }
     /// 벗기기 — 물건을 개체에서 떼어 가방으로 돌려보낸다.
     var heldItemTakeOff: String { "벗기기" }
+    /// 지니게 하기 — 가방 재고에서 골라 그 자리에서 바로 장착한다.
+    var heldItemEquip: String { "장착" }
 
     /// 이미 지니고 있는 물건을 또 지니게 할 수는 없다 — 가방이 비활성 사유로 쓴다. "포켓몬이
     /// 필요해요" 로 뭉개면 재고도 동행도 있는데 거절당한 사용자가 이유를 알 수 없다.

@@ -571,4 +571,58 @@ final class HeldItemTests: XCTestCase {
             XCTAssertEqual(snapshot.heldItem, .lifeOrb)
         }
     }
+
+    // MARK: - id 로 아무 개체나 대상 (TeamPicker, 2026-09-24)
+
+    /// 활성 전용 셋(`giveHeldItem()`/`takeHeldItem()`)과 별개로, id 로 **박스 개체**도 지니게 하고
+    /// 벗길 수 있어야 한다 — 팀 고르기 화면은 활성이 아닌 후보도 보여준다.
+    func testGivingByIDReachesABoxedMon() {
+        let s = store(inventory: [.leftovers: 1])
+        let boxed = MonState(baseID: 4, pathIDs: [4], stageIndex: 0, usedAtStage: 0,
+                             rarity: .common, totalForms: 1)
+        s.debugSetBoxedMons([boxed])
+        XCTAssertTrue(s.canGiveHeldItem(.leftovers, to: boxed.id))
+        XCTAssertTrue(s.giveHeldItem(.leftovers, to: boxed.id))
+        // `heldItem(of:)` 는 넘겨받은 값을 그대로 echo 한다(박스 개체 규칙) — 방금 바뀐 값을
+        // 보려면 스토어에서 **다시** 읽어야 한다. 손에 든 옛 `boxed` 를 다시 넘기면 그 stale 값을
+        // 그대로 돌려받아 통과해 버린다(state-predicate-precision 과 같은 함정).
+        XCTAssertEqual(s.state.boxedMons.first(where: { $0.id == boxed.id })?.heldItem, .leftovers)
+        XCTAssertEqual(s.itemCount(.leftovers), 0)
+        // 활성 개체는 건드리지 않는다 — 박스 개체를 대상으로 했는데 활성이 바뀌면 엉뚱한
+        // 개체가 물건을 얻는다.
+        XCTAssertNil(s.state.active?.heldItem)
+    }
+
+    /// 박스 개체에서 벗기면 가방으로 돌아오고, 다른 개체(활성)는 그대로다.
+    func testTakingByIDReachesABoxedMonWithoutTouchingTheActiveOne() {
+        let s = store(held: .lifeOrb)
+        let boxed = MonState(baseID: 4, pathIDs: [4], stageIndex: 0, usedAtStage: 0,
+                             rarity: .common, totalForms: 1, heldItem: .leftovers)
+        s.debugSetBoxedMons([boxed])
+        XCTAssertTrue(s.canTakeHeldItem(from: boxed.id))
+        XCTAssertTrue(s.takeHeldItem(from: boxed.id))
+        XCTAssertNil(s.state.boxedMons.first(where: { $0.id == boxed.id })?.heldItem)
+        XCTAssertEqual(s.itemCount(.leftovers), 1, "벗긴 물건이 가방으로 돌아온다")
+        XCTAssertEqual(s.state.active?.heldItem, .lifeOrb, "활성 개체는 건드리지 않는다")
+    }
+
+    /// id 판정 버전도 "이미 지닌 것을 또 지니게" 는 거절한다 — 활성 전용 버전과 같은 규칙.
+    func testGivingByIDRefusesTheSameItemTwice() {
+        let s = store()
+        let boxed = MonState(baseID: 4, pathIDs: [4], stageIndex: 0, usedAtStage: 0,
+                             rarity: .common, totalForms: 1, heldItem: .lifeOrb)
+        s.debugAddItem(.lifeOrb)
+        s.debugSetBoxedMons([boxed])
+        XCTAssertFalse(s.canGiveHeldItem(.lifeOrb, to: boxed.id))
+        XCTAssertFalse(s.giveHeldItem(.lifeOrb, to: boxed.id))
+        XCTAssertEqual(s.itemCount(.lifeOrb), 1, "거절되면 재고가 안 바뀐다")
+    }
+
+    /// 존재하지 않는 id 는 항상 실패한다 — 지워졌거나 잘못 전달된 id 로 재고만 축나면 안 된다.
+    func testGivingByIDFailsForAnUnknownMon() {
+        let s = store(inventory: [.leftovers: 1])
+        XCTAssertFalse(s.canGiveHeldItem(.leftovers, to: UUID()))
+        XCTAssertFalse(s.giveHeldItem(.leftovers, to: UUID()))
+        XCTAssertEqual(s.itemCount(.leftovers), 1)
+    }
 }

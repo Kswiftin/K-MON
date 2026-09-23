@@ -3843,6 +3843,17 @@ final class CompanionStore {
         return .progressed
     }
 
+    /// 이상한 사탕 여러 개를 순서대로 먹인다 — `useRareCandy()` 를 최대 `count` 번 반복한다.
+    /// 사탕 1개당 최대 1단계만 진행하는 규칙(`useRareCandy()` 주석)은 그대로 지킨다 — 여러 개를
+    /// 한 번에 부어도 단계를 한꺼번에 건너뛰지 않는다. 재고가 떨어지거나 졸업으로 활성이 사라지면
+    /// `useRareCandy()` 가 `.unavailable` 을 내는 시점에 멈춘다.
+    @discardableResult
+    func useRareCandy(count: Int) -> Int {
+        var fed = 0
+        while fed < count, useRareCandy() != .unavailable { fed += 1 }
+        return fed
+    }
+
     // MARK: 포코피아 — 만들기와 먹이기 (9단계)
 
     /// 지금 보고 있는 마을에 있는 네임드 NPC (10단계). **조립은 여기 한 곳이다** — 뷰와 스토어가
@@ -4040,6 +4051,61 @@ final class CompanionStore {
         state.active!.heldItem = nil
         save()
         return true
+    }
+
+    /// 활성이든 박스든 **아무 소유 개체**를 대상으로 하는 지닌물건 판정·조작.
+    ///
+    /// 위 셋(`canGiveHeldItem`/`giveHeldItem`/`takeHeldItem`)은 활성 개체 전용이라 그대로 둔다
+    /// (가방·로스터·대화 도구가 이미 그 계약에 맞춰져 있다 — 바꾸면 세 호출부를 전부 다시 봐야
+    /// 한다). 팀 고르기 화면(`TeamPicker`)처럼 **박스 개체**도 대상이어야 하는 자리만 이 셋을 쓴다.
+    func canGiveHeldItem(_ kind: ItemKind, to monID: UUID) -> Bool {
+        kind.heldBattleEffect != nil && itemCount(kind) > 0 && heldItem(byID: monID) != kind
+            && (state.active?.id == monID || state.boxedMons.contains(where: { $0.id == monID }))
+    }
+
+    @discardableResult
+    func giveHeldItem(_ kind: ItemKind, to monID: UUID) -> Bool {
+        guard canGiveHeldItem(kind, to: monID) else { return false }
+        state.inventory[kind.rawValue] = itemCount(kind) - 1
+        if let previous = heldItem(byID: monID) {
+            state.inventory[previous.rawValue] = itemCount(previous) + 1
+        }
+        if var active = state.active, active.id == monID {
+            active.heldItem = kind
+            state.active = active
+        } else if let index = state.boxedMons.firstIndex(where: { $0.id == monID }) {
+            state.boxedMons[index].heldItem = kind
+        } else {
+            return false
+        }
+        save()
+        return true
+    }
+
+    func canTakeHeldItem(from monID: UUID) -> Bool { heldItem(byID: monID) != nil }
+
+    @discardableResult
+    func takeHeldItem(from monID: UUID) -> Bool {
+        guard let held = heldItem(byID: monID) else { return false }
+        state.inventory[held.rawValue] = itemCount(held) + 1
+        if var active = state.active, active.id == monID {
+            active.heldItem = nil
+            state.active = active
+        } else if let index = state.boxedMons.firstIndex(where: { $0.id == monID }) {
+            state.boxedMons[index].heldItem = nil
+        } else {
+            return false
+        }
+        save()
+        return true
+    }
+
+    /// id 로만 아는 개체의 지금 지닌물건. `heldItem(of:)` 는 `MonState` 스냅샷을 받지만 이 화면들은
+    /// id 만 들고 있다 — 활성 개체는 스냅샷이 낡을 수 있어(팝오버가 열린 채 벗기면) 세이브 값을
+    /// 직접 읽는다(`heldItem(of:)` 와 같은 이유).
+    private func heldItem(byID monID: UUID) -> ItemKind? {
+        if state.active?.id == monID { return state.active?.heldItem }
+        return state.boxedMons.first(where: { $0.id == monID })?.heldItem
     }
 
     // MARK: 하트비늘 (기술 다시 배우기 — #97)

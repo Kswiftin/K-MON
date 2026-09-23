@@ -1125,6 +1125,11 @@ struct BattleChatConfiguration {
     let isEnabled: Bool
     let unavailableMessage: String?
     let l: L
+    /// 새 턴이 시작됐다는 신호(턴 번호 등). 바뀔 때마다 입력칸이 포커스를 놓는다 — 안 놓으면
+    /// 채팅을 한 번이라도 누른 뒤로는 기술 선택 단축키(1~4)가 전부 채팅으로 빨려 들어간다
+    /// (2026-09-23 사용자 보고). 턴 개념이 없는 화면(교환 등)은 기본값 0 을 그대로 둬
+    /// 이 동작에서 빠진다 — 바뀌지 않으니 포커스를 건드리지 않는다.
+    var turnSignal: Int = 0
     let onSend: (String) -> Void
 }
 
@@ -1134,6 +1139,8 @@ struct BattleChatPanel: View {
     @State private var draft = ""
     @State private var isReadingHistory = false
     @State private var unseenCount = 0
+    /// 새 턴이 오거나 Esc 를 누르면 여기를 내려 단축키를 되돌려준다.
+    @FocusState private var isDraftFocused: Bool
 
     private let bottomID = "battle-chat-bottom"
 
@@ -1180,12 +1187,18 @@ struct BattleChatPanel: View {
                 TextField(configuration.l.battleChatPlaceholder, text: $draft)
                     .textFieldStyle(.roundedBorder)
                     .lineLimit(1)
+                    .focused($isDraftFocused)
                     .onSubmit(send)
                     .disabled(!configuration.isEnabled)
+                    // Esc 로도 빠져나갈 길을 둔다 — 턴 신호를 안 보내는 화면(교환 등)에도 같이 적용된다.
+                    .onExitCommand { isDraftFocused = false }
                 Button(configuration.l.battleChatSend, action: send)
                     .controlSize(.small).disabled(!canSend)
             }
         }
+        // 채팅을 눌러 둔 채로 다음 턴이 와도 1~4 단축키가 계속 채팅으로 먹히던 결함(2026-09-23) —
+        // 턴이 바뀌면 포커스를 놓아 기술 선택 버튼이 단축키를 다시 받게 한다.
+        .onChange(of: configuration.turnSignal) { isDraftFocused = false }
         .padding(6)
         .frame(maxWidth: .infinity)
         .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.05)))
