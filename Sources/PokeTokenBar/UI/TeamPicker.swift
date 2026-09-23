@@ -302,7 +302,7 @@ struct TeamPicker: View {
     @ViewBuilder private func heldItemControl(_ mon: MonState) -> some View {
         if let held = store.heldItem(of: mon) {
             HStack(spacing: 3) {
-                Text(store.l.itemName(held)).font(.system(size: 9, weight: .semibold)).lineLimit(1)
+                Text(store.l.itemName(held)).font(.system(size: 10, weight: .semibold)).lineLimit(1)
                 Button(store.l.heldItemTakeOff) { store.takeHeldItem(from: mon.id) }
                     .buttonStyle(.borderless).controlSize(.mini)
             }
@@ -313,7 +313,7 @@ struct TeamPicker: View {
                     Button(store.l.itemName(kind)) { store.giveHeldItem(kind, to: mon.id) }
                 }
             } label: {
-                Text(store.l.heldItemEquip).font(.system(size: 9, weight: .semibold))
+                Text(store.l.heldItemEquip).font(.system(size: 10, weight: .semibold))
             }
             .menuStyle(.borderlessButton).controlSize(.mini).fixedSize()
             .disabled(givable.isEmpty)
