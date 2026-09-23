@@ -135,7 +135,7 @@ struct BattleView: View {
             chat: BattleChatConfiguration(messages: center.chatMessages, mySenderID: center.chatSenderID,
                                           isEnabled: center.chatIsAvailable,
                                           unavailableMessage: center.chatLockMessage,
-                                          l: l, onSend: center.sendChat))
+                                          l: l, turnSignal: battle.turn, onSend: center.sendChat))
         .onAppear { replay(battle.events, sides: [mine: engineMine, theirs: engineTheirs]) }
         .onChange(of: battle.events.count) {
             replay(battle.events, sides: [mine: engineMine, theirs: engineTheirs])

@@ -5945,3 +5945,25 @@ PokéAPI 의 `move_meta` 테이블은 7세대에서 끊긴다. 8세대 이후 17
 - **영구 캡처**: `ShopTests.testMachineFilterDataIsPrefetchedIndependentlyOfCardVisibility` — 전체
   도감을 도는 프리페치 자리가 소스에 남아 있는지 확인한다(뷰 상태라 순수 함수로 못 재 소스 스캔).
   (상점 기술머신 필터 #89, 2026-09-11.)
+
+## 텍스트 필드가 한 번 포커스를 받으면 그 뒤로 바인딩 없는 키보드 단축키를 영영 삼키는 부류
+
+- **증상**: 레이드 기술 선택은 1~4 키로 고를 수 있는데, 화면 아래 채팅칸을 한 번이라도 누르면
+  그 뒤로는 1~4 를 눌러도 채팅 입력으로만 들어가고 기술 선택 단축키가 다시는 안 먹었다
+  (2026-09-23 사용자 보고).
+- **직접원인**: `.keyboardShortcut("1", modifiers: [])` 처럼 **수식키 없는 단축키**는 AppKit
+  책임경로 상 포커스를 쥔 `NSTextField` 가 먼저 그 키 입력을 문자로 소비한다. `BattleChatPanel`
+  의 `TextField` 는 포커스를 명시적으로 관리하지 않아, 한 번 포커스를 받으면 다음 턴이 와도 —
+  심지어 아무것도 안 치고 다른 곳을 눌러도 — 팝오버 반응 체인이 포커스를 되돌려주지 않았다.
+- **왜 못 걸렀나**: `@FocusState` 전환은 실제 키 윈도우가 있어야 관찰되므로 헤드리스 XCTest로
+  재현이 안 된다 — 이 부류는 렌더 테스트가 원천적으로 못 잡는 사각지대다.
+- **처방**: `BattleChatPanel`에 `@FocusState`를 붙이고, 호출부가 넘기는 `turnSignal`(턴 번호 등)이
+  바뀔 때마다 포커스를 놓는다. 턴 개념이 없는 화면(교환 등)은 `turnSignal` 기본값(0)을 그대로 둬
+  이 동작에서 빠진다. `onExitCommand`(Esc)로 수동 탈출로도 열어 둔다.
+- **부류 규칙**: 수식키 없는 `.keyboardShortcut`을 쓰는 화면에 텍스트 입력 필드가 같이 있으면,
+  그 필드가 **포커스를 스스로 내려놓는 시점**이 반드시 있어야 한다(전송 직후·턴 전환·Esc 중
+  최소 하나). 새 텍스트 필드를 추가할 때 같은 화면에 수식키 없는 단축키가 있는지 먼저 확인한다.
+- **영구 캡처**: `BattleChatTests.testEveryTurnBasedScreenFeedsATurnSignalToItsChatPanel` — 턴
+  개념이 있는 화면이 전부 `BattleChatConfiguration`에 `turnSignal:`을 실제로 넘기는지 소스에서
+  센다(뷰 상태라 순수 함수로 못 재 소스 스캔, 위 `TechnicalMachine` 항목과 같은 이유).
+  (레이드 기술 선택 단축키, 2026-09-23.)

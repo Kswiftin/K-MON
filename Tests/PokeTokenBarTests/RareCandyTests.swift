@@ -72,14 +72,15 @@ final class RareCandyStoreTests: XCTestCase {
         let home = try code("Sources/PokeTokenBar/UI/CompanionView.swift")
         XCTAssertTrue(home.contains("store.canUseRareCandy"),
                       "재고·알 상태 판정을 여기서 다시 쓰면 가방과 갈린다")
-        XCTAssertTrue(home.contains("store.useRareCandy()"), "실제 소비는 스토어가 한다")
-        // 확인 없이 바로 먹으면 되돌릴 수 없는 소비가 오탭 한 번으로 일어난다.
-        XCTAssertTrue(home.contains("confirmationDialog"), "한 번 물어야 한다")
+        XCTAssertTrue(home.contains("store.useRareCandy(count:"), "실제 소비는 스토어가 한다")
+        // 확인 없이 바로 먹으면 되돌릴 수 없는 소비가 오탭 한 번으로 일어난다. 개수를 고를 수
+        // 있어야 해서(2026-09-24) `confirmationDialog` 대신 `Stepper` 를 담을 수 있는 `popover` 를 쓴다.
+        XCTAssertTrue(home.contains(".popover(isPresented: $confirmingCandy)"), "한 번 물어야 한다")
         // 확인창은 버튼이 아니라 사라지지 않는 부모에 붙어야 한다. 마지막 사탕을 쓰면 버튼이
         // 없어지는데, 창을 그 버튼에 매달면 자기 액션 때문에 창의 주인이 사라진다.
         let buttonBody = try XCTUnwrap(home.range(of: "private var rareCandyButton"))
         let afterButton = home[buttonBody.upperBound...].prefix(400)
-        XCTAssertFalse(afterButton.contains("confirmationDialog"),
+        XCTAssertFalse(afterButton.contains(".popover(isPresented: $confirmingCandy)"),
                        "확인창을 사라질 뷰에 매달면 안 된다")
         XCTAssertTrue(home.contains("l.useOnCurrent"), "확인 문구도 가방과 같은 것을 쓴다")
     }
@@ -255,6 +256,32 @@ final class RareCandyStoreTests: XCTestCase {
         XCTAssertEqual(s.useRareCandy(), .evolved)     // 275M ≥250M → stage2
         XCTAssertEqual(s.state.active?.stageIndex, 2)
         XCTAssertEqual(s.rareCandyCount, 0)
+    }
+
+    // MARK: 여러 개 한 번에 먹이기 (useRareCandy(count:))
+
+    /// 데모 시나리오(`testSequentialCandyUseMatchesDemo`)와 같은 결과가 **한 번의 호출**로 나와야
+    /// 한다 — `useRareCandy()` 를 3번 부르나 `useRareCandy(count: 3)` 을 한 번 부르나 최종 상태는
+    /// 같아야 하고, 사탕 1개당 최대 1단계라는 불변식도 그대로 지켜야 한다(진화 2번·성장 1번이
+    /// 3연쇄 진화로 뭉개지면 안 된다).
+    func testUseRareCandyCountMatchesRepeatedSingleUse() async {
+        let s = store(rcLinear3)
+        await s.hatch(baseID: 1)
+        s.applyUsage(100_000_000)
+        giveCandies(s, 3)
+        XCTAssertEqual(s.useRareCandy(count: 3), 3, "3개 전부 먹여야 한다")
+        XCTAssertEqual(s.state.active?.stageIndex, 2, "1개씩 세 번 먹인 데모와 같은 최종 단계")
+        XCTAssertEqual(s.rareCandyCount, 0)
+    }
+
+    /// 요청한 개수보다 재고가 적으면 **재고만큼만** 먹이고 멈춘다 — 없는 사탕을 만들어 쓰지 않는다.
+    func testUseRareCandyCountStopsWhenStockRunsOut() async {
+        let s = store(rcLinear3)
+        await s.hatch(baseID: 1)
+        giveCandies(s, 2)
+        XCTAssertEqual(s.useRareCandy(count: 5), 2, "요청은 5지만 재고 2만큼만 먹인다")
+        XCTAssertEqual(s.rareCandyCount, 0)
+        XCTAssertFalse(s.canUseRareCandy)
     }
 
     /// "+XP" 1회성 store 계약 — 사용 후 amount>0, consume 후 0(재렌더 재생 방지의 핵심).

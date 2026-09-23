@@ -265,10 +265,12 @@ struct TeamPicker: View {
         }
     }
 
-    /// 누른 개체가 들고 나갈 기술.
+    /// 누른 개체가 들고 나갈 기술 + 지닌물건.
     ///
     /// **2열로 접는다.** 배틀 탭은 자기 `ScrollView` 를 둘 수 없고 세로 예산이 정해져 있어(#9),
-    /// 네 줄로 펴면 넘친 만큼이 그대로 잘린다 — 스크롤로 볼 방법이 없다.
+    /// 네 줄로 펴면 넘친 만큼이 그대로 잘린다 — 스크롤로 볼 방법이 없다. 지닌물건 조작을 **새
+    /// 줄로 더하지 않고** "N의 기술" 제목 줄 오른쪽에 붙이는 것도 같은 이유다 — 줄이 늘면 이
+    /// 컴포넌트를 쓰는 11곳(레이드·체육관·토너먼트 등) 중 세로 여유가 빠듯한 자리부터 잘릴 수 있다.
     ///
     /// 받는 동안에도 **같은 칸 수**를 그린다. 도착한 뒤에 줄이 생기면 그만큼 아래 페이저가 튄다
     /// (`MoveListView` 의 자리표시자와 같은 이유). 기술이 넷보다 적은 개체도 같은 높이로 남는다.
@@ -277,9 +279,13 @@ struct TeamPicker: View {
         return VStack(alignment: .leading, spacing: 3) {
             let name = displayName(mon)
             statPreview(mon)
-            Text("\(name)의 기술")
-                .font(.system(size: 10, weight: .semibold))
-                .foregroundStyle(.secondary).lineLimit(1)
+            HStack(spacing: 4) {
+                Text("\(name)의 기술")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(.secondary).lineLimit(1)
+                Spacer(minLength: 4)
+                heldItemControl(mon)
+            }
             ForEach(0..<Self.previewRows, id: \.self) { row in
                 HStack(spacing: 6) {
                     ForEach(0..<Self.previewColumns, id: \.self) { column in
@@ -288,6 +294,36 @@ struct TeamPicker: View {
                 }
             }
         }
+    }
+
+    /// 지닌물건 보기 + 장착/해제 — **활성이든 박스든** 여기 뜬 개체 전부가 대상이다
+    /// (`CompanionStore.giveHeldItem(_:to:)`/`takeHeldItem(from:)`, 2026-09-24 요청).
+    /// 지닌 게 있으면 이름 + 벗기기, 없으면 가방 재고 중 지닐 수 있는 것을 고르는 메뉴다.
+    @ViewBuilder private func heldItemControl(_ mon: MonState) -> some View {
+        if let held = store.heldItem(of: mon) {
+            HStack(spacing: 3) {
+                Text(store.l.itemName(held)).font(.system(size: 10, weight: .semibold)).lineLimit(1)
+                Button(store.l.heldItemTakeOff) { store.takeHeldItem(from: mon.id) }
+                    .buttonStyle(.borderless).controlSize(.mini)
+            }
+        } else {
+            let givable = givableHeldItems
+            Menu {
+                ForEach(givable, id: \.self) { kind in
+                    Button(store.l.itemName(kind)) { store.giveHeldItem(kind, to: mon.id) }
+                }
+            } label: {
+                Text(store.l.heldItemEquip).font(.system(size: 10, weight: .semibold))
+            }
+            .menuStyle(.borderlessButton).controlSize(.mini).fixedSize()
+            .disabled(givable.isEmpty)
+        }
+    }
+
+    /// 가방에 있고 배틀 효과가 있는(=지닐 수 있는) 아이템만 — 메뉴에 쓸 수 없는 물건까지
+    /// 늘어놓으면 눌러도 아무 일도 안 나는 항목이 섞인다.
+    private var givableHeldItems: [ItemKind] {
+        store.ownedItems.compactMap { $0.kind.heldBattleEffect != nil ? $0.kind : nil }
     }
 
     /// 누른 개체의 **지금 레벨** 능력치 — 종족값이 아니라 `CompanionStore.currentStats` 와 같은
@@ -315,8 +351,8 @@ struct TeamPicker: View {
         }
     }
 
-    /// 기술 한 칸 — 이름과 위력만. 명중·PP 까지 넣으면 두 열에 안 들어가고, 팀을 고르는 자리에서
-    /// 먼저 보는 건 무엇을 들고 나가는지와 얼마나 세게 때리는지다.
+    /// 기술 한 칸 — 이름·타입·위력만. 명중·PP 까지 넣으면 두 열에 안 들어가고, 팀을 고르는 자리에서
+    /// 먼저 보는 건 무엇을 들고 나가는지, 어떤 타입이고, 얼마나 세게 때리는지다.
     private func moveCell(_ move: MoveSpec?) -> some View {
         HStack(spacing: 3) {
             Text(move.map { $0.name } ?? "—")
@@ -324,6 +360,7 @@ struct TeamPicker: View {
                 .lineLimit(1).truncationMode(.tail)
             Spacer(minLength: 2)
             if let move {
+                TypeBadge(type: move.type)
                 MoveCategoryIcon(damageClass: move.damageClass, l: l)
                 Text(move.damageClass == .status ? l.moveCategoryStatus
                      : "\(l.moveCategory(move.damageClass)) · \(l.movePowerShort(move.power))")

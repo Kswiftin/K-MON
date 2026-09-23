@@ -498,6 +498,8 @@ struct CompanionHeader: View {
     @State private var mintSparkle = false
     /// 사탕 확인창을 열어 둔 상태. 되돌릴 수 없는 소비라 한 번 묻는다(가방과 같은 규칙).
     @State private var confirmingCandy = false
+    /// 이번에 먹일 사탕 개수 — 확인창을 열 때마다 1로 되돌린다.
+    @State private var candyQuantity = 1
     // 별명 인라인 편집
     @State private var editingName = false
     @State private var nameDraft = ""
@@ -520,18 +522,52 @@ struct CompanionHeader: View {
 
     /// 이름 옆 이상한사탕 — **쓸 수 있을 때만** 나온다. 가방까지 가지 않고 홈에서 바로 먹인다.
     ///
-    /// 되돌릴 수 없는 소비라 한 번 묻는다(가방과 같은 규칙). 확인은 `confirmationDialog` 로
-    /// 띄운다 — 인라인으로 펼치면 헤더 높이가 그 순간 늘어나 아래 카드가 통째로 밀린다.
+    /// 되돌릴 수 없는 소비라 한 번 묻는다(가방과 같은 규칙). 확인은 `popover` 로 띄운다 —
+    /// 인라인으로 펼치면 헤더 높이가 그 순간 늘어나 아래 카드가 통째로 밀린다. 개수를 고를 수
+    /// 있어야 해서(2026-09-24 요청) 버튼만으로 끝나는 `confirmationDialog` 대신 골랐다 —
+    /// 그쪽은 `Stepper` 같은 임의 콘텐츠를 못 담는다.
     ///
     /// 사용 뒤 피드백("+XP"·진화 연출)은 이 헤더가 이미 `candyFeedbackSeq` 로 재생하고 있다.
     /// 가방에서 쓰면 홈 탭으로 보내는 것도 그 연출을 보여주기 위함이라, 여기서 쓰면 탭 이동조차
     /// 없이 그 자리에서 재생된다.
     private var rareCandyButton: some View {
-        Button { confirmingCandy = true } label: {
+        Button { candyQuantity = 1; confirmingCandy = true } label: {
             ItemIconView(kind: .rareCandy, size: 14)
         }
         .buttonStyle(.borderless).controlSize(.mini)
         .accessibilityLabel(store.l.itemName(.rareCandy))
+    }
+
+    /// 확인 팝오버 본문 — 안내문 + 개수 선택(`PurchaseQuantityPicker` 와 같은 자리:
+    /// 길게 누르면 자동 반복되는 네이티브 `Stepper`, 옆에 "최대") + 사용/취소.
+    ///
+    /// 마지막 사탕을 쓰면 재고가 0 이 되어 `rareCandyButton` 자체가 사라진다. 그래서 이 팝오버는
+    /// **그 버튼이 아니라 헤더 전체(`body` 의 최상위 컨테이너)에** 매달아 둔다(기존
+    /// `confirmationDialog` 와 같은 자리) — 버튼에 매달면 자기 액션으로 앵커가 사라진다.
+    private var candyQuantityPopover: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(store.l.useOnCurrent(store.displayName)).font(.callout.weight(.semibold))
+            HStack(spacing: 6) {
+                Stepper(value: $candyQuantity, in: 1...max(1, store.rareCandyCount)) {
+                    Text("×\(candyQuantity)").font(.caption.weight(.bold)).monospacedDigit()
+                }
+                .controlSize(.small).fixedSize()
+                Button(store.l.buyMax) { candyQuantity = store.rareCandyCount }
+                    .buttonStyle(.borderless).controlSize(.small)
+                    .disabled(candyQuantity >= store.rareCandyCount)
+            }
+            HStack {
+                Button(store.l.use) {
+                    confirmingCandy = false
+                    store.useRareCandy(count: candyQuantity)
+                }
+                .buttonStyle(.borderedProminent).controlSize(.small)
+                Button(store.l.cancel) { confirmingCandy = false }
+                    .buttonStyle(.bordered).controlSize(.small)
+            }
+        }
+        .padding(12)
+        .frame(width: 180)
     }
 
     /// 이름 옆 하트비늘 — 이상한사탕과 같은 자리, 같은 이유(가방까지 안 가도 홈에서 바로).
@@ -853,11 +889,7 @@ struct CompanionHeader: View {
         .onChange(of: eggImminent) { syncEggWiggle() }
         // **확인창은 버튼이 아니라 여기 붙인다.** 마지막 사탕을 쓰면 재고가 0 이 되어 버튼 자체가
         // 사라지는데, 창을 그 버튼에 매달아 두면 자기 액션 때문에 창의 주인이 없어진다.
-        // 문구는 가방과 **같은 것**을 쓴다 — 여기서 새로 지으면 같은 행동을 두 화면이 다르게 말한다.
-        .confirmationDialog(store.l.useOnCurrent(store.displayName), isPresented: $confirmingCandy) {
-            Button(store.l.use) { store.useRareCandy() }
-            Button(store.l.cancel, role: .cancel) { confirmingCandy = false }
-        }
+        .popover(isPresented: $confirmingCandy) { candyQuantityPopover }
     }
 
     /// 부화/진화 연출 1회 재생 — 흰 플래시 페이드아웃 + 스프링 팝. shiny 부화는 ✨ 버스트 추가.

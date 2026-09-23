@@ -259,4 +259,34 @@ extension BattleChatTests {
         XCTAssertEqual(center.chatMessages.first?.senderName.count, PeerTextPolicy.maximumNameLength)
         XCTAssertEqual(Set(center.chatMessages.map(\.id)).count, 2, "화면 키는 중계된 값을 쓰지 않는다")
     }
+
+    // MARK: 채팅 포커스가 기술 선택 단축키를 영영 삼키는 부류 (2026-09-23)
+
+    /// **트리거 재현.** 채팅칸(`BattleChatPanel`)이 한 번이라도 포커스를 받으면, 턴이 넘어가도
+    /// 스스로 포커스를 놓지 않는 한 1~4 단축키가 전부 채팅 입력으로 빨려 들어간다(2026-09-23
+    /// 사용자 보고 — 레이드 기술 선택). `BattleChatConfiguration.turnSignal` 이 바뀔 때마다
+    /// `BattleChatPanel` 이 포커스를 놓아야 다음 턴에 단축키가 되살아난다.
+    ///
+    /// `@FocusState` 는 실제 창 없이는 전환을 관찰할 수 없어 렌더 테스트로 못 잡는다 — 대신
+    /// **턴 개념이 있는 모든 화면이 실제로 신호를 연결해 뒀는지**를 소스에서 검증한다. 새 화면이
+    /// 같은 패턴(`BattleChatConfiguration(...)` + 기술 선택 단축키)을 복사하면서 `turnSignal:` 만
+    /// 빠뜨리는 재발을 여기서 잡는다.
+    func testEveryTurnBasedScreenFeedsATurnSignalToItsChatPanel() throws {
+        let turnBasedFiles: Set<String> = [
+            "BattleView.swift", "RoomBattleView.swift", "PlayerGymView.swift",
+            "PokemonTournamentView.swift", "RaidView.swift",
+        ]
+        let sources = try SourceScan.sources()
+        for name in turnBasedFiles {
+            guard let code = sources.first(where: { $0.name == name })?.code else {
+                XCTFail("\(name) 을 찾지 못했다 — 스캔 대상 경로가 바뀌었을 수 있다"); continue
+            }
+            let chatConfigCount = code.components(separatedBy: "BattleChatConfiguration(").count - 1
+            let turnSignalCount = code.components(separatedBy: "turnSignal:").count - 1
+            XCTAssertGreaterThan(chatConfigCount, 0, "\(name) 에 채팅칸이 있는 줄 알았는데 없다 — 목록을 다시 본다")
+            XCTAssertEqual(turnSignalCount, chatConfigCount,
+                          "\(name) 의 BattleChatConfiguration 호출 \(chatConfigCount)개 중 turnSignal 을 안 넘긴 게 있다 — " +
+                          "그 화면은 채팅을 한 번 누르면 다음 턴부터 기술 선택 단축키가 영영 안 먹힌다")
+        }
+    }
 }

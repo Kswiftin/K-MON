@@ -226,7 +226,8 @@ struct PokemonTournamentView: View {
                     onSwitch: { center.submitTournamentAction(.switchTo(index: $0)) },
                     onForfeit: {},
                     chat: BattleChatConfiguration(messages: center.chatMessages, mySenderID: center.myID,
-                                                  isEnabled: true, unavailableMessage: nil, l: store.l,
+                                                  isEnabled: true, unavailableMessage: nil,
+                                                  l: store.l, turnSignal: match.turn,
                                                   onSend: center.sendChat))
                 .onAppear { replayTournament(match, mine: engineMine, theirs: engineTheirs,
                                              myActor: myActor, theirActor: theirActor) }

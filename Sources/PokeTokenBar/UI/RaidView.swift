@@ -348,7 +348,8 @@ struct RaidView: View {
             if showsResult { finishedFooter }
             BattleChatPanel(configuration: BattleChatConfiguration(
                 messages: center.chatMessages, mySenderID: center.myID,
-                isEnabled: true, unavailableMessage: nil, l: l, onSend: center.sendChat))
+                isEnabled: true, unavailableMessage: nil,
+                l: l, turnSignal: center.combatRound, onSend: center.sendChat))
         }
         // 재생이 따라잡을 때마다 화면을 다시 그린다. 스트림이 길어지는 자리와 개시가 모두
         // 여기를 지나야 한다 — `onAppear` 만 두면 방에 들어와 있는 동안 온 라운드를 못 받는다.
