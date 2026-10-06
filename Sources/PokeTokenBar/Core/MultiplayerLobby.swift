@@ -67,6 +67,8 @@ struct MultiplayerLobby: Codable, Sendable, Equatable {
     private(set) var participants: [LobbyParticipant]
     let capacity: Int
     let activity: RoomActivity
+    /// 필드가 없는 구버전 방은 대기 채팅을 받지 않으므로 입력을 열지 않는다.
+    let waitingChatSupported: Bool?
     init(host: LobbyParticipant, capacity: Int = 4, activity: RoomActivity = .battle) throws {
         let allowed: Bool
         switch activity {
@@ -81,6 +83,7 @@ struct MultiplayerLobby: Codable, Sendable, Equatable {
         guard allowed else { throw LobbyError.invalidCapacity }
         var host = host; host.isHost = true
         participants = [host]; self.capacity = capacity; self.activity = activity
+        waitingChatSupported = activity == .battle ? true : nil
     }
     static let spectatorCapacity = 8
 
