@@ -7,12 +7,13 @@ struct ShopView: View {
     let store: CompanionStore
     let nav: PopoverNavigation
     @State private var category: ShopCategory = .general
-    @State private var machineQuery = ""
+    @State private var searchQuery = ""
     @State private var machineNames: [Int: String] = [:]
+    @State private var machineDescriptions: [Int: String] = [:]
     /// `prefetchMachineFilterData()` 가 도감 전체를 카드 노출과 무관하게 채운다 — 예전엔 보이는
     /// 카드만 채워서, 필터가 아직 안 보인 카드를 걸러내고 그 카드는 걸러졌으니 영원히 안 보이는
-    /// 순환이 있었다(2026-09-11 결함 — "기술머신 필터가 안됨"). 검색어(`machineQuery`)의
-    /// 현지화 이름 매칭(`machineNames`)만 이 한계가 남아 있다 — 슬러그·TM 번호로는 늘 찾긴 한다.
+    /// 순환이 있었다(2026-09-11 결함 — "기술머신 필터가 안됨"). 이름·설명도 전체 도감 기준으로
+    /// 채워 검색이 아직 화면에 나오지 않은 카드를 놓치지 않도록 한다.
     @State private var machineTypes: [Int: PokemonType] = [:]
     @State private var machineLearnable: [Int: Bool] = [:]
     @State private var machineTypeFilter: PokemonType?
@@ -43,34 +44,44 @@ struct ShopView: View {
             }
             .pickerStyle(.segmented)
 
+            HStack(spacing: 6) {
+                TextField(category == .machines ? "기술명·설명 또는 TM 번호 검색" : "상품명 또는 설명 검색",
+                          text: $searchQuery)
+                    .textFieldStyle(.roundedBorder)
+                    .accessibilityLabel("상점 검색")
+                if !searchQuery.isEmpty {
+                    Button {
+                        searchQuery = ""
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                    }
+                    .buttonStyle(.borderless)
+                    .foregroundStyle(.secondary)
+                    .help("검색어 지우기")
+                    .accessibilityLabel("검색어 지우기")
+                }
+            }
+
+            if category != .machines && !hasSearchResults {
+                ContentUnavailableView.search(text: searchQuery)
+            }
+
             switch category {
-            case .general:
+            case .general, .battle, .evolution:
                 // 지닌물건은 '배틀' 탭으로 갈라져 있다 — 여기 두면 사탕·민트가 도구 수십 종에
                 // 묻힌다(지닌물건이 앞으로 100종 넘게 는다).
-                ForEach(store.purchasableItems.filter { !$0.isEvolutionItem && $0.bagUse != .heldItem },
-                        id: \.self) { kind in
-                    ShopItemCard(store: store, kind: kind)
-                }
-            case .battle:
-                ForEach(store.purchasableItems.filter { $0.bagUse == .heldItem }, id: \.self) { kind in
-                    ShopItemCard(store: store, kind: kind)
-                }
-            case .evolution:
-                ForEach(store.purchasableItems.filter(\.isEvolutionItem), id: \.self) { kind in
+                ForEach(filteredItems, id: \.self) { kind in
                     ShopItemCard(store: store, kind: kind)
                 }
             case .eggs:
-                ForEach(FreshEgg.shopTiers, id: \.self) { tier in
+                ForEach(filteredEggs, id: \.self) { tier in
                     EggCard(store: store, nav: nav, tier: tier)
                 }
             case .machines:
                 Group {
-                    TextField("기술명 또는 TM 번호 검색",
-                              text: $machineQuery)
-                        .textFieldStyle(.roundedBorder)
                     machineFilterBar
                     if filteredMachines.isEmpty {
-                        ContentUnavailableView.search(text: machineQuery)
+                        ContentUnavailableView.search(text: searchQuery)
                     }
                     ForEach(filteredMachines) { machine in
                         TechnicalMachineShopCard(store: store, machine: machine, onResolveName: { name in
@@ -92,26 +103,54 @@ struct ShopView: View {
                 }
             case .outfits:
                 // 상점 판매분만(`shopPrice != nil`) — 업적 보상 의상은 옷장에서 잠금으로 보인다.
-                ForEach(OutfitItem.allCases.filter { $0.shopPrice != nil }, id: \.self) { item in
+                ForEach(filteredOutfits, id: \.self) { item in
                     ShopOutfitCard(store: store, item: item)
                 }
             }
         }
     }
 
+    private var filteredItems: [ItemKind] {
+        let items: [ItemKind]
+        switch category {
+        case .general:
+            items = store.purchasableItems.filter { !$0.isEvolutionItem && $0.bagUse != .heldItem }
+        case .battle:
+            items = store.purchasableItems.filter { $0.bagUse == .heldItem }
+        case .evolution:
+            items = store.purchasableItems.filter(\.isEvolutionItem)
+        case .eggs, .machines, .outfits:
+            return []
+        }
+        let search = ShopSearch(searchQuery)
+        return items.filter { search.matches($0, l: store.l) }
+    }
+
+    private var filteredEggs: [Rarity?] {
+        let search = ShopSearch(searchQuery)
+        return FreshEgg.shopTiers.filter { search.matches(egg: $0, l: store.l) }
+    }
+
+    private var filteredOutfits: [OutfitItem] {
+        let search = ShopSearch(searchQuery)
+        return OutfitItem.allCases.filter { $0.shopPrice != nil && search.matches($0, l: store.l) }
+    }
+
+    private var hasSearchResults: Bool {
+        switch category {
+        case .general, .battle, .evolution: return !filteredItems.isEmpty
+        case .eggs: return !filteredEggs.isEmpty
+        case .machines: return !filteredMachines.isEmpty
+        case .outfits: return !filteredOutfits.isEmpty
+        }
+    }
+
     private var filteredMachines: [TechnicalMachine] {
-        let query = machineQuery.trimmingCharacters(in: .whitespacesAndNewlines)
-            .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
+        let search = ShopSearch(searchQuery)
         return TechnicalMachine.catalog.filter { machine in
-            let matchesQuery: Bool
-            if query.isEmpty {
-                matchesQuery = true
-            } else {
-                let fields = [machine.label, machine.slug.replacingOccurrences(of: "-", with: " "),
-                              machineNames[machine.moveID] ?? "", String(machine.number)]
-                matchesQuery = fields.contains { $0.folding(options: [.caseInsensitive, .diacriticInsensitive],
-                                                            locale: .current).contains(query) }
-            }
+            let matchesQuery = search.matches(machine, name: machineNames[machine.moveID] ?? "",
+                                             description: machineDescriptions[machine.moveID]
+                                                ?? "포켓몬에게 기술을 가르치는 일회용 기술머신입니다.")
             let matchesType = machineTypeFilter == nil || machineTypes[machine.moveID] == machineTypeFilter
             let matchesLearnable = !learnableOnlyFilter || machineLearnable[machine.moveID] == true
             return matchesQuery && matchesType && matchesLearnable
@@ -124,10 +163,10 @@ struct ShopView: View {
     /// 다시 해도 네트워크가 추가로 들지 않는다.
     private func prefetchMachineFilterData() async {
         let speciesID = store.currentSpeciesID
-        await withTaskGroup(of: (Int, PokemonType?, Bool).self) { group in
+        await withTaskGroup(of: (Int, MoveSpec?, Bool).self) { group in
             for machine in TechnicalMachine.catalog {
                 group.addTask {
-                    let type = await PokeAPIClient.shared.moveDetail(id: machine.moveID)?.type
+                    let move = await PokeAPIClient.shared.moveDetail(id: machine.moveID)
                     let learnable: Bool
                     if let speciesID {
                         learnable = await PokeAPIClient.shared.canLearnMachine(speciesID: speciesID,
@@ -135,11 +174,15 @@ struct ShopView: View {
                     } else {
                         learnable = false
                     }
-                    return (machine.moveID, type, learnable)
+                    return (machine.moveID, move, learnable)
                 }
             }
-            for await (moveID, type, learnable) in group {
-                if let type { machineTypes[moveID] = type }
+            for await (moveID, move, learnable) in group {
+                if let move {
+                    machineNames[moveID] = move.name
+                    machineDescriptions[moveID] = move.flavorText
+                    machineTypes[moveID] = move.type
+                }
                 machineLearnable[moveID] = learnable
             }
         }
