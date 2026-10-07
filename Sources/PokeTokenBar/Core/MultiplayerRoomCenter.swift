@@ -737,6 +737,20 @@ final class MultiplayerRoomCenter {
         phase = .joined
     }
 
+    /// 소켓 수신과 같은 배틀 시작 처리를 사용한다. 검증 실패 시 방을 정리한다.
+    @discardableResult
+    func applyGuestBattleStart(seed: UInt64, fighters: [MultiplayerFighter], mode: MultiplayerBattleMode) -> Bool {
+        guard MultiplayerValidation.validStart(fighters: fighters, mode: mode),
+              let started = try? MultiplayerBattle(fighters: fighters, mode: mode, seed: seed) else {
+            lastError = "잘못된 배틀 정보입니다."; leaveRoom(); return false
+        }
+        battle = started; combatFighters = fighters; combatRound = 1
+        combatEvents = []; hasSubmittedAction = false; rewardedBattle = false
+        turnEndsAt = Date().addingTimeInterval(Self.turnDuration)
+        phase = .battling
+        return true
+    }
+
     /// 호스트가 확정한 기여도. **게스트의 지급은 이 메시지가 도착해야 일어난다.**
     func applyGuestRaidSettlement(_ contributions: [UUID: Int]) {
         guard combatMode == .coopBoss else { return }
@@ -1015,7 +1029,6 @@ final class MultiplayerRoomCenter {
             battle = try MultiplayerBattle(fighters: fighters, mode: lobby.mode, seed: seed)
             combatFighters = fighters; combatRound = 1; combatEvents = []
             pendingActions.removeAll(); hasSubmittedAction = false; phase = .battling
-            chatHistory.reset(); chatMessages = []; chatRateLimiter.reset()
             rewardedBattle = false; scheduleTurnTimeout()
             let message = MultiplayerWireMessage.start(seed: seed, fighters: fighters, mode: lobby.mode)
             for connection in guestConnections.values { send(message, over: connection) }
@@ -2121,15 +2134,7 @@ final class MultiplayerRoomCenter {
                     self.challengeGym()
                 }
             case .start(let seed, let fighters, let mode):
-                guard MultiplayerValidation.validStart(fighters: fighters, mode: mode),
-                      let started = try? MultiplayerBattle(fighters: fighters, mode: mode, seed: seed) else {
-                    self.lastError = "잘못된 배틀 정보입니다."; self.leaveRoom(); return
-                }
-                self.battle = started; self.combatFighters = fighters; self.combatRound = 1
-                self.combatEvents = []; self.hasSubmittedAction = false; self.rewardedBattle = false
-                self.chatHistory.reset(); self.chatMessages = []; self.chatRateLimiter.reset()
-                self.turnEndsAt = Date().addingTimeInterval(Self.turnDuration)
-                self.phase = .battling
+                guard self.applyGuestBattleStart(seed: seed, fighters: fighters, mode: mode) else { return }
             case .raidStart(let seed, let fighters, let tier, let periodKey):
                 guard self.applyGuestRaidStart(seed: seed, fighters: fighters,
                                                tier: tier, periodKey: periodKey) else { return }
@@ -2216,9 +2221,19 @@ final class MultiplayerRoomCenter {
         finishRoundIfReady()
     }
 
-    /// 호스트가 연결에 묶인 참가자 ID를 기준으로 발신자를 인증하고, 전투 중인 방에만 전달한다.
-    private func acceptChat(_ incoming: BattleChatMessage, from participantID: UUID) {
-        guard (phase == .battling || phase == .tournament), incoming.senderID == participantID,
+    /// 대기 채팅은 이를 지원하는 배틀 방에서만 연다. 다른 활동의 기존 전투 채팅은 그대로 둔다.
+    var chatIsAvailable: Bool {
+        switch phase {
+        case .battling, .tournament: true
+        case .hosting, .joined:
+            lobby?.activity == .battle && lobby?.waitingChatSupported == true && myParticipant != nil
+        default: false
+        }
+    }
+
+    /// 호스트가 연결에 묶인 참가자 ID를 기준으로 발신자를 인증하고 방에 중계한다.
+    func acceptChat(_ incoming: BattleChatMessage, from participantID: UUID) {
+        guard chatIsAvailable, incoming.senderID == participantID,
               let participant = lobby?.participants.first(where: { $0.id == participantID }),
               let body = PeerTextPolicy.normalizedBody(incoming.body),
               let name = PeerTextPolicy.displayName(participant.trainerName),
@@ -2243,7 +2258,7 @@ final class MultiplayerRoomCenter {
     }
 
     func sendChat(_ body: String) {
-        guard (phase == .battling || phase == .tournament),
+        guard chatIsAvailable,
               let normalized = PeerTextPolicy.normalizedBody(body) else { return }
         let message = BattleChatMessage(senderID: myID, senderName: trainerName, body: normalized)
         if isHost { acceptChat(message, from: myID) }

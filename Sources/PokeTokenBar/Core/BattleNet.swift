@@ -42,7 +42,9 @@ enum BattleChallengeCancellationReason: String, Codable, Sendable, Equatable {
 enum NetMessage: Codable, Sendable {
     /// 2단계 신청: 이 메시지에는 포켓몬 스냅샷이 없다. 수락 뒤 양쪽이 `teamReady`를 보내야 시작한다.
     case request(trainer: String, teamSize: Int, seed: UInt64, profile: BattleRankProfile,
-                 rulesVersion: Int?, chatSupported: Bool?, kind: NetBattleKind?)
+                 rulesVersion: Int?, chatSupported: Bool?, kind: NetBattleKind?, waitingChatSupported: Bool? = nil)
+    /// 신청자가 대기 채팅을 명시적으로 지원할 때만 답한다 — 구버전에는 새 프레임을 보내지 않는다.
+    case waitingChatReady
     case approve
     /// 양쪽이 먼저 공개하는 6마리 후보. 이 메시지를 모두 받은 뒤 실제 1/3/6마리를 고른다.
     case poolReady(lineup: [BattleSnapshot], profile: BattleRankProfile,
@@ -65,11 +67,12 @@ enum NetMessage: Codable, Sendable {
     case forfeit
     case chat(BattleChatMessage)
 
-    private enum CodingKeys: String, CodingKey { case request, approve, poolReady, teamReady, challenge, accept, decline, challengeCancelled, action, move, forfeit, chat }
+    private enum CodingKeys: String, CodingKey { case request, waitingChatReady, approve, poolReady, teamReady, challenge, accept, decline, challengeCancelled, action, move, forfeit, chat }
     private struct EmptyPayload: Codable {}
     private struct RequestPayload: Codable {
         var trainer: String; var teamSize: Int; var seed: UInt64; var profile: BattleRankProfile
         var rulesVersion: Int?; var chatSupported: Bool?; var kind: NetBattleKind?
+        var waitingChatSupported: Bool?
     }
     private struct ChallengePayload: Codable {
         var snapshot: BattleSnapshot
@@ -110,7 +113,10 @@ enum NetMessage: Codable, Sendable {
         if container.contains(.request) {
             let p = try container.decode(RequestPayload.self, forKey: .request)
             self = .request(trainer: p.trainer, teamSize: p.teamSize, seed: p.seed, profile: p.profile,
-                            rulesVersion: p.rulesVersion, chatSupported: p.chatSupported, kind: p.kind)
+                            rulesVersion: p.rulesVersion, chatSupported: p.chatSupported, kind: p.kind,
+                            waitingChatSupported: p.waitingChatSupported)
+        } else if container.contains(.waitingChatReady) {
+            self = .waitingChatReady
         } else if container.contains(.approve) {
             self = .approve
         } else if container.contains(.poolReady) {
@@ -160,9 +166,12 @@ enum NetMessage: Codable, Sendable {
     func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         switch self {
-        case .request(let trainer, let teamSize, let seed, let profile, let rulesVersion, let chatSupported, let kind):
+        case .request(let trainer, let teamSize, let seed, let profile, let rulesVersion, let chatSupported, let kind, let waitingChatSupported):
             try container.encode(RequestPayload(trainer: trainer, teamSize: teamSize, seed: seed, profile: profile,
-                                                rulesVersion: rulesVersion, chatSupported: chatSupported, kind: kind), forKey: .request)
+                                                rulesVersion: rulesVersion, chatSupported: chatSupported, kind: kind,
+                                                waitingChatSupported: waitingChatSupported), forKey: .request)
+        case .waitingChatReady:
+            try container.encode(EmptyPayload(), forKey: .waitingChatReady)
         case .approve:
             try container.encode(EmptyPayload(), forKey: .approve)
         case .poolReady(let lineup, let profile, let rulesVersion, let chatSupported):
@@ -636,7 +645,21 @@ final class BattleCenter {
     func dismissGymLevelGateAlert() { gymLevelGateMessage = nil }
     private(set) var chatMessages: [BattleChatMessage] = []
     /// 채팅 입력이 열려 있나. 연결이 닫히면 닫힌다.
-    private(set) var chatIsAvailable = false
+    private var chatTransportIsOpen = false
+    private var peerSupportsWaitingChat: Bool?
+    var chatIsAvailable: Bool {
+        guard chatTransportIsOpen, peerSupportsChat else { return false }
+        if case .battling = phase { return true }
+        return showsWaitingChat && peerSupportsWaitingChat == true
+    }
+
+    var showsWaitingChat: Bool {
+        switch phase {
+        case .challenging, .incoming, .poolSelecting, .poolBuilding, .teamBuilding, .waitingTeam: true
+        case .preparing: peerSupportsWaitingChat != nil
+        default: false
+        }
+    }
     /// 상대 빌드가 채팅을 지원하나 — **핸드셰이크가 정하는 사실**이라 연결 정리가 지우지 않는다.
     /// 이 사실을 `chatIsAvailable` 하나에 겹쳐 담았던 탓에, 배틀이 끝나며 소켓이 닫힌 것을
     /// "상대 앱 버전이 채팅을 지원하지 않는다"고 말했다. 두 사실은 문구가 다르므로 따로 든다.
@@ -1451,7 +1474,7 @@ final class BattleCenter {
         conn.start(queue: .main)
         send(.request(trainer: trainerDisplayName, teamSize: teamSize, seed: seed,
                       profile: myRankProfile, rulesVersion: BattleEngine.rulesVersion,
-                      chatSupported: true, kind: kind), over: conn)
+                      chatSupported: true, kind: kind, waitingChatSupported: true), over: conn)
         receiveLoop(conn)
     }
 
@@ -1759,7 +1782,7 @@ final class BattleCenter {
         settleRankedBrawlIfNeeded(won: false)
     }
 
-    /// 새 대전이 시작될 때 대화만 비운다. 상대 지원 여부는 핸드셰이크가 이미 정했으므로 건드리지 않는다.
+    /// 세션 경계에서 대화를 비운다. 대기에서 배틀로 넘어갈 때는 같은 대화를 이어 간다.
     private func resetChatHistory() {
         chatHistory.reset(); chatMessages = []; chatRateLimiter.reset()
     }
@@ -1769,10 +1792,10 @@ final class BattleCenter {
     ///
     /// **주고받은 대화는 여기서 지우지 않는다.** 배틀이 끝나는 순간 `resolveIfReady` 가 여기를
     /// 지나는데 결과는 재생 뒤로 미뤄져(`deferFinish`) 국면은 아직 `.battling` 이다 — 지우면 화면에
-    /// 남아 있는 대전 화면에서 방금 한 말이 사라진다(리포트된 증상). 비우는 자리는 새 배틀 시작과
+    /// 남아 있는 대전 화면에서 방금 한 말이 사라진다(리포트된 증상). 대화를 비우는 자리는
     /// 세션 경계인 `.ready` 진입뿐이다.
     private func closeChatInput() {
-        chatIsAvailable = false
+        chatTransportIsOpen = false
     }
 
     /// 세션 종료 — 다음 핸드셰이크가 다시 열 때까지 아무것도 남기지 않는다.
@@ -1780,20 +1803,25 @@ final class BattleCenter {
     /// 사실을 유지해야 한다.
     private func endChatSession() {
         resetChatHistory()
-        chatIsAvailable = false
+        chatTransportIsOpen = false
         peerSupportsChat = false
+        peerSupportsWaitingChat = nil
     }
 
     /// 채팅이 잠긴 **이유**. 상대 빌드가 채팅을 명시적으로 지원하지 않을 때만 안내한다.
     /// 정상적인 연결 종료·결과·결정타 재생에는 원인을 추측하는 문구를 그리지 않는다.
     var chatLockMessage: String? {
-        guard !chatIsAvailable, !peerSupportsChat else { return nil }
+        guard !chatIsAvailable else { return nil }
+        if showsWaitingChat {
+            return peerSupportsWaitingChat == false ? l.battleChatUnavailable : nil
+        }
+        guard !peerSupportsChat else { return nil }
         return l.battleChatUnavailable
     }
 
     /// 채팅은 행동 선택과 별도 프레임으로만 전송한다.
     func sendChat(_ body: String) {
-        guard case .battling = phase, chatIsAvailable,
+        guard chatIsAvailable,
               let text = PeerTextPolicy.normalizedBody(body), chatRateLimiter.allows(chatSenderID) else { return }
         let message = BattleChatMessage(senderID: chatSenderID, senderName: myName, body: text)
         chatHistory.append(message); chatMessages = chatHistory.messages
@@ -1852,9 +1880,9 @@ final class BattleCenter {
         pendingMyTeamSize = 1
     }
 
-    private func beginBattle(my: [BattleSnapshot], opp: [BattleSnapshot], iAmA: Bool, seed: UInt64) {
+    func beginBattle(my: [BattleSnapshot], opp: [BattleSnapshot], iAmA: Bool, seed: UInt64) {
         cancelChallengeTimeout()
-        resetChatHistory()
+        chatTransportIsOpen = peerSupportsChat
         didSettleRankedBrawl = false
         lastRankDelta = 0
         if let opponentRankProfile {
@@ -1902,7 +1930,7 @@ final class BattleCenter {
         battle = state
         phase = .battling
         self.peerSupportsChat = peerSupportsChat
-        chatIsAvailable = peerSupportsChat
+        chatTransportIsOpen = peerSupportsChat
     }
     #endif
 
@@ -2001,7 +2029,7 @@ final class BattleCenter {
     /// 수단이 없다(그래서 채팅 상태 수명주기에 테스트가 0건이었고 이 결함이 나갔다).
     func handle(_ message: NetMessage) {
         switch message {
-        case .request(let trainer, let teamSize, let seed, let profile, let rulesVersion, let peerChatSupported, let kind):
+        case .request(let trainer, let teamSize, let seed, let profile, let rulesVersion, let peerChatSupported, let kind, let waitingChatSupported):
             guard case .ready = phase, Self.supportedTeamSizes.contains(teamSize),
                   rulesVersion == BattleEngine.rulesVersion else {
                 send(.decline, over: connection); dropConnection(); phase = .ready; return
@@ -2018,15 +2046,24 @@ final class BattleCenter {
             incomingSeed = seed
             opponentRankProfile = profile
             peerSupportsChat = peerChatSupported == true
+            peerSupportsWaitingChat = peerSupportsChat && waitingChatSupported == true
+            chatTransportIsOpen = peerSupportsChat
             pendingPeerName = trainer
             iAmPendingChallenger = false
             pendingBattleKind = kind ?? .regular
             phase = .incoming(peer: trainer)
+            if peerSupportsWaitingChat == true { send(.waitingChatReady, over: connection) }
             startChallengeTimeout()
             pendingAttention = true
             postPrivateMessageNotification(kind: "battle", nonce: seed)
+        case .waitingChatReady:
+            guard case .challenging = phase, peerSupportsWaitingChat == nil else { return }
+            peerSupportsWaitingChat = true
+            peerSupportsChat = true
+            chatTransportIsOpen = true
         case .approve:
             guard case .challenging(let peer) = phase else { return }
+            if peerSupportsWaitingChat == nil { peerSupportsWaitingChat = false }
             cancelChallengeTimeout()
             incomingTeamSize = pendingMyTeamSize
             incomingLineup = []
@@ -2044,6 +2081,7 @@ final class BattleCenter {
             incomingBattlePool = lineup
             opponentRankProfile = profile
             peerSupportsChat = peerChatSupported == true
+            chatTransportIsOpen = peerSupportsChat
             enterFinalTeamSelectionIfReady(peer: pendingPeerName)
         case .teamReady(let snapshot, let lineup, let teamSize, let profile, let rulesVersion, let peerChatSupported):
             guard rulesVersion == BattleEngine.rulesVersion,
@@ -2055,7 +2093,7 @@ final class BattleCenter {
             incomingLineup = lineup
             opponentRankProfile = pendingBattleKind == .metronome ? nil : profile
             peerSupportsChat = peerChatSupported == true
-            chatIsAvailable = peerSupportsChat
+            chatTransportIsOpen = peerSupportsChat
             if !pendingMyLineup.isEmpty {
                 if pendingBattleKind == .metronome { isMetronomeBattle = true }
                 beginBattle(my: pendingMyLineup, opp: lineup, iAmA: iAmPendingChallenger, seed: incomingSeed)
@@ -2089,7 +2127,8 @@ final class BattleCenter {
             incomingSeed = seed
             opponentRankProfile = profile
             peerSupportsChat = peerChatSupported == true
-            chatIsAvailable = peerSupportsChat
+            peerSupportsWaitingChat = false
+            chatTransportIsOpen = peerSupportsChat
             AppLog.write("battle chat \(peerSupportsChat ? "enabled" : "disabled — peer build sent no chatSupported")")
             phase = .incoming(peer: snapshot.trainer ?? snapshot.name)
             startChallengeTimeout()
@@ -2112,7 +2151,7 @@ final class BattleCenter {
             }
             opponentRankProfile = profile
             peerSupportsChat = peerChatSupported == true
-            chatIsAvailable = peerSupportsChat
+            chatTransportIsOpen = peerSupportsChat
             AppLog.write("battle chat \(peerSupportsChat ? "enabled" : "disabled — peer build sent no chatSupported")")
             beginBattle(my: pendingMyLineup, opp: lineup, iAmA: true, seed: incomingSeed)
         case .decline:
@@ -2155,7 +2194,7 @@ final class BattleCenter {
         // `chatSenderID` 는 우리가 보내는 모든 프레임에 실려 나가므로 되받아 쓰면 화면이 내
         // 말풍선으로 그린다. 교환(`PokemonTradeCenter.acceptChat`)과 같은 경계를 친다.
         case .chat(let message):
-            guard case .battling = phase, chatIsAvailable,
+            guard chatIsAvailable,
                   let body = PeerTextPolicy.normalizedBody(message.body), body == message.body,
                   let name = PeerTextPolicy.displayName(message.senderName),
                   chatRateLimiter.allows(remoteChatSenderID) else { return }

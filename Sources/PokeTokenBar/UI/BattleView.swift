@@ -63,8 +63,11 @@ struct BattleView: View {
     @ViewBuilder
     private var networkSection: some View {
         switch center.phase {
-        case .ready, .preparing:
+        case .ready:
             peerList
+        case .preparing:
+            if center.showsWaitingChat { ProgressView("파티를 준비하는 중…") }
+            else { peerList }
         case .challenging(let peer):
             waitingView(peer: peer)
         case .incoming(let peer):
@@ -89,6 +92,12 @@ struct BattleView: View {
             else if let battle = center.battle { lanArena(battle) }
         case .finished(let iWon, let byForfeit):
             finishedView(iWon: iWon, byForfeit: byForfeit)
+        }
+        if center.showsWaitingChat {
+            BattleChatPanel(configuration: BattleChatConfiguration(
+                messages: center.chatMessages, mySenderID: center.chatSenderID,
+                isEnabled: center.chatIsAvailable, unavailableMessage: center.chatLockMessage,
+                l: l, turnSignal: 0, onSend: center.sendChat))
         }
     }
 

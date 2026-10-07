@@ -226,6 +226,11 @@ struct RoomBattleView: View {
                     Button("나가기") { center.multiplayer.leaveRoom() }
                         .controlSize(.small)
                 }
+                BattleChatPanel(configuration: BattleChatConfiguration(
+                    messages: center.multiplayer.chatMessages, mySenderID: center.multiplayer.myID,
+                    isEnabled: center.multiplayer.chatIsAvailable,
+                    unavailableMessage: center.multiplayer.chatIsAvailable ? nil : l.battleChatUnavailable,
+                    l: l, turnSignal: 0, onSend: center.multiplayer.sendChat))
             }
             if let error = center.multiplayer.lastError { Text(error).font(.caption2).foregroundStyle(.orange) }
         }
