@@ -711,6 +711,8 @@ final class SaveTransferTests: XCTestCase {
         // 웨이브 런 클리어 알의 하루 원장도 같은 부류다 — 레이드 지급 원장과 같은 이유로
         // 더 최근 값을 남겨야 세이브를 주고받는 것만으로 하루 한 번이 무한이 되지 않는다.
         let accountLedger: Set<String> = ["lastCandyDate", "waveRun", "frontierBestStreak",
+                                          // 부탁 수령과 친밀도는 이전 백업으로 되돌릴 수 없는 계정 원장이다.
+                                          "pokopiaCommunity",
                                           "waveRunEggRewardDate",
                                           "gymDefenseRewardDate", "gymDefenseRewardToday",
                                           "raidRewardDate",

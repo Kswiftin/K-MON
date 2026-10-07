@@ -25,6 +25,36 @@ struct PokopiaDailyBoard: Codable, Sendable, Equatable {
     var focusMinutes = 0
     var mealsByRegion: [String: Int] = [:]
     var claimedCount = 0
+
+    init(dayKey: String, isIssued: Bool = true, isBlocked: Bool = false, issuedCount: Int = 0,
+         requests: [PokopiaResidentRequest] = [], focusMinutes: Int = 0,
+         mealsByRegion: [String: Int] = [:], claimedCount: Int = 0) {
+        self.dayKey = dayKey
+        self.isIssued = isIssued
+        self.isBlocked = isBlocked
+        self.issuedCount = issuedCount
+        self.requests = requests
+        self.focusMinutes = focusMinutes
+        self.mealsByRegion = mealsByRegion
+        self.claimedCount = claimedCount
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        dayKey = try c.decode(String.self, forKey: .dayKey)
+        isIssued = try c.decode(Bool.self, forKey: .isIssued)
+        isBlocked = try c.decode(Bool.self, forKey: .isBlocked)
+        issuedCount = try c.decode(Int.self, forKey: .issuedCount)
+        requests = try c.decode([CommunityLossyRequest].self, forKey: .requests).compactMap(\.value)
+        focusMinutes = try c.decode(Int.self, forKey: .focusMinutes)
+        mealsByRegion = try c.decode([String: Int].self, forKey: .mealsByRegion)
+        claimedCount = try c.decode(Int.self, forKey: .claimedCount)
+    }
+}
+
+private struct CommunityLossyRequest: Decodable {
+    let value: PokopiaResidentRequest?
+    init(from decoder: Decoder) throws { value = try? PokopiaResidentRequest(from: decoder) }
 }
 
 enum PokopiaMilestone: String, Codable, CaseIterable, Sendable {
@@ -38,6 +68,30 @@ struct PokopiaCommunityState: Codable, Sendable, Equatable {
     var totalCompleted = 0
     var milestones: Set<PokopiaMilestone> = []
     var needsRecovery = false
+
+    init() {}
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        daily = try c.decodeIfPresent(PokopiaDailyBoard.self, forKey: .daily)
+        friendships = try c.decode([String: Int].self, forKey: .friendships)
+        totalCompleted = try c.decode(Int.self, forKey: .totalCompleted)
+        milestones = Set(try c.decode([PokopiaMilestone].self, forKey: .milestones))
+        needsRecovery = try c.decode(Bool.self, forKey: .needsRecovery)
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encodeIfPresent(daily, forKey: .daily)
+        try c.encode(friendships, forKey: .friendships)
+        try c.encode(totalCompleted, forKey: .totalCompleted)
+        try c.encode(milestones.sorted { $0.rawValue < $1.rawValue }, forKey: .milestones)
+        try c.encode(needsRecovery, forKey: .needsRecovery)
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case daily, friendships, totalCompleted, milestones, needsRecovery
+    }
 }
 
 struct PokopiaCommunityContext: Sendable {
@@ -71,6 +125,97 @@ struct PokopiaReward: Sendable, Equatable {
 }
 
 enum PokopiaCommunity {
+    static func merged(_ imported: PokopiaCommunityState, current: PokopiaCommunityState) -> PokopiaCommunityState {
+        let incoming = normalized(imported), local = normalized(current)
+        var result = incoming
+        result.friendships.merge(local.friendships, uniquingKeysWith: max)
+        result.totalCompleted = max(incoming.totalCompleted, local.totalCompleted)
+        result.milestones.formUnion(local.milestones)
+        result.needsRecovery = incoming.needsRecovery || local.needsRecovery
+        guard let currentBoard = local.daily else { return result }
+        guard let importedBoard = incoming.daily else { result.daily = currentBoard; return result }
+        guard importedBoard.dayKey == currentBoard.dayKey else {
+            result.daily = importedBoard.dayKey > currentBoard.dayKey ? importedBoard : currentBoard
+            return result
+        }
+        // 이미 이 기기에 발급된 목록은 고정한다. 다른 기기의 완료와 격리 슬롯도 상한에 포함한다.
+        var board = currentBoard
+        let localClaims = Set(currentBoard.requests.filter(\.isClaimed).map(\.id))
+        let importedClaims = Set(importedBoard.requests.filter(\.isClaimed).map(\.id))
+        let claims = localClaims.union(importedClaims)
+        let unknownClaims = max(currentBoard.claimedCount - localClaims.count,
+                                importedBoard.claimedCount - importedClaims.count)
+        board.issuedCount = max(currentBoard.issuedCount, importedBoard.issuedCount)
+        board.claimedCount = min(board.issuedCount, claims.count + max(0, unknownClaims))
+        for index in board.requests.indices { board.requests[index].isClaimed = claims.contains(board.requests[index].id) }
+        board.isIssued = currentBoard.isIssued || importedBoard.isIssued
+        board.isBlocked = currentBoard.isBlocked || importedBoard.isBlocked
+        board.focusMinutes = max(currentBoard.focusMinutes, importedBoard.focusMinutes)
+        board.mealsByRegion.merge(importedBoard.mealsByRegion, uniquingKeysWith: max)
+        result.daily = board
+        return result
+    }
+
+    static func canonicalPayload(_ state: PokopiaCommunityState) -> String? {
+        guard state != PokopiaCommunityState() else { return nil }
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        guard let data = try? encoder.encode(state) else { return "invalid-community" }
+        return String(decoding: data, as: UTF8.self)
+    }
+
+    static func normalized(_ state: PokopiaCommunityState) -> PokopiaCommunityState {
+        var result = state
+        result.totalCompleted = max(0, result.totalCompleted)
+        result.friendships = result.friendships.reduce(into: [:]) { output, entry in
+            let parts = entry.key.split(separator: ":", omittingEmptySubsequences: false)
+            guard parts.count == 2, let region = TownRegion(rawValue: String(parts[0])),
+                  let species = Int(parts[1]), PokemonAssets.hasAnimatedSprite(speciesID: species),
+                  entry.key == friendshipKey(region: region, speciesID: species) else { return }
+            output[entry.key] = min(10, max(0, entry.value))
+        }
+        guard var daily = result.daily else { return result }
+        guard validDayKey(daily.dayKey) else {
+            result.daily = nil
+            result.needsRecovery = true
+            return result
+        }
+        daily.issuedCount = min(3, max(0, daily.issuedCount))
+        daily.claimedCount = min(daily.issuedCount, max(0, daily.claimedCount))
+        daily.focusMinutes = min(20, max(0, daily.focusMinutes))
+        daily.mealsByRegion = daily.mealsByRegion.reduce(into: [:]) { output, entry in
+            if TownRegion(rawValue: entry.key) != nil { output[entry.key] = min(1, max(0, entry.value)) }
+        }
+        var seen: Set<String> = []
+        daily.requests = Array(daily.requests.filter { request in
+            guard request.id == "\(daily.dayKey)|\(request.region.rawValue)|\(request.speciesID)|\(request.kind.rawValue)",
+                  PokemonAssets.hasAnimatedSprite(speciesID: request.speciesID),
+                  request.arrivedAt.timeIntervalSinceReferenceDate.isFinite,
+                  PokopiaCrafting.materials.contains(request.reward),
+                  request.target == (request.kind == .focus ? 20 : request.kind == .habitat ? 6 : 1),
+                  (request.kind == .habitat) == (request.terrain != nil),
+                  seen.insert(friendshipKey(region: request.region, speciesID: request.speciesID)).inserted else { return false }
+            return true
+        }.prefix(daily.issuedCount))
+        daily.claimedCount = max(daily.claimedCount, daily.requests.filter(\.isClaimed).count)
+        // 발급 수와 격리된 항목은 복구 시에도 줄이지 않는다.
+        if !daily.isIssued { daily.isBlocked = true }
+        result.daily = daily
+        return result
+    }
+
+    private static func validDayKey(_ key: String) -> Bool {
+        let parts = key.split(separator: "-", omittingEmptySubsequences: false)
+        guard parts.count == 3, parts[0].count == 4, parts[1].count == 2, parts[2].count == 2,
+              let year = Int(parts[0]), let month = Int(parts[1]), let day = Int(parts[2]),
+              year > 0, (1...12).contains(month), (1...31).contains(day) else { return false }
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        let components = DateComponents(year: year, month: month, day: day)
+        guard let date = calendar.date(from: components) else { return false }
+        return calendar.dateComponents([.year, .month, .day], from: date) == components
+    }
+
     static func status(_ request: PokopiaResidentRequest, state: PokopiaCommunityState,
                        context: PokopiaCommunityContext) -> PokopiaRequestStatus {
         guard let daily = state.daily else { return .expired }
