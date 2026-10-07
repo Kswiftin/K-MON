@@ -274,6 +274,7 @@ enum SaveTransfer {
         s.achievements.normalize()
         // 시즌도 같은 자리에서 자른다 — 저장된 시즌의 세트에 없는 키를 버리고 목표에서 클램프한다.
         s.seasons.normalize()
+        s.pokopiaCommunity = PokopiaCommunity.normalized(s.pokopiaCommunity)
         s.focusEggs = min(max(0, s.focusEggs), CompanionStore.storedEggLimit)
         s.focusEggReadyDates = Array(s.focusEggReadyDates.sorted().prefix(s.focusEggs))
         s.professorTransferProgress = min(max(0, s.professorTransferProgress), 2)
@@ -425,6 +426,8 @@ enum SaveTransfer {
     static func canonicalString(_ s: CompanionState,
                                 deviceSeed: String = DeviceID.stableIdentifier()) -> String {
         var p: [String] = []
+        // 빈 새 필드는 생략해 기존 세이브의 서명을 그대로 보존한다.
+        if let community = PokopiaCommunity.canonicalPayload(s.pokopiaCommunity) { p.append("pkcm" + community) }
         p.append("v\(s.economyVersion)")
         p.append("u\(s.usedSinceInstall)"); p.append("sp\(s.spentTokens)"); p.append("pc\(s.starPieces)"); p.append("eg\(s.eggUsage)")
         if s.battleRank.points != 0 { p.append("br\(s.battleRank.points)") }
@@ -647,6 +650,7 @@ enum SaveTransfer {
     static func rebasedForThisDevice(_ imported: CompanionState,
                                      current: CompanionState) -> CompanionState {
         var state = imported
+        state.pokopiaCommunity = PokopiaCommunity.merged(imported.pokopiaCommunity, current: current.pokopiaCommunity)
         state.lastTickAt = nil
         // 체육관 관장은 **이 기기에서 돌고 있는 살아있는 역할**이지 진행이 아니다. 따라오게 두면
         // 세이브를 옮긴 기기가 호스팅하지도 않는 체육관의 관장을 자처하고, 방어팀 넷이 그 기기에서

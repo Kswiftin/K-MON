@@ -106,6 +106,39 @@ struct TownResident: Codable, Sendable, Equatable, Identifiable {
     /// 종이 곧 정체다 — **같은 종은 두 번 이사 오지 않는다**. 이 성질이 이사의 멱등이라
     /// 세션 단위 가드가 필요 없다(이사는 비동기 조회 뒤에 결정되므로 동기 가드에 못 태운다).
     var id: Int { speciesID }
+
+    init(speciesID: Int, name: String, types: [PokemonType], arrivedAt: Date) {
+        self.speciesID = speciesID
+        self.name = name
+        self.types = types
+        self.arrivedAt = arrivedAt
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case speciesID, name, types, arrivedAt, arrivedAtReferenceTime
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        speciesID = try c.decode(Int.self, forKey: .speciesID)
+        name = try c.decode(String.self, forKey: .name)
+        types = try c.decode([PokemonType].self, forKey: .types)
+        if let exact = try c.decodeIfPresent(Double.self, forKey: .arrivedAtReferenceTime) {
+            arrivedAt = Date(timeIntervalSinceReferenceDate: exact)
+        } else {
+            arrivedAt = try c.decode(Date.self, forKey: .arrivedAt)
+        }
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(speciesID, forKey: .speciesID)
+        try c.encode(name, forKey: .name)
+        try c.encode(types, forKey: .types)
+        try c.encode(arrivedAt, forKey: .arrivedAt)
+        // 이전 독자는 arrivedAt을 읽는다. 정확한 소유자 판정은 ISO8601의 초 절삭을 피한다.
+        try c.encode(arrivedAt.timeIntervalSinceReferenceDate, forKey: .arrivedAtReferenceTime)
+    }
 }
 
 /// 마을 상태 전부. `PokopiaState.towns` 의 값 하나다(7단계 전에는 `MemoryHomeAccessSettings.town`

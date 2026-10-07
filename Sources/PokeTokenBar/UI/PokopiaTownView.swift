@@ -24,6 +24,7 @@ struct PokopiaTownView: View {
     @State private var transforming = false
     @State private var crafting = false
     @State private var evicting: TownResident?
+    @State private var conversation: PokopiaConversationSelection?
     /// 아바타가 서 있는 칸. **저장하지 않는다** — 뷰 상태다(새 저장 필드 0개).
     @State private var avatarCell: (col: Int, row: Int) = (PokopiaTown.columns / 2,
                                                             PokopiaTown.rows - 1)
@@ -77,15 +78,22 @@ struct PokopiaTownView: View {
         }
         .sheet(isPresented: $transforming) { PokopiaTransformSheet(store: store) }
         .sheet(isPresented: $crafting) { PokopiaCraftSheet(store: store) }
+        .sheet(item: $conversation) { PokopiaResidentConversationSheet(store: store, selection: $0) }
         .alert("\(evicting?.name ?? "") 내보낼까요?", isPresented: .init(
             get: { evicting != nil }, set: { if !$0 { evicting = nil } })) {
             Button("취소", role: .cancel) { evicting = nil }
             Button("내보내기", role: .destructive) {
                 if let resident = evicting { _ = album.evictTownResident(speciesID: resident.speciesID) }
+                store.refreshPokopiaCommunity()
                 evicting = nil
             }
         } message: {
             Text("다시 찾아올 수도 있지만, 지금 마을에서는 사라져요.")
+        }
+        .onAppear { store.refreshPokopiaCommunity() }
+        .onChange(of: album.region) { _, _ in store.refreshPokopiaCommunity() }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            store.refreshPokopiaCommunity()
         }
         .onDisappear { workTask?.cancel(); working = false }
     }
@@ -116,6 +124,7 @@ struct PokopiaTownView: View {
 
     private var details: some View {
         VStack(alignment: .leading, spacing: 12) {
+            PokopiaCommunityCards(store: store, onConversation: openConversation)
             arrivalGuide
             habitatBoard
             DisclosureGroup(isExpanded: $showsResidents) {
@@ -246,6 +255,7 @@ struct PokopiaTownView: View {
 
                 Button {
                     album.undoTownEdit()
+                    store.refreshPokopiaCommunity()
                     feedback = EditFeedback(message: "마지막 마을 편집을 취소했어요.", isSuccess: true)
                 } label: {
                     Image(systemName: "arrow.uturn.backward")
@@ -257,6 +267,7 @@ struct PokopiaTownView: View {
 
                 Button {
                     album.redoTownEdit()
+                    store.refreshPokopiaCommunity()
                     feedback = EditFeedback(message: "취소한 마을 편집을 다시 적용했어요.", isSuccess: true)
                 } label: {
                     Image(systemName: "arrow.uturn.forward")
@@ -529,6 +540,11 @@ struct PokopiaTownView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
             Spacer()
+            Button("대화하기") {
+                openConversation(.init(region: album.region, speciesID: resident.speciesID, arrivedAt: resident.arrivedAt))
+            }
+            .font(.caption2)
+            .accessibilityLabel("\(resident.name) 주민과 대화하기")
             Button("내보내기") { evicting = resident }
                 .font(.caption2)
                 .help("\(resident.name) 주민을 이 마을에서 내보내요.")
@@ -541,6 +557,11 @@ struct PokopiaTownView: View {
     // MARK: 동작
 
     /// 칸 하나를 민다. 아바타가 그 자리로 옮겨가고 먼지가 한 번 뜬다.
+    private func openConversation(_ selection: PokopiaConversationSelection) {
+        store.refreshPokopiaCommunity()
+        conversation = selection
+    }
+
     private func shape(col: Int, row: Int) {
         guard let brush = store.townBrush else {
             feedback = EditFeedback(message: town.dittoForm == nil
@@ -557,6 +578,7 @@ struct PokopiaTownView: View {
             return
         }
         feedback = EditFeedback(message: "\(brush.name) 지형으로 바꿨어요.", isSuccess: true)
+        store.refreshPokopiaCommunity()
         // 일회성 연출(`CompanionView` 의 `dittoBurst` 패턴). 프레임 루프를 만들지 않는다.
         withAnimation(.easeOut(duration: 0.12)) { working = true }
         workTask?.cancel()

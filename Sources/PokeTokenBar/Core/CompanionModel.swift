@@ -2834,6 +2834,7 @@ struct CompanionState: Codable, Sendable {
     /// 병렬을 부르고, 이 기능이 주려는 것은 병렬 생산 최적화가 아니라 기다림 하나다.
     /// 오프라인 타이머 형태는 위 `focusEggReadyDates` 와 같다(예정 시각을 저장하고 뒤에 비교한다).
     var townCraft: TownCraftOrder?
+    var pokopiaCommunity = PokopiaCommunityState()
     /// 박사에게 보낸 포켓몬 중 아직 알로 교환되지 않은 수. 3마리마다 일반 알 하나가 되고
     /// 나머지(0...2)는 다음 전송으로 이월된다.
     var professorTransferProgress = 0
@@ -2929,6 +2930,10 @@ struct CompanionState: Codable, Sendable {
         focusEggReadyDates = c.lenient([Date].self, forKey: .focusEggReadyDates, default: [])
         // 9단계 이전 세이브엔 이 키가 없다 — 없으면 nil 이고, 그것이 "아무것도 안 만드는 중" 이다.
         townCraft          = c.lenientOptional(TownCraftOrder.self, forKey: .townCraft)
+        if c.contains(.pokopiaCommunity) {
+            do { pokopiaCommunity = try c.decode(PokopiaCommunityState.self, forKey: .pokopiaCommunity) }
+            catch { pokopiaCommunity.needsRecovery = true }
+        }
         professorTransferProgress = c.lenient(Int.self, forKey: .professorTransferProgress, default: 0)
         outfit             = c.lenient(TrainerOutfit.self, forKey: .outfit, default: TrainerOutfit())
         // 모르는 rawValue(미래 빌드가 새 아이템을 저장한 세이브)는 항목 격리로 걸러낸다 —

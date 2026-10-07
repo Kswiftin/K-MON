@@ -227,6 +227,20 @@ final class CompanionStore {
 
     private let provider: any PokeProviding
     private let clock: () -> Date
+    var pokopiaCommunityDayKey: String { Self.dayKey(clock()) }
+
+    @discardableResult
+    func updatePokopiaCommunity(saveImmediately: Bool = true,
+                               _ mutation: (inout PokopiaCommunityState, inout [String: Int]) -> Bool) -> Bool {
+        guard !isReadOnly else { return false }
+        var community = state.pokopiaCommunity
+        var inventory = state.inventory
+        guard mutation(&community, &inventory) else { return false }
+        state.pokopiaCommunity = community
+        state.inventory = inventory
+        if saveImmediately { save() }
+        return true
+    }
     /// 일간 미션을 기기마다 다르게 배정하는 씨앗. **주입받는다** — 기본값(`DeviceID`)을 코드가 직접
     /// 읽으면 배정이 실행 기기에 따라 달라져, 같은 테스트가 어떤 맥에서는 초록이고 어떤 맥에서는
     /// 빨강이 된다(2026-09-11 실측: `missions=0/3` 을 기대한 테스트가 이 맥에서만 1/3 이었다).
@@ -1907,6 +1921,7 @@ final class CompanionStore {
         // 기록이 **먼저**다. 정산 아래에 두면 정산할 모험이 없는 세션(위 guard 로 빠지는 경로)이
         // 통째로 기록에서 빠져, 지표가 "모험을 보낸 세션" 만 세게 된다.
         focusSessions.record(minutes: minutes, label: label, at: clock())
+        recordPokopiaFocus(minutes: minutes, saveImmediately: false)
         guard let reward = claimAdventure() else {
             save()
             return FocusSessionReward(minutes: minutes, stardust: 0, foundEgg: false)
@@ -3917,6 +3932,7 @@ final class CompanionStore {
     /// 인벤토리를 모르므로 소비와 쓰기가 갈려 있고, 그래서 순서가 계약이다.
     @discardableResult
     func feedTown(_ kind: ItemKind) -> Date? {
+        let fedRegion = memoryAlbum.region
         guard let base = PokopiaCrafting.recipe(making: kind)?.satietyHours,
               itemCount(kind) > 0 else { return nil }
         // 요씽셰프(파티)가 있으면 같은 요리가 더 오래 먹인다. 상한(`maxSatiety`)은 여전히
@@ -3927,6 +3943,7 @@ final class CompanionStore {
         guard memoryAlbum.feedTown(until: until) else { return nil }
         let left = itemCount(kind) - 1
         state.inventory[kind.rawValue] = left > 0 ? left : nil
+        recordPokopiaMeal(region: fedRegion, saveImmediately: false)
         save()
         return until
     }
