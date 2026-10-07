@@ -21,6 +21,7 @@ struct RoomExecutorTests {
         var created: [RaidTier] = []
         var joined: [(number: Int, role: LobbyRole)] = []
         var readied = 0
+        var chatted: [String] = []
         var started = 0
         var left = 0
 
@@ -33,6 +34,7 @@ struct RoomExecutorTests {
             joined.append((number, role)); terminalState.phase = .joining("방"); return true
         }
         func toggleReadyFromTerminal() -> Bool { readied += 1; return true }
+        func sendChat(_ body: String) { chatted.append(body) }
         func submitAction(targetID: UUID, moveIndex: Int) {
             submitted.append((targetID, moveIndex))
         }
@@ -63,6 +65,26 @@ struct RoomExecutorTests {
     }
 
     // MARK: 기술과 대상
+
+    @Test func chatRequestsUseTheRoomCapabilityAndValidateText() async throws {
+        let directory = makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = makeStore(in: directory)
+        var state = RoomTerminalState(phase: .joined, activity: .pokemonQuiz, myID: UUID())
+        state.chatIsAvailable = true
+        let control = FakeRoomControl(state)
+        let action = try #require(PokedoroRequest.Action(name: "room.chat", argument: "  준비\n됐어요  "))
+        #expect(await execute(action, on: store, room: control).succeeded)
+        #expect(control.chatted == ["준비 됐어요"])
+
+        control.terminalState.chatIsAvailable = false
+        #expect(await execute(action, on: store, room: control).succeeded == false)
+        control.terminalState.chatIsAvailable = true
+        #expect(await execute(.roomChat(body: "   "), on: store, room: control).succeeded == false)
+        #expect(await execute(.roomChat(body: String(repeating: "가", count: 201)), on: store, room: control).succeeded == false)
+        #expect(control.chatted == ["준비 됐어요"])
+        #expect(await execute(action, on: store, room: nil).succeeded == false)
+    }
 
     @Test func testRaidRoomsCanBeListedCreatedJoinedAndSpectated() async {
         let directory = makeDirectory()

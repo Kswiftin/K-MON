@@ -530,7 +530,7 @@ final class MultiplayerRoomCenter {
         raidContributions = [:]; raidSettlement = nil; raidPayout = nil
         raidCatcherID = nil; raidCatchResult = nil; raidCatchAttempts = []; raidCatchTask = nil
         raidFinishedRound = 0; settledRaid = false; contributionsSettled = false
-        chatHistory.reset(); chatMessages = []; chatRateLimiter.reset()
+        // 로비에서 나눈 대화와 발신자별 속도 제한은 레이드 시작 후에도 이어진다.
         turnEndsAt = Date().addingTimeInterval(Self.turnDuration)
         phase = .battling
     }
@@ -2221,12 +2221,12 @@ final class MultiplayerRoomCenter {
         finishRoundIfReady()
     }
 
-    /// 대기 채팅은 이를 지원하는 배틀 방에서만 연다. 다른 활동의 기존 전투 채팅은 그대로 둔다.
+    /// 활동 종류와 무관하게 지원이 확인된 방의 참가자에게 대기 채팅을 연다.
     var chatIsAvailable: Bool {
         switch phase {
         case .battling, .tournament: true
         case .hosting, .joined:
-            lobby?.activity == .battle && lobby?.waitingChatSupported == true && myParticipant != nil
+            lobby?.waitingChatSupported == true && myParticipant != nil
         default: false
         }
     }

@@ -344,6 +344,7 @@ pokedoro room left|right      OX 퀴즈의 답, 포켓슬론의 레인 (앱에 �
 pokedoro room run|swap        포켓슬론 전진·개체 교체 (앱에 요청)
 pokedoro room bet <러너> <금액> --yes  포켓슬론 관전 베팅 (앱에 요청, 되돌릴 수 없다)
 pokedoro room start           호스트가 판 시작 (앱에 요청 · 체육관은 시작이 없다)
+pokedoro room chat <내용>     현재 방 채팅 (앱에 요청 · 최대 200자, 최근 5개 표시)
 pokedoro room leave --yes     방 나가기 (앱에 요청, 정산을 못 받는다)
 pokedoro gym                  도전 탭 체육관 레이드 — 여덟 곳과 딴 배지 (**앱 없이도 된다**)
 pokedoro gym team <번호 4개>   출전 팀과 순서 지정 (party 번호 · 앱에 요청)

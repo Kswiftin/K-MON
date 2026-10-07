@@ -120,6 +120,7 @@ struct PokedoroRequest: Codable, Equatable, Sendable {
         /// 협동 레이드는 보스 하나라 대개 생략한다. UUID 를 싣지 않는 이유는 사람이 칠 수 없어서다.
         case roomMove(move: Int, target: Int?)
         case roomReady
+        case roomChat(body: String)
         /// 호스트가 판을 시작한다. 사람이 덜 모였으면 센터가 거절한다.
         case roomStart
         /// **되돌릴 수 없다** — 그 판의 정산을 못 받는다.
@@ -263,6 +264,7 @@ struct PokedoroRequest: Codable, Equatable, Sendable {
             case .raidMon: "raid.mon"
             case .roomMove: "room.move"
             case .roomReady: "room.ready"
+            case .roomChat: "room.chat"
             case .roomStart: "room.start"
             case .roomLeave: "room.leave"
             case .roomSwitch: "room.switch"
@@ -349,6 +351,7 @@ struct PokedoroRequest: Codable, Equatable, Sendable {
             case .homeStyle(let style): style.rawValue
             case .homeNote(let body): body
             case .homeMessage(let text): text
+            case .roomChat(let body): body
             case .homeNickname(let name): name
             case .homeRoommate(let number), .homeRemove(let number): String(number)
             // 아이템은 **rawValue 로** 적는다 — 표시 이름으로 적으면 언어를 바꾼 사용자가
@@ -519,6 +522,9 @@ struct PokedoroRequest: Codable, Equatable, Sendable {
                 }
             case "room.start" where argument == nil: self = .roomStart
             case "room.ready" where argument == nil: self = .roomReady
+            case "room.chat":
+                guard let argument, let body = PeerTextPolicy.normalizedBody(argument) else { return nil }
+                self = .roomChat(body: body)
             case "room.leave" where argument == nil: self = .roomLeave
             case "room.switch":
                 guard let argument, let slot = Self.countingNumber(argument) else { return nil }

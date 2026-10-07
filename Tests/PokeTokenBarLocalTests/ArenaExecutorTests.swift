@@ -17,6 +17,7 @@ import Testing
 struct ArenaExecutorTests {
 
     private final class FakeRoomControl: TerminalRoomControl {
+        func sendChat(_ body: String) {}
         var terminalState: RoomTerminalState
         var terminalRaidRooms: [TerminalRaidRoom] = []
         var terminalRaidBrowsing = true

@@ -45,7 +45,7 @@ enum PokedoroCLI {
              .gymChallenge, .gymTeam, .playerGymStatus, .playerGymOpen, .playerGymChallenge,
              .playerGymSpectate, .playerGymDefense, .playerGymAI, .playerGymTakeover,
              .raid, .raidCreate, .raidJoin, .raidMon,
-             .roomMove, .roomReady, .roomStart, .roomSwitch, .roomTrack,
+             .roomMove, .roomReady, .roomChat, .roomStart, .roomSwitch, .roomTrack,
              .tradeAccept, .tradeDecline, .tradeOffer, .tradeWant,
              .auctionPost, .auctionUnpost, .auctionReject, .auctionCancel, .auctionClear,
              .homeMood, .homeStyle, .homeNote, .homeMessage, .homeNickname, .homeRoommate,
