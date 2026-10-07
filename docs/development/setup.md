@@ -49,7 +49,7 @@ PR에서는 `build-test`와 `secret-scan` 결과를 확인합니다. `main` push
 
 ## 변경할 때 참고할 문서
 
-- 협업 절차와 PR 작성: [기여 가이드](../community/contributing.md).
+- 협업 절차와 PR 작성: [기여 가이드](contributing.md).
 - 코드와 테스트 작성 원칙: [개발 규약](conventions.md).
 - 배포와 실패 대응: [릴리스 절차](releasing.md).
 - 기능별 구현 계약과 과거 설계: [기술 참조 목록](../README.md#기술-참조).

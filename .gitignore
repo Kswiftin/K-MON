@@ -29,7 +29,6 @@ docs/*
 !docs/README.md
 !docs/guides/
 !docs/development/
-!docs/community/
 !docs/reference/
 docs/**/specs/
 docs/**/plans/

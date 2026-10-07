@@ -36,7 +36,7 @@
 - **README 도 한국어 전용**이다(2026-09-09 결정). en/ja 버전(`README.en.md`/`README.ja.md`)을
   걷어냈다 — 앱 UI·커밋·PR 이 이미 한국어뿐인데 소개 자료만 세 벌을 유지하는 비용이 실제
   독자보다 컸다. 스크린샷도 언어 접미 없이 한 벌만 둔다.
-- 공개 기여 정책의 정본은 `docs/community/contributing.md` 다. `CONTRIBUTING.md`(+`.ko`·`.ja`)는
+- 기여 안내의 정본은 `docs/development/contributing.md` 다. `CONTRIBUTING.md`(+`.ko`·`.ja`)는
   언어별 진입점이다. 이 절을 고치면 정본·진입점과 `.github/PULL_REQUEST_TEMPLATE.md`도 함께 맞춘다.
 - 기여자가 다른 언어로 PR 을 열면 언어를 이유로 돌려보내지 않는다. 머지 전에 제목만 한국어로 옮긴다.
   코드 식별자·API 이름·CLI 명령·에러 문자열은 원문 그대로 쓴다.

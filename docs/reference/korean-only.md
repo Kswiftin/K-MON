@@ -46,7 +46,7 @@ read_when:
 
 **공개 문서.** README는 2026-09-09부터 한국어 전용이며 `docs/`의 공개 안내도 한국어로
 유지한다. 루트의 `CONTRIBUTING.md`·`.ko`·`.ja`는 기여 안내의 언어별 진입점이며,
-정본은 [기여 가이드](../community/contributing.md)다. 별도의 랜딩 페이지는 운영하지 않는다.
+정본은 [기여 가이드](../development/contributing.md)다. 별도의 랜딩 페이지는 운영하지 않는다.
 
 ## 새 문구를 넣을 때
 

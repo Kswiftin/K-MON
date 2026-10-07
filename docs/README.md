@@ -14,18 +14,10 @@
 
 | 문서 | 내용 |
 | --- | --- |
+| [함께 개발하기](development/contributing.md) | 브랜치·PR 작업, 작업 언어, 코드와 자료 |
 | [개발 환경과 검증](development/setup.md) | 요구사항, 소스·번들 빌드, 테스트와 CI |
 | [개발 규약](development/conventions.md) | 코드·UI·문서 변경과 검증 원칙 |
 | [릴리스 절차](development/releasing.md) | 배포 체크리스트, 워크플로, 실패 대응 |
-
-## 참여와 운영
-
-| 문서 | 내용 |
-| --- | --- |
-| [기여 가이드](community/contributing.md) | 이슈·PR 절차, 작업 언어, 기여 조건 |
-| [거버넌스](community/governance.md) | 역할·권한, 의사결정, 이견·이임 처리 |
-| [행동 규범](community/code-of-conduct.md) | 참여 규칙, 신고·조치와 재검토 |
-| [보안 정책](community/security.md) | 대응 버전, 비공개 제보, 수정과 공개 |
 
 ## 기술 참조
 

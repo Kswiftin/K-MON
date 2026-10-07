@@ -42,9 +42,6 @@ macOS 14 이상에서 Apple Silicon과 Intel을 지원합니다.
 | --- | --- |
 | 데이터 저장과 통신 확인 | [데이터·개인정보](docs/guides/privacy.md) |
 | 버그 보고·기능 제안·PR 작성 | [기여 가이드](CONTRIBUTING.md) |
-| 프로젝트 운영과 의사결정 | [거버넌스](GOVERNANCE.md) |
-| 커뮤니티 참여 규칙 | [행동 규범](CODE_OF_CONDUCT.md) |
-| 취약점 비공개 제보 | [보안 정책](SECURITY.md) |
 
 ## 라이선스와 면책
 
