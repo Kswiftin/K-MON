@@ -1,0 +1,94 @@
+# 릴리스 프로세스
+
+버전 배포는 **태그 하나로 시작한다.** 로컬 스크립트는 태그를 안전하게 만드는 일만 하고,
+빌드·서명·appcast·Release 공개는 GitHub Actions(`.github/workflows/release.yml`)가 전부 맡는다.
+로컬과 CI 가 서로 다른 바이너리를 배포하거나 Asset 없는 Release 가 먼저 공개되는 일을 막는 구조다.
+
+## 한 줄 배포
+
+```bash
+./scripts/release.sh 2.9.0     # v 접두어 없이 x.y.z
+```
+
+### `release.sh` 가 검사하는 것
+
+1. 버전 형식이 `x.y.z` 인가
+2. `scripts/build-app.sh` 의 `DEFAULT_VERSION` 이 배포할 버전과 같은가
+3. 현재 브랜치가 `main` 인가
+4. 커밋되지 않은 변경이 없는가
+5. `HEAD` 가 `origin/main` 과 같은가 (`git fetch --no-tags origin main`)
+6. `v<version>` 태그가 로컬·원격에 없는가
+7. `./scripts/test-gate.sh` 가 통과하는가 (전체 테스트 + 자체 warning 0 + 로직 코어 커버리지)
+8. 통과하면 주석 태그를 만들어 push → 여기서부터 비가역
+
+### `release.yml` 이 하는 것
+
+태그 push 로 시작해 순서대로 수행한다.
+
+1. 태그 형식 + **태그 커밋이 `origin/main` HEAD 인지** 검증
+2. Sparkle 서명키·macOS 서명 인증서(`MACOS_SIGNING_CERTIFICATE_P12`)·`KMON_GITHUB_OAUTH_CLIENT_ID` 존재 확인
+3. `test-gate.sh` 재실행 (cold build — 로컬 warm build 가 숨긴 warning 이 여기서 잡힌다)
+4. `build-app.sh` 로 앱 빌드 (`KMON_VERSION` 은 태그에서 주입, `CODESIGN_IDENTITY=K-MON Release`).
+   안정적 서명이 기본 요구사항이며 릴리스 CI는 개발용 `PTB_ALLOW_ADHOC=1`을 사용하지 않는다.
+5. Sparkle 프레임워크 임베드·서명·OAuth Client ID 확인
+6. `Pokedoro.zip` + `Pokedoro.zip.sha256` + 서명된 `appcast.xml` 생성
+7. 모든 검사를 통과한 **뒤에** GitHub Release 공개 — `RELEASE_NOTES.ko.md` 가 있으면 그 내용을,
+   없으면 `--generate-notes`(PR 제목 목록, 영어)로 대체한다
+
+> 태그를 push 한 뒤 워크플로가 끝나기 전에 다른 PR 을 `main` 에 머지하면 태그·대상 검증 단계에서 실패한다.
+> 런이 끝날 때까지 머지를 멈춘다.
+
+## 릴리스 전 문서 체크리스트
+
+기능·동작이 바뀐 릴리스면 **태그를 만들기 전에** 반영한다. 자세한 절차와 함정은
+[릴리스 실행 세부](../reference/release-workflow.md).
+
+- [ ] **README.md와 `docs/guides/`** — README의 소개·요구사항과 기능·화면·설치·CLI 안내의 해당 본문을 갱신한다. 한국어 전용.
+- [ ] **`assets/` 스크린샷은 만들지 않는다** (2026-09-23 지시). 낡았거나 커버리지가 없으면
+      사용자에게 한 줄로만 알린다 — 직접 만들지 않는다. 근거는
+      [릴리스 실행 세부](../reference/release-workflow.md).
+- [ ] **`scripts/build-app.sh` 의 `DEFAULT_VERSION`** — 손으로 빌드한 앱만 옛 버전으로 뜨지 않게
+      새 버전으로 올린다. 배포 산출물은 태그에서 주입받으므로 이 값을 쓰지 않는다. 안 올리면
+      `release.sh` 가 태그를 만들기 전에 멈춘다(v2.24.0 이 이 값을 놓친 채 나가서 게이트를 넣었다).
+- [ ] **`RELEASE_NOTES.ko.md`** — 이번 릴리스의 변경 내역을 한글로 새로 쓴다. 앱 내 업데이트
+      팝업(`ReleaseNotesPresenter`)이 이 파일 내용을 그대로 보여 주므로, 지난 릴리스 내용을
+      그대로 남겨 두면 사용자가 옛 변경 내역을 다시 본다.
+
+## 릴리스 노트
+
+CI 가 태그 커밋의 `RELEASE_NOTES.ko.md` 를 GitHub Release 본문으로 쓴다 — 앱 내 업데이트 팝업이
+이 본문을 그대로 보여 주므로 한글로 쓴다. 파일이 없거나 비어 있으면 `--generate-notes`(PR 제목
+목록, 영어)로 대체되므로 빠뜨려도 배포 자체는 막히지 않지만, 그러면 팝업이 영어로 나간다.
+
+공개 후 손보려면:
+
+```bash
+gh release edit v2.9.0 --notes-file /tmp/notes.md
+```
+
+## 실패했을 때
+
+- **공개 전 실패**(빌드·서명·appcast 단계) — 태그를 지우고 고친 뒤 같은 버전으로 다시 시작한다.
+  ```bash
+  git tag -d v2.9.0 && git push origin :refs/tags/v2.9.0
+  ```
+- **공개 후 발견** — 이미 배포된 버전은 되돌리지 않고 다음 패치로 올린다.
+
+## 배포 후 검증
+
+```bash
+gh run list --workflow release.yml --limit 5  # 배포 태그에 해당하는 실행 ID 확인
+gh run watch <run-id> --exit-status          # 해당 실행의 성공 여부까지 확인
+gh release view v2.9.0                    # zip · sha256 · appcast 3개 확인
+```
+
+설치된 앱에서 업데이트 확인을 한 번 눌러 Sparkle 경로까지 확인한다.
+
+## 서명
+
+- 릴리스 빌드는 `K-MON Release` 인증서로 CI 에서 서명한다. 개인키는 Actions secret
+  (`MACOS_SIGNING_CERTIFICATE_P12` / `MACOS_SIGNING_CERTIFICATE_PASSWORD`)에만 있고 레포에 없다.
+- designated requirement 가 버전 간 고정되므로 사용자의 Keychain "항상 허용"이 업데이트 후에도 유지된다.
+- 인증서를 재생성하면 DR 이 바뀌어 전 사용자가 다시 프롬프트를 본다 — 재생성 금지.
+- 로컬 수동 빌드는 같은 이름의 자체서명 인증서를 `scripts/create-signing-cert.sh` 로 만들어 쓰고,
+  없으면 기본 빌드는 중단한다. 개발용 ad-hoc 서명은 `PTB_ALLOW_ADHOC=1`로 명시한다.

@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: 보안 취약점 비공개 제보
+    url: https://github.com/Kswiftin/K-MON/blob/main/SECURITY.md
+    about: 공개 이슈에 상세 내용을 쓰기 전에 보안 정책의 연락 절차를 확인하세요.
+  - name: 행동 규범 위반 신고
+    url: https://github.com/Kswiftin/K-MON/blob/main/CODE_OF_CONDUCT.md
+    about: 신고와 대응 절차를 확인하고 민감한 정보는 공개하지 마세요.

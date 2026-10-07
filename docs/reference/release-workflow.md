@@ -7,16 +7,18 @@ read_when:
 
 # 릴리스 실행 절차
 
-버전 결정 규칙과 트리거는 `CLAUDE.md` §릴리스에 있다. 단계 목록과 스크립트 책임 분담은 `RELEASE.md`.
+버전 결정 규칙과 트리거는 `CLAUDE.md` §릴리스에 있다. 단계 목록과 스크립트 책임 분담은
+[릴리스 절차](../development/releasing.md)에 있다(`RELEASE.md`는 루트 진입점).
 이 문서는 그 사이에 사람이 판단해야 하는 *실행 세부*를 담는다.
 
 ## 1. 문서 갱신 (매 릴리스 필수 — "할까요?" 묻지 말고 무조건 한다)
 
 **스크립트가 이걸 검사하지 않는다.** 예전 `release.sh` 에는 문서 경고와 "신규 기능 = 신규 에셋"
 하드 게이트가 있었지만, 태그 전용으로 축소되면서 함께 사라졌다. 지금 이 단계를 지키는 것은
-`RELEASE.md` 체크리스트와 사람뿐이다.
+[릴리스 체크리스트](../development/releasing.md#릴리스-전-문서-체크리스트)와 사람뿐이다.
 
-- **README.md** — 기능 목록·화면 구성(`핵심 동작` → 표 형태의 `화면 둘러보기`) **텍스트**를 갱신한다.
+- **README.md와 `docs/guides/`** — README의 소개·요구사항과 [기능 안내](../guides/features.md),
+  [화면 소개](../guides/screenshots.md), 설치·CLI 안내의 해당 본문 **텍스트**를 갱신한다.
   한국어 전용이다(2026-09-09부로 `README.en.md`/`README.ja.md` 폐지 — README 도 다른 산출물처럼
   한국어 하나만 쓰기로 했다).
 
@@ -58,9 +60,10 @@ read_when:
 ## 3. 실행과 검증
 
 ```bash
-./scripts/release.sh 2.9.0                # 태그 생성·push (v 없이)
-gh run watch --workflow=release.yml       # 2~3분
-gh release view v2.9.0                    # zip · sha256 · appcast
+./scripts/release.sh 2.9.0                   # 태그 생성·push (v 없이)
+gh run list --workflow release.yml --limit 5 # 배포 태그에 해당하는 실행 ID 확인
+gh run watch <run-id> --exit-status          # 워크플로 성공 여부 확인
+gh release view v2.9.0                       # zip · sha256 · appcast
 ```
 
 마지막으로 설치된 앱에서 업데이트 확인을 눌러 Sparkle 경로를 확인한다.
