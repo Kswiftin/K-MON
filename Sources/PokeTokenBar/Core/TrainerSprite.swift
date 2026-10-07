@@ -1,4 +1,5 @@
 import Foundation
+import CoreGraphics
 
 enum Facing: CaseIterable, Sendable, Codable { case down, up, left, right }
 
@@ -20,11 +21,24 @@ struct TrainerSprite: Sendable {
         return frames[Facing.allCases.firstIndex(of: facing)! * 3 + clampedStep]
     }
 
+    static func image(outfit: TrainerOutfit, facing: Facing, step: Int) -> CGImage? {
+        compose(outfit: outfit, facing: facing, step: step).cgImage(palette: TrainerPixelArt.palette)
+    }
+
     static func compose(outfit: TrainerOutfit, facing: Facing, step: Int) -> PixelSprite {
-        var out = TrainerPixelArt.body(facing, step: step)
+        let step = min(max(step, 0), 2)
+        var out = TrainerPixelArt.applyingSkin(outfit.appearance.skinTone, to: TrainerPixelArt.body(facing, step: step))
+        out = TrainerPixelArt.applyingHair(outfit.appearance.hairColor, to: out)
         for slot in OutfitSlot.allCases {
-            guard let item = outfit.worn[slot] else { continue }
-            out = out.overlaying(TrainerPixelArt.layer(item, facing: facing, step: step))
+            if let item = outfit.worn[slot] {
+                var layer = TrainerPixelArt.layer(item, facing: facing, step: step)
+                if slot == .hair { layer = TrainerPixelArt.applyingHair(outfit.appearance.hairColor, to: layer) }
+                else if let tint = outfit.tints[slot] { layer = TrainerPixelArt.applyingTint(tint, to: layer, item: item) }
+                out = out.overlaying(layer)
+            } else if slot == .hair {
+                let hair = TrainerPixelArt.baseHair(outfit.appearance.baseHair, facing: facing, step: step)
+                out = out.overlaying(TrainerPixelArt.applyingHair(outfit.appearance.hairColor, to: hair))
+            }
         }
         return out
     }

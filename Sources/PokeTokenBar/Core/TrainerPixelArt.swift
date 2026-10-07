@@ -10,10 +10,67 @@ enum TrainerPixelArt {
     static let key: [Character: UInt8] = [
         "o": 1, "s": 2, "S": 3, "h": 4, "H": 5, "w": 6, "r": 7, "b": 8, "k": 9, "y": 10, "g": 11, "n": 12, "d": 13
     ]
-    static let palette = PixelPalette(colors: [
-        0, 0x1B1B2F, 0xF3C9A6, 0xD9A07A, 0x5A3A2A, 0x3A241A, 0xF6F6F6,
-        0xD83A3A, 0x3B6ED8, 0xB8A46E, 0xE3C55A, 0x9A9A9A, 0x8A5A2B, 0x3C3C50
-    ])
+    static let palette: PixelPalette = {
+        var colors: [UInt32] = [
+            0, 0x1B1B2F, 0xF3C9A6, 0xD9A07A, 0x5A3A2A, 0x3A241A, 0xF6F6F6,
+            0xD83A3A, 0x3B6ED8, 0xB8A46E, 0xE3C55A, 0x9A9A9A, 0x8A5A2B, 0x3C3C50
+        ]
+        for tone in TrainerSkinTone.allCases { colors += [tone.colors.base, tone.colors.shade] }
+        for color in TrainerHairColor.allCases { colors += [color.colors.base, color.colors.shade] }
+        for tint in OutfitTint.allCases { colors += [tint.colors.base, tint.colors.shade] }
+        return PixelPalette(colors: colors)
+    }()
+
+    private static func recolored(_ sprite: PixelSprite, base: UInt8, shade: UInt8, target: UInt8) -> PixelSprite {
+        PixelSprite(width: sprite.width, height: sprite.height, pixels: sprite.pixels.map {
+            $0 == base ? target : ($0 == shade ? target + 1 : $0)
+        })
+    }
+    static func applyingSkin(_ tone: TrainerSkinTone, to sprite: PixelSprite) -> PixelSprite {
+        guard tone != .apricot else { return sprite }
+        return recolored(sprite, base: 2, shade: 3, target: UInt8(14 + TrainerSkinTone.allCases.firstIndex(of: tone)! * 2))
+    }
+    static func applyingHair(_ color: TrainerHairColor, to sprite: PixelSprite) -> PixelSprite {
+        guard color != .brown else { return sprite }
+        return recolored(sprite, base: 4, shade: 5, target: UInt8(22 + TrainerHairColor.allCases.firstIndex(of: color)! * 2))
+    }
+    static func applyingTint(_ tint: OutfitTint, to sprite: PixelSprite, item: OutfitItem) -> PixelSprite {
+        let base: UInt8
+        switch item {
+        case .capRed, .beret: base = 7
+        case .strawHat: base = 10
+        case .helmetExplorer, .bootsLong: base = 11
+        case .jacketBlue, .beanie, .hoodie, .stripedTee, .longPants: base = 8
+        case .teeWhite: base = 6
+        case .cloakWorn, .backpack, .crossbodyBag: base = 12
+        case .shortsKhaki: base = 9
+        case .hairBob, .hairPony, .hairMessy: return sprite
+        }
+        // 기존 옷의 장식·윤곽은 그대로 둔다. 새 옷만 13번 인덱스를 주색의 그림자로 쓴다.
+        let shaded: Set<OutfitItem> = [.beanie, .beret, .hoodie, .longPants, .crossbodyBag]
+        return recolored(sprite, base: base, shade: shaded.contains(item) ? 13 : 255,
+            target: UInt8(34 + OutfitTint.allCases.firstIndex(of: tint)! * 2))
+    }
+
+    static func baseHair(_ style: TrainerBaseHair, facing: Facing, step: Int) -> PixelSprite {
+        if facing == .right { return baseHair(style, facing: .left, step: step).flippedHorizontally() }
+        let rows = layerRows { g in
+            guard style != .classic else { return }
+            let side = facing == .left
+            if style == .short {
+                g.fillRect(cols: side ? 5...10 : 4...11, rows: 1...3, "h")
+                g.set(side ? 5 : 4, 1, "H")
+                g.set(side ? 9 : 10, 4, "h")
+            } else {
+                g.fillRect(cols: side ? 4...11 : 3...12, rows: 2...4, "h")
+                for x in stride(from: side ? 5 : 4, through: side ? 10 : 11, by: 2) {
+                    g.set(x, 1, "h"); g.set(x, 3, "H")
+                }
+                g.set(side ? 4 : 3, 5, "h"); g.set(side ? 11 : 12, 5, "h")
+            }
+        }
+        return sprite(rows)
+    }
 
     private static func sprite(_ rows: [String]) -> PixelSprite { PixelSprite(rows: rows, key: key) }
 
@@ -286,7 +343,54 @@ enum TrainerPixelArt {
         left: stillLayer(rectLayer(cols: 2...4, rows: 9...15, "n"))
     )
 
+    /// 새 의상은 좌표 도형으로 그리되, 측면·뒷면과 걷기 프레임도 따로 만든다.
+    private static func newLayerRows(_ item: OutfitItem, facing: Facing, step: Int) -> [String] {
+        layerRows { g in
+            let side = facing == .left
+            switch item {
+            case .beanie:
+                g.fillRect(cols: side ? 5...10 : 4...11, rows: 1...4, "b")
+                g.fillRect(cols: side ? 5...10 : 4...11, rows: 4...5, "d")
+                g.fillRect(cols: 6...9, rows: 0...0, "b")
+            case .beret:
+                g.fillRect(cols: side ? 4...10 : 3...11, rows: 1...3, "r")
+                g.fillRect(cols: side ? 5...10 : 4...11, rows: 4...4, "d")
+                g.set(side ? 4 : 3, 0, "r")
+            case .hoodie:
+                g.fillRect(cols: side ? 5...10 : 4...11, rows: 9...15, "b")
+                g.fillRect(cols: side ? 5...10 : 4...11, rows: 8...9, "d")
+                let handRow = step == 2 ? 11 : 12
+                g.fillRect(cols: side ? 4...4 : 3...3, rows: handRow...(handRow + 1), "b")
+                g.fillRect(cols: side ? 11...11 : 12...12, rows: (step == 1 ? 11 : 12)...(step == 1 ? 12 : 13), "b")
+                if facing != .up { g.fillRect(cols: 6...9, rows: 13...14, "d"); g.set(7, 10, "w") }
+            case .stripedTee:
+                g.fillRect(cols: side ? 5...10 : 4...11, rows: 9...15, "b")
+                for y in [10, 13] { g.fillRect(cols: side ? 5...10 : 4...11, rows: y...y, "w") }
+                g.set(side ? 4 : 3, 11, "b"); g.set(side ? 11 : 12, 11, "b")
+            case .longPants:
+                g.fillRect(cols: side ? 5...10 : 4...11, rows: 15...17, "b")
+                g.fillRect(cols: side ? 5...7 : 4...6, rows: (step == 1 ? 17 : 16)...22, "b")
+                g.fillRect(cols: side ? 8...10 : 9...11, rows: (step == 2 ? 17 : 16)...22, "b")
+                g.fillRect(cols: 7...8, rows: 15...17, "d")
+            case .crossbodyBag:
+                for y in 9...14 { g.set(side ? 8 : (facing == .up ? 11 - (y - 9) : 4 + (y - 9)), y, "o") }
+                g.fillRect(cols: 9...12, rows: 13...17, "n")
+                g.fillRect(cols: 9...12, rows: 13...13, "d")
+                g.set(10, 14, "y")
+            default: break
+            }
+        }
+    }
+    private static func newLayerSet(_ item: OutfitItem) -> LayerSet {
+        LayerSet(down: (0...2).map { newLayerRows(item, facing: .down, step: $0) },
+                 up: (0...2).map { newLayerRows(item, facing: .up, step: $0) },
+                 left: (0...2).map { newLayerRows(item, facing: .left, step: $0) })
+    }
+
     static let layers: [OutfitItem: LayerSet] = [
+        .beanie: newLayerSet(.beanie), .beret: newLayerSet(.beret),
+        .hoodie: newLayerSet(.hoodie), .stripedTee: newLayerSet(.stripedTee),
+        .longPants: newLayerSet(.longPants), .crossbodyBag: newLayerSet(.crossbodyBag),
         .capRed: capRedSet,
         .strawHat: strawHatSet,
         .helmetExplorer: helmetExplorerSet,

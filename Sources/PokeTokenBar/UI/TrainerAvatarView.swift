@@ -22,12 +22,12 @@ struct TrainerAvatarView: View {
         }
         .onAppear { rebuild() }
         .onChange(of: outfit) { rebuild() }
+        .onChange(of: facing) { rebuild() }
     }
 
     private func rebuild() {
         // 친구 목록 행마다 이 뷰가 새로 생기니, 12프레임을 다 만드는 `TrainerSprite(outfit:)` 대신
         // 필요한 한 프레임만 직접 합성한다.
-        cgImage = TrainerSprite.compose(outfit: outfit, facing: facing, step: 0)
-            .cgImage(palette: TrainerPixelArt.palette)
+        cgImage = TrainerSprite.image(outfit: outfit, facing: facing, step: 0)
     }
 }
