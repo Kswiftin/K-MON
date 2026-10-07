@@ -83,6 +83,9 @@ LOGIC_CORE=(
   # **아예 안 잡혀** "몇 %인가" 를 물을 기회조차 없다(#229·#228 부류). 특히 `isFed` 의 먼 미래
   # 갈래는 신뢰경계라 무테스트로 남으면 손댄 세이브가 레벨을 영구히 한 단 올린다.
   "Sources/PokeTokenBar/Core/PokopiaCrafting.swift"
+  # 부탁 발급·수령 원장과 관계별 대화는 결정적 코어다. 새 분기를 커버리지에서 함께 센다.
+  "Sources/PokeTokenBar/Core/PokopiaCommunity.swift"
+  "Sources/PokeTokenBar/Core/PokopiaResidentDialogue.swift"
   "Sources/PokeTokenBar/Core/DexGoals.swift"
   # 업데이트 뒤 릴리스 노트를 띄울지 정하는 판정. 배열 밖에 두면 "신규 설치엔 안 띄운다"·
   # "버전당 한 번" 분기가 커버리지에서 통째로 빠진다.
