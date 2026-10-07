@@ -83,7 +83,7 @@ struct MultiplayerLobby: Codable, Sendable, Equatable {
         guard allowed else { throw LobbyError.invalidCapacity }
         var host = host; host.isHost = true
         participants = [host]; self.capacity = capacity; self.activity = activity
-        waitingChatSupported = activity == .battle ? true : nil
+        waitingChatSupported = true
     }
     static let spectatorCapacity = 8
 

@@ -17,6 +17,8 @@ struct RoomTerminalState {
     var canStart = false
     var participants: [LobbyParticipant] = []
     var isReady = false
+    var chatMessages: [BattleChatMessage] = []
+    var chatIsAvailable = false
     var raidTier: RaidTier?
     /// 끝난 판의 내 승패. `nil` 은 "줄 결과가 없다" — 아직 안 끝났거나 관전자다.
     var outcome: BattleOutcome?
@@ -284,9 +286,9 @@ enum RoomScreen {
         // 형태가 다른 판은 형태별로 접는다 — 전투원 목록으로 그리려 하면 빈 목록이 되어
         // "판을 준비하는 중이다" 가 판이 끝날 때까지 남는다(#252 가 그랬다).
         if let duel = state.duel {
-            return ArenaScreen.duelLines(state, duel, width: inner)
+            return ArenaScreen.duelLines(state, duel, width: inner) + chatLines(state, width: inner)
         }
-        if let track = state.track { return ArenaScreen.trackLines(state, track, width: inner) }
+        if let track = state.track { return ArenaScreen.trackLines(state, track, width: inner) + chatLines(state, width: inner) }
         var lines = [TUIRender.row(left: title(state),
                                    right: state.round > 0 ? "\(state.round) 라운드" : "",
                                    width: inner)]
@@ -297,11 +299,11 @@ enum RoomScreen {
                 let host = participant.isHost ? " · 호스트" : ""
                 return TUIText.truncate("\(participant.trainerName)  \(role)\(host)", to: inner)
             }
-            return lines
+            return lines + chatLines(state, width: inner)
         }
         guard !state.fighters.isEmpty else {
             lines.append(TUIText.truncate(standingLine(state), to: inner))
-            return lines
+            return lines + chatLines(state, width: inner)
         }
         // 나를 먼저 찍는다 — 내 HP 가 이 판에서 가장 자주 보는 값이다. **정렬이 아니라 분할이다**:
         // `sorted { lhs, _ in lhs.id == myID }` 는 오른쪽을 안 보므로 `f < f` 가 참인 술어이고,
@@ -320,7 +322,7 @@ enum RoomScreen {
                     to: inner))
             }
             lines.append(TUIText.truncate(ending, to: inner))
-            return lines
+            return lines + chatLines(state, width: inner)
         }
         let offered = choices(state)
         if !offered.isEmpty {
@@ -334,7 +336,16 @@ enum RoomScreen {
                     to: inner))
             }
         }
-        return lines
+        return lines + chatLines(state, width: inner)
+    }
+
+    private static func chatLines(_ state: RoomTerminalState, width: Int) -> [String] {
+        guard kind(state) != .none else { return [] }
+        let instruction = state.chatIsAvailable ? "채팅 · room chat <내용>" : "채팅 · 지금은 전송할 수 없습니다."
+        return [TUIRender.rule(width: width), TUIText.truncate(instruction, to: width)]
+            + state.chatMessages.suffix(5).map {
+                TUIText.truncate("\($0.senderName): \($0.body)", to: width)
+            }
     }
 
     private static func standingLine(_ state: RoomTerminalState) -> String {

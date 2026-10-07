@@ -105,6 +105,7 @@ struct PokemonTournamentView: View {
                     }
                     Button("나가기") { close() }.controlSize(.small)
                 }
+                WaitingRoomChatPanel(center: center, l: store.l)
             }
         }
     }

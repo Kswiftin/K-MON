@@ -74,7 +74,7 @@ final class PlayerGymCoordinator {
         if companion.expireGymLeadershipIfSetupLapsed() { rooms.leaveRoom() }
         guard companion.isGymLeader else {
             // 자격은 없는데 체육관 방만 떠 있는 어긋남을 정리한다(크래시·예외 경로 대비).
-            if rooms.isGymRoom { rooms.leaveRoom() }
+            if rooms.isGymRoom, rooms.isHost { rooms.leaveRoom() }
             return
         }
         // 여기서부터는 **광고를 재개하는 경로**다(재시작·자격 복원). 내 방이 이미 떠 있거나 뜨는

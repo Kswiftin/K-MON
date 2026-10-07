@@ -152,7 +152,9 @@ struct PokemonTFTView: View {
         switch center.phase {
         case .idle: multiplayerBrowser
         case .creating, .joining: ProgressView("TFT 방에 연결 중…").frame(maxWidth: .infinity, maxHeight: .infinity)
-        case .hosting, .joined: multiplayerLobby
+        case .hosting, .joined:
+            // 8명 명단과 채팅을 함께 볼 수 있도록 고정 높이 오버레이 안에서 스크롤한다.
+            ScrollView { multiplayerLobby }
         default:
             Text("다른 LAN 콘텐츠가 진행 중입니다.").foregroundStyle(.secondary)
         }
@@ -210,6 +212,7 @@ struct PokemonTFTView: View {
             }.controlSize(.small)
             Text("전원이 준비하면 호스트가 시작할 수 있습니다.")
                 .font(.caption2).foregroundStyle(.secondary)
+            WaitingRoomChatPanel(center: center, l: store.l)
         }.padding(10).pokedoroCard()
     }
 

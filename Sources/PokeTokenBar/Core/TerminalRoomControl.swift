@@ -24,6 +24,7 @@ protocol TerminalRoomControl: AnyObject {
     func createRaidFromTerminal(tier: RaidTier) -> Bool
     func joinRaidFromTerminal(number: Int, role: LobbyRole) -> Bool
     func toggleReadyFromTerminal() -> Bool
+    func sendChat(_ body: String)
     /// 대상은 **id 로** 받는다. 번호 → id 변환은 목록을 아는 실행기가 `RoomScreen.targetID` 로 한다.
     func submitAction(targetID: UUID, moveIndex: Int)
     /// 결투의 기술 — **엔진 순번**(0부터)이다. 화면 번호를 그대로 넘기면 옆 기술이 나간다.
@@ -49,6 +50,8 @@ extension MultiplayerRoomCenter: TerminalRoomControl {
         state.canStart = lobby?.canStart ?? false
         state.participants = lobby?.participants ?? []
         state.isReady = myParticipant?.isReady ?? false
+        state.chatMessages = chatMessages
+        state.chatIsAvailable = chatIsAvailable
         state.raidTier = raidTier
         // 승패·정산은 **센터가 이미 판정한 값**을 싣는다. 터미널이 전투원 목록으로 다시 세면
         // 팀전·관전자·무승부에서 갈라진다(그 네 갈래를 `myOutcome` 하나가 든다).

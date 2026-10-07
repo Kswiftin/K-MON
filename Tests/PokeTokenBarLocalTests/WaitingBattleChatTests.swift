@@ -1,4 +1,6 @@
+import AppKit
 import Foundation
+import SwiftUI
 import Testing
 @testable import PokeTokenBar
 
@@ -43,13 +45,15 @@ struct WaitingBattleChatTests {
                                         damageClass: .physical, accuracy: nil, pp: 20)])
     }
 
-    private func room(role: LobbyRole = .runner) throws -> (MultiplayerRoomCenter, MultiplayerLobby) {
-        let center = MultiplayerRoomCenter(companion: CompanionStore(
+    private func room(role: LobbyRole = .runner, activity: RoomActivity = .battle,
+                      center suppliedCenter: MultiplayerRoomCenter? = nil) throws -> (MultiplayerRoomCenter, MultiplayerLobby) {
+        let center = suppliedCenter ?? MultiplayerRoomCenter(companion: CompanionStore(
             clock: { Date(timeIntervalSince1970: 1_700_000_000) },
             fileURL: storeFixtureStateURL("waiting-room-chat")))
         let host = LobbyParticipant(id: UUID(), trainerName: "방장", speciesID: 1,
                                     team: .solo, isReady: true, isHost: true)
-        var lobby = try MultiplayerLobby(host: host)
+        let capacity = activity == .raid ? MultiplayerLobby.raidCapacity : (activity == .gym ? 2 : 4)
+        var lobby = try MultiplayerLobby(host: host, capacity: capacity, activity: activity)
         try lobby.join(LobbyParticipant(id: center.myID, trainerName: "내 이름", speciesID: 1,
                                          team: .solo, isReady: true, isHost: false, role: role))
         center.applyGuestLobby(lobby)
@@ -164,8 +168,9 @@ struct WaitingBattleChatTests {
         }
     }
 
-    @Test func roomWaitingChatRejectsUnknownSendersAndFloods() throws {
-        let (center, _) = try room()
+    @Test(arguments: RoomActivity.allCases)
+    func roomWaitingChatRejectsUnknownSendersAndFloods(activity: RoomActivity) throws {
+        let (center, _) = try room(activity: activity)
         defer { center.leaveRoom() }
         let stranger = UUID()
         center.acceptChat(BattleChatMessage(senderID: stranger, senderName: "외부인", body: "안 됨"), from: stranger)
@@ -213,6 +218,31 @@ struct WaitingBattleChatTests {
         #expect(center.lastError != nil)
     }
 
+    @Test func raidStartKeepsTheWaitingConversationAndRateLimit() throws {
+        let (center, lobby) = try room(activity: .raid)
+        defer { center.leaveRoom() }
+        for body in ["대기 1", "대기 2", "대기 3"] {
+            center.acceptChat(BattleChatMessage(senderID: center.myID, senderName: "나", body: body), from: center.myID)
+        }
+        let runners = lobby.runners.map { participant in
+            var participant = participant
+            participant.team = .red
+            return MultiplayerFighter(participant: participant, snapshot: snapshot())
+        }
+        // 픽스처 스토어의 날짜에 맞는 보스를 보내 실제 레이드 개시 경로를 밟는다.
+        let key = RaidBoss.bossKey(at: Date(timeIntervalSince1970: 1_700_000_000), tier: .one)
+        var bossSnapshot = snapshot()
+        bossSnapshot.speciesID = RaidBoss.speciesID(dayKey: key, tier: .one)
+        bossSnapshot.level = RaidTier.one.bossLevel
+        bossSnapshot.isShiny = RaidBoss.isShinyBoss(tier: .one)
+        let boss = RaidBoss.bossFighter(tier: .one, snapshot: bossSnapshot)
+        #expect(center.applyGuestRaidStart(seed: 42, fighters: runners + [boss], tier: .one, periodKey: key))
+        #expect(center.phase == .battling)
+        #expect(center.chatMessages.map(\.body) == ["대기 1", "대기 2", "대기 3"])
+        center.acceptChat(BattleChatMessage(senderID: center.myID, senderName: "나", body: "시작 후 도배"), from: center.myID)
+        #expect(center.chatMessages.count == 3)
+    }
+
     @Test func oldPeersStillCanChatOnceTheBattleStarts() throws {
         let center = try incoming(waitingSupported: nil)
         defer { center.phase = .ready }
@@ -257,15 +287,108 @@ struct WaitingBattleChatTests {
         }
     }
 
-    @Test func otherActivityLobbiesDoNotGainWaitingChat() throws {
-        let (center, lobby) = try room()
+    // 활동을 배틀로 한정하거나 지원 광고를 빠뜨리면 다른 공동 대기실에서 대화가 막힌다.
+    @Test(arguments: RoomActivity.allCases)
+    func everyActivityAllowsWaitingParticipantsToChat(activity: RoomActivity) throws {
+        let roles: [LobbyRole] = activity == .pokemonQuiz ? [.runner] : [.runner, .spectator]
+        for role in roles {
+            let (center, lobby) = try room(role: role, activity: activity)
+            defer { center.leaveRoom() }
+            let decoded = try JSONDecoder().decode(MultiplayerLobby.self, from: JSONEncoder().encode(lobby))
+            center.applyGuestLobby(decoded)
+            #expect(center.chatIsAvailable)
+            center.acceptChat(BattleChatMessage(senderID: center.myID, senderName: "위조 이름", body: "함께 준비해요"),
+                              from: center.myID)
+            #expect(center.chatMessages.map(\.body) == ["함께 준비해요"])
+            #expect(center.chatMessages.first?.senderName == "내 이름")
+            center.leaveRoom()
+            #expect(center.chatMessages.isEmpty)
+            #expect(!center.chatIsAvailable)
+        }
+    }
+
+    @Test(arguments: RoomActivity.allCases)
+    func unsupportedActivityLobbiesKeepWaitingChatDisabled(activity: RoomActivity) throws {
+        for supported in [nil, false] as [Bool?] {
+            let (center, lobby) = try room(activity: activity)
+            defer { center.leaveRoom() }
+            var payload = try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(lobby)) as? [String: Any])
+            payload["waitingChatSupported"] = supported
+            center.applyGuestLobby(try JSONDecoder().decode(MultiplayerLobby.self, from: JSONSerialization.data(withJSONObject: payload)))
+            #expect(!center.chatIsAvailable)
+            center.acceptChat(BattleChatMessage(senderID: center.myID, senderName: "나", body: "안 됨"), from: center.myID)
+            #expect(center.chatMessages.isEmpty)
+        }
+    }
+
+    private func inputField(in view: NSView) -> NSTextField? {
+        if let field = view as? NSTextField, field.isEditable { return field }
+        return view.subviews.lazy.compactMap { inputField(in: $0) }.first
+    }
+
+    // 센터만 열고 실제 대기 화면에 패널을 연결하지 않는 누락을 잡는다.
+    @Test(arguments: [RoomActivity.raid, .tournament, .gym])
+    func waitingScreensShowChatAndDisableInputForOldRooms(activity: RoomActivity) async throws {
+        _ = NSApplication.shared
+        let store = CompanionStore(fileURL: storeFixtureStateURL("waiting-chat-view"))
+        let battleCenter = BattleCenter(companion: store)
+        let (center, lobby) = try room(activity: activity, center: battleCenter.multiplayer)
         defer { center.leaveRoom() }
+        let content: AnyView
+        if activity == .raid {
+            content = AnyView(RaidView(store: store, onClose: {}).environment(battleCenter))
+        } else if activity == .tournament {
+            content = AnyView(PokemonTournamentView(store: store, center: center, onClose: {}))
+        } else {
+            content = AnyView(PlayerGymView(store: store, center: center, onClose: {})
+                .environment(PlayerGymCoordinator(companion: store, rooms: center)))
+        }
+        let hosting = NSHostingView(rootView: content.environment(AppSettings()))
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 360, height: 600),
+                              styleMask: [.titled], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView = hosting
+        defer { window.close() }
+        hosting.layoutSubtreeIfNeeded()
+        try await Task.sleep(for: .milliseconds(100))
+        #expect(center.phase == .joined)
+        #expect(try #require(inputField(in: hosting)).isEnabled)
+
         var payload = try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(lobby)) as? [String: Any])
-        payload["activity"] = "pokeathlon"
-        // 지원 필드만 있다고 다른 활동의 대기실까지 입력을 열면 안 된다.
+        payload.removeValue(forKey: "waitingChatSupported")
         center.applyGuestLobby(try JSONDecoder().decode(MultiplayerLobby.self, from: JSONSerialization.data(withJSONObject: payload)))
-        #expect(!center.chatIsAvailable)
-        center.acceptChat(BattleChatMessage(senderID: center.myID, senderName: "나", body: "안 됨"), from: center.myID)
-        #expect(center.chatMessages.isEmpty)
+        try await Task.sleep(for: .milliseconds(100))
+        #expect(try #require(inputField(in: hosting)).isEnabled == false)
+        center.leaveRoom()
+        try await Task.sleep(for: .milliseconds(100))
+        hosting.layoutSubtreeIfNeeded()
+        #expect(inputField(in: hosting) == nil, "방을 나가면 대기 채팅 입력도 사라진다")
+    }
+
+    @Test func terminalChatCommandAndWireValidateTheMessage() throws {
+        let command = try PokedoroCommandParser.parse(["room", "chat", "잘", "부탁해요"])
+        let action = try #require(command.request)
+        #expect(action.name == "room.chat")
+        #expect(action.argument == "잘 부탁해요")
+        let request = PokedoroRequest(id: UUID(), action: action, requestedAt: Date())
+        #expect(try JSONDecoder().decode(PokedoroRequest.self, from: JSONEncoder().encode(request)).action == action)
+        #expect(PokedoroRequest.Action(name: "room.chat", argument: "   ") == nil)
+        #expect(PokedoroRequest.Action(name: "room.chat", argument: String(repeating: "가", count: 201)) == nil)
+        #expect(throws: PokedoroCommandError.self) {
+            try PokedoroCommandParser.parse(["room", "chat", String(repeating: "가", count: 201)])
+        }
+        #expect(throws: PokedoroCommandError.self) {
+            try PokedoroCommandParser.parse(["room", "chat", "   "])
+        }
+    }
+
+    @Test(arguments: RoomActivity.allCases)
+    func terminalWaitingScreenIncludesTheConversation(activity: RoomActivity) throws {
+        let (center, _) = try room(activity: activity)
+        defer { center.leaveRoom() }
+        center.acceptChat(BattleChatMessage(senderID: center.myID, senderName: "나", body: "준비됐어요"), from: center.myID)
+        let lines = RoomScreen.lines(center.terminalState, width: 80).joined(separator: "\n")
+        #expect(lines.contains("내 이름: 준비됐어요"))
+        #expect(lines.contains("room chat"))
     }
 }

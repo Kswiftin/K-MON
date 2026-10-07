@@ -87,6 +87,7 @@ struct PokedoroRequestExecutor {
         case .raidMon(let number): return raidMon(request, number: number)
         case .roomMove(let move, let target): return roomMove(request, move: move, target: target)
         case .roomReady: return roomReady(request)
+        case .roomChat(let body): return roomChat(request, body: body)
         case .roomStart: return roomStart(request)
         case .roomLeave: return roomLeave(request)
         case .roomSwitch(let slot): return roomSwitch(request, slot: slot)
@@ -961,6 +962,17 @@ struct PokedoroRequestExecutor {
         guard state.canStart else { return no(request, "사람이 더 모여야 시작할 수 있다.") }
         control.startActivity()
         return ok(request, "판을 시작했다.")
+    }
+
+    private func roomChat(_ request: PokedoroRequest, body: String) -> PokedoroReply {
+        guard let control = room, let state = roomState else { return noRoom(request) }
+        guard state.chatIsAvailable else { return no(request, "지금은 방 채팅을 보낼 수 없습니다.") }
+        guard let normalized = PeerTextPolicy.normalizedBody(body) else {
+            return no(request, "채팅은 공백이 아닌 1~200자여야 합니다.")
+        }
+        control.sendChat(normalized)
+        // 실제 반영은 호스트의 검증·도배 제한과 중계가 끝난 뒤 대화 내역에서 확인한다.
+        return ok(request, "방에 채팅 전송을 요청했습니다.")
     }
 
     private func roomReady(_ request: PokedoroRequest) -> PokedoroReply {

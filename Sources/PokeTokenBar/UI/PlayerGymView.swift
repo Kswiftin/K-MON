@@ -31,6 +31,10 @@ struct PlayerGymView: View {
             } else {
                 browser
             }
+            if center.roomActivity == .gym, center.gymMatch == nil,
+               center.phase == .hosting || center.phase == .joined {
+                WaitingRoomChatPanel(center: center, l: l)
+            }
         }
         .padding(.vertical, 4)
         .onAppear { coordinator.refresh() }

@@ -91,6 +91,7 @@ enum PokedoroCommand: Equatable, Sendable {
     case room
     case roomMove(move: Int, target: Int?)
     case roomReady
+    case roomChat(body: String)
     case roomStart
     /// **되돌릴 수 없다** — 그 판의 정산을 못 받는다.
     case roomLeave(confirmed: Bool)
@@ -224,6 +225,7 @@ enum PokedoroCommand: Equatable, Sendable {
         case .raidMon(let number): .raidMon(number: number)
         case .roomMove(let move, let target): .roomMove(move: move, target: target)
         case .roomReady: .roomReady
+        case .roomChat(let body): .roomChat(body: body)
         case .roomStart: .roomStart
         case .roomLeave(let confirmed): confirmed ? .roomLeave : nil
         case .roomSwitch(let slot): .roomSwitch(slot: slot)
@@ -282,6 +284,7 @@ enum PokedoroCommandError: Equatable, Error {
     /// 인자가 필요한 명령을 인자 없이 쳤다. 조용히 아무것도 안 하면 사용자는 명령이 먹었는지조차
     /// 모른다.
     case missingArgument(String)
+    case invalidChatMessage
     /// 인자를 받지 않는 명령에 인자가 붙었다. 버리고 실행하면 사용자는 그 값이 뭔가 했다고 믿는다.
     case unexpectedArgument(String)
     /// 인자는 받지만 **개수가 많다**. `unexpectedArgument` 로 접으면 "인자를 받지 않는다" 고
@@ -334,6 +337,7 @@ enum PokedoroCommandError: Equatable, Error {
     var message: String {
         switch self {
         case .unknownCommand(let name): "알 수 없는 명령: \(name)"
+        case .invalidChatMessage: "채팅은 공백이 아닌 1~200자여야 합니다."
         case .appOnlyFeature(let name):
             "`\(name)` 은 앱 화면에서 한다. 터미널이 다루는 것은 조회와 집중 세션이다."
         case .invalidMinutes(let raw):
@@ -670,6 +674,11 @@ enum PokedoroCommandParser {
         let rest = Array(words.dropFirst())
         let command = "room \(sub)"
         switch sub {
+        case "chat":
+            guard let body = PeerTextPolicy.normalizedBody(try text(in: rest, command: command)) else {
+                throw PokedoroCommandError.invalidChatMessage
+            }
+            return .roomChat(body: body)
         case "move":
             try rejectExtra(rest, beyond: 2, command: command)
             guard let move = try waveNumber(in: rest) else {
@@ -1094,6 +1103,7 @@ enum PokedoroCommandParser {
         ("room bet <러너> <금액> --yes", "포켓슬론 관전 베팅 — 되돌릴 수 없다"),
         ("room start", "호스트가 판 시작"),
         ("room ready", "로비 준비 / 준비 취소"),
+        ("room chat <내용>", "현재 방에 채팅 보내기 (최대 200자)"),
         ("room leave --yes", "방 나가기 — 정산을 못 받는다"),
         ("gym", "체육관 리그 — 여덟 곳과 딴 배지"),
         ("gym challenge <번호>", "목록의 체육관에 도전 (자동 편성)"),

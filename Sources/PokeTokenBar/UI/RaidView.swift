@@ -302,6 +302,7 @@ struct RaidView: View {
                 }
                 Button("나가기") { center.leaveRoom() }.controlSize(.small)
             }
+            WaitingRoomChatPanel(center: center, l: l)
         }
     }
 
