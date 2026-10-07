@@ -249,11 +249,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, UNU
         guard BattleWindowPresentationPolicy.shouldOpenAutomatically(
             automaticOpeningEnabled: settings.automaticBattlePopoverEnabled,
             terminalControlling: isTerminalControlling,
-            wantsForegroundWindow: battleCenter.wantsForegroundWindow
+            wantsForegroundWindow: battleCenter.wantsForegroundWindow,
+            popoverIsShown: popover.isShown
         ) else { return }
 
         // 닫힌 창을 되살리는 것은 **내가 골라야 할 때**뿐이다 — 이미 낸 뒤에도 열면 닫아도 곧바로
-        // 되살아난다. 열려 있으면 이 판정과 무관하게 아래 화면 이동은 그대로 한다.
+        // 되살아난다. 이미 열린 창은 위 정책에서 제외해 턴 진행이 화면과 입력을 방해하지 않는다.
         if !popover.isShown {
             guard battleCenter.wantsWindowReopened else { return }
             openPopover()

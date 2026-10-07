@@ -97,7 +97,7 @@ struct BattleView: View {
             BattleChatPanel(configuration: BattleChatConfiguration(
                 messages: center.chatMessages, mySenderID: center.chatSenderID,
                 isEnabled: center.chatIsAvailable, unavailableMessage: center.chatLockMessage,
-                l: l, turnSignal: 0, onSend: center.sendChat))
+                l: l, onSend: center.sendChat))
         }
     }
 
@@ -144,7 +144,7 @@ struct BattleView: View {
             chat: BattleChatConfiguration(messages: center.chatMessages, mySenderID: center.chatSenderID,
                                           isEnabled: center.chatIsAvailable,
                                           unavailableMessage: center.chatLockMessage,
-                                          l: l, turnSignal: battle.turn, onSend: center.sendChat))
+                                          l: l, onSend: center.sendChat))
         .onAppear { replay(battle.events, sides: [mine: engineMine, theirs: engineTheirs]) }
         .onChange(of: battle.events.count) {
             replay(battle.events, sides: [mine: engineMine, theirs: engineTheirs])

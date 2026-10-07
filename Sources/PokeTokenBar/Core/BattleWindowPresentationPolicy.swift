@@ -4,10 +4,12 @@ import Foundation
 ///
 /// 사용자가 직접 메뉴바 아이콘·전역 단축키·알림을 누르는 동작은 여기서 막지 않는다. 이 정책은
 /// 오직 이벤트가 앱을 앞에 내세우는 자동 열기 경로에만 적용한다.
+/// 이미 열린 창은 사용자가 고른 화면과 입력 포커스를 유지한다.
 enum BattleWindowPresentationPolicy {
     static func shouldOpenAutomatically(automaticOpeningEnabled: Bool,
                                         terminalControlling: Bool,
-                                        wantsForegroundWindow: Bool) -> Bool {
-        automaticOpeningEnabled && !terminalControlling && wantsForegroundWindow
+                                        wantsForegroundWindow: Bool,
+                                        popoverIsShown: Bool = false) -> Bool {
+        automaticOpeningEnabled && !terminalControlling && wantsForegroundWindow && !popoverIsShown
     }
 }
