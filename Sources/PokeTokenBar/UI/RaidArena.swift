@@ -90,6 +90,7 @@ struct RaidArenaView: View {
     /// 중" 화면에 남은 시간을 보여준다. 정상적인 대기와 멈춘 화면을 구분 못 해 "멈췄다" 로 오인한
     /// 사용자 보고(2026-09-11)를 계기로 더했다.
     let turnEndsAt: Date?
+    var raidTier: RaidTier = .one
     let onMove: (Int) -> Void
 
     /// 파티 칸 스프라이트. 두 칸이 나란히 서므로 웨이브 런의 좁은 카드와 같은 치수를 쓴다.
@@ -176,6 +177,8 @@ struct RaidArenaView: View {
                          revealsExactHP: true, animatesHP: overlay.isPlaying,
                          maxHPOverride: bossMaxHP)
         }
+        .raidBossTooltip(RaidBossTooltipTarget(speciesID: boss.side.snapshot.speciesID,
+                                              tier: raidTier, side: boss.side, maxHP: bossMaxHP))
     }
 
     /// 파티는 최대 여덟이라 두 칸씩 접는다 — 한 줄에 넷 이상을 세우면 팝오버 폭에서 이름과 HP 표기가
