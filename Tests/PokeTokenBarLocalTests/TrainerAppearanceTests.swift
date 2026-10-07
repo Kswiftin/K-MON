@@ -28,6 +28,20 @@ struct TrainerAppearanceTests {
         #expect(TrainerAppearance.creationDefault.baseHair == .short)
     }
 
+    @Test func missingOrMalformedWardrobeDoesNotDiscardAppearance() throws {
+        let decoder = JSONDecoder()
+        #expect(try decoder.decode(TrainerOutfit.self, from: Data("{}".utf8)) == TrainerOutfit())
+        for json in [
+            #"{"appearance":{"baseHair":"curly","skinTone":"tan","hairColor":"silver"}}"#,
+            #"{"worn":42,"appearance":{"baseHair":"curly","skinTone":"tan","hairColor":"silver"},"tints":false}"#
+        ] {
+            let outfit = try decoder.decode(TrainerOutfit.self, from: Data(json.utf8))
+            #expect(outfit.worn.isEmpty)
+            #expect(outfit.tints.isEmpty)
+            #expect(outfit.appearance == TrainerAppearance(baseHair: .curly, skinTone: .tan, hairColor: .silver))
+        }
+    }
+
     @Test func normalizationKeepsAppearanceAndOnlyValidTints() {
         let outfit = TrainerOutfit(worn: [.hat: .beanie, .top: .hoodie, .hair: .hairBob],
             appearance: .creationDefault, tints: [.hat: .pink, .top: .green, .hair: .blue, .bottom: .black])

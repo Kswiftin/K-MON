@@ -15,7 +15,7 @@ import XCTest
 final class OverlayEntryLabelGuardTests: XCTestCase {
 
     /// 오버레이를 여는 문장. 새 오버레이를 더하면 여기도 늘린다.
-    private static let openers = ["nav.showFocusRecap = true", "nav.showOutfit = true",
+    private static let openers = ["nav.showFocusRecap = true", "nav.showOutfit = true", "nav.goToOutfit()", "onOpenTrainer",
                                   "nav.showGymLeague = true", "nav.showDungeon = true",
                                   "nav.showRaid = true", "chatPresenter.open("]
 
@@ -45,7 +45,7 @@ final class OverlayEntryLabelGuardTests: XCTestCase {
         // 대조군: 실제로 훑은 화면을 이름으로 확인한다. 여는 문장이 바뀌거나 스캐너가 블록을
         // 놓치면 목록이 비고, 그 상태로 두면 이 가드는 아무것도 안 지키면서 초록이다.
         // (도전 4종은 카드 뷰에 클로저로 넘기므로 여기서는 카드 쪽 `Button` 이 잡힌다.)
-        XCTAssertEqual(checked, ["FocusTimerView.swift", "PopoverView.swift", "CompanionView.swift"],
+        XCTAssertEqual(checked, ["FocusTimerView.swift", "PopoverView.swift", "CompanionView.swift", "SettingsView.swift"],
                        "오버레이를 여는 버튼 목록이 낡았다")
         XCTAssertEqual(offenders, [], "아이콘만으로 오버레이를 여는 자리: \(offenders)")
     }
