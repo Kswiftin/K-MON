@@ -4405,14 +4405,6 @@ final class CompanionStore {
         return true
     }
 
-    /// nil 이면 벗는다. 미소유·슬롯 불일치는 무시 — 신뢰경계는 `normalized(owned:)` 하나다.
-    func wear(_ item: OutfitItem?, in slot: OutfitSlot) {
-        var draft = trainerEditDraft
-        draft.select(item, in: slot)
-        state.outfit = draft.outfit.normalized(owned: state.ownedOutfits)
-        save()
-    }
-
     // MARK: 알 (보관 알 구매 — 개체·도감·확률 무영향)
 
     /// 현재 알이 보증하는 등급 하한(UI 표시용). 활성 포켓몬이 있으면 알이 없으므로 nil.

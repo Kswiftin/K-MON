@@ -82,14 +82,16 @@ struct TrainerEditingTests {
         #expect(store.outfit.worn.isEmpty)
     }
 
-    @Test func wearPreservesAppearanceAndOtherTints() throws {
+    @Test func draftSavePreservesAppearanceAndOtherTints() throws {
         let url = storeFixtureStateURL("trainer-wear")
         defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
         try seed(url)
         let store = makeStore(at: url)
         #expect(store.saveTrainer(TrainerEditDraft(name: "이름", outfit: TrainerOutfit(worn: [.hat: .beanie, .top: .hoodie],
             appearance: .creationDefault, tints: [.hat: .pink, .top: .green]))))
-        store.wear(nil, in: .hat)
+        var removal = store.trainerEditDraft
+        removal.select(nil, in: .hat)
+        #expect(store.saveTrainer(removal))
         #expect(store.outfit.appearance == .creationDefault)
         #expect(store.outfit.tints == [.top: .green])
         var draft = store.trainerEditDraft
