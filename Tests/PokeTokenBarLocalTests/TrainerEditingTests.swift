@@ -105,7 +105,9 @@ struct TrainerEditingTests {
         try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
         let store = makeStore(at: url)
         let draft = TrainerEditDraft(name: "이름", outfit: TrainerOutfit(appearance: .creationDefault))
+        let original = store.trainerEditDraft
         #expect(!store.saveTrainer(draft))
+        #expect(store.trainerEditDraft == original, "저장 실패 후 취소하면 외형과 이름이 원래 값이어야 한다")
         #expect(store.saveFailed)
         try FileManager.default.removeItem(at: url)
         #expect(store.saveTrainer(draft))
@@ -156,6 +158,8 @@ struct TrainerEditingTests {
         #expect(store.state.starPieces == 200)
         #expect(!store.buyOutfit(.crossbodyBag))
         #expect(!store.buyOutfit(.hoodie))
+        #expect(OutfitItem.helmetExplorer.acquisitionDescription(l: L()).contains("20회"))
+        #expect(OutfitItem.cloakWorn.acquisitionDescription(l: L()).contains("5회"))
         #expect(OutfitItem.beanie.acquisitionDescription(l: L()) == "상점 · 별의조각 300")
         #expect(OutfitItem.hairMessy.acquisitionDescription(l: L()).contains("던전 클리어 · 1단계"))
         #expect(OutfitItem.cloakWorn.acquisitionDescription(l: L()).contains("던전 클리어 · 2단계"))

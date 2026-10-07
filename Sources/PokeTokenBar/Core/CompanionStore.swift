@@ -4364,10 +4364,17 @@ final class CompanionStore {
     @discardableResult
     func saveTrainer(_ draft: TrainerEditDraft) -> Bool {
         guard !isReadOnly, trainerEditIssue(draft) == nil else { return false }
+        let previousName = state.trainerName
+        let previousOutfit = state.outfit
         state.trainerName = draft.normalizedName
         state.outfit = draft.outfit.normalized(owned: state.ownedOutfits)
         save()
-        return !saveFailed
+        if saveFailed {
+            state.trainerName = previousName
+            state.outfit = previousOutfit
+            return false
+        }
+        return true
     }
 
     var outfit: TrainerOutfit { state.outfit }

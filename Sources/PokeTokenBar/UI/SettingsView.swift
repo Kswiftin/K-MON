@@ -8,6 +8,7 @@ struct SettingsView: View {
     @Environment(UpdateChecker.self) private var updater
     /// 팝오버 내부 화면 전환 방식 — sheet/dismiss 를 쓰지 않는다 (PopoverView 의 NOTE 참조)
     var onClose: () -> Void
+    var onOpenTrainer: () -> Void = {}
     @State private var launchAtLogin = LoginItem.isEnabled
     @State private var launchAtLoginError: String?
     @State private var reportError: String?
@@ -219,6 +220,8 @@ struct SettingsView: View {
                     .font(.caption2)
                     .foregroundStyle(trainerNameFeedback == nil ? AnyShapeStyle(.tertiary) : AnyShapeStyle(.green))
             }
+            Button(l.outfitWardrobe, action: onOpenTrainer)
+                .buttonStyle(.bordered)
             Divider()
             groupRow {
                 VStack(alignment: .leading, spacing: 1) {

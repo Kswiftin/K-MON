@@ -35,7 +35,7 @@ extension OutfitItem {
         if let price = shopPrice { return "상점 · 별의조각 \(price)" }
         for achievement in AchievementLadder.catalog {
             if let index = achievement.outfits.firstIndex(of: self) {
-                return "업적 · \(l.achievementName(achievement.track)) · \(index + 1)단계"
+                return "업적 · \(l.achievementName(achievement.track)) · \(index + 1)단계 · \(achievement.tiers[index])회"
             }
         }
         return "업적으로 해금"

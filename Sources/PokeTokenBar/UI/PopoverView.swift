@@ -152,6 +152,11 @@ final class PopoverNavigation {
 
     /// 배틀 신청이 오면 그 화면으로 데려간다 — 덮여 있던 오버레이는 접는다.
     /// 체육관을 여기서 안 닫으면 신청이 온 줄 모른 채 목록만 보게 된다.
+    func goToOutfit() {
+        closeOverlays()
+        showOutfit = true
+    }
+
     func goToBattle() {
         closeOverlays()
         tab = .battle
@@ -256,7 +261,7 @@ struct PopoverView: View {
         @Bindable var nav = nav
         Group {
             if nav.showSettings {
-                SettingsView(onClose: { nav.showSettings = false })
+                SettingsView(onClose: { nav.showSettings = false }, onOpenTrainer: { nav.goToOutfit() })
                     .environment(settings)
                     .environment(companion)
                     .environment(updater)
@@ -385,7 +390,7 @@ struct PopoverView: View {
                 // 꾸미기는 **내 트레이너**를 갈아입히는 화면이라 트레이너가 있는 줄이 제자리다.
                 // 예전엔 친구 탭의 대표 포켓몬 카드 안에 있었다 — 남을 만나러 가는 화면 안에
                 // 파묻혀 있어서, 내 옷장을 찾으려면 친구 탭을 먼저 열어야 했다.
-                Button(l.outfitWardrobe) { nav.showOutfit = true }
+                Button(l.outfitWardrobe) { nav.goToOutfit() }
                     .buttonStyle(.borderless).controlSize(.small)
                     .font(.caption.weight(.semibold))
             }
