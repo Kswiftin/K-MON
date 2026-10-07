@@ -36,8 +36,8 @@
 - **README 도 한국어 전용**이다(2026-09-09 결정). en/ja 버전(`README.en.md`/`README.ja.md`)을
   걷어냈다 — 앱 UI·커밋·PR 이 이미 한국어뿐인데 소개 자료만 세 벌을 유지하는 비용이 실제
   독자보다 컸다. 스크린샷도 언어 접미 없이 한 벌만 둔다.
-- 밖에서 읽는 정본은 `CONTRIBUTING.md`(+`.ko`·`.ja`)와 `.github/PULL_REQUEST_TEMPLATE.md` 다 —
-  이 절을 고치면 그 세 곳도 같이 고친다. 안 고치면 저장소가 서로 다른 언어를 지시한다.
+- 기여 안내의 정본은 `docs/development/contributing.md` 다. `CONTRIBUTING.md`(+`.ko`·`.ja`)는
+  언어별 진입점이다. 이 절을 고치면 정본·진입점과 `.github/PULL_REQUEST_TEMPLATE.md`도 함께 맞춘다.
 - 기여자가 다른 언어로 PR 을 열면 언어를 이유로 돌려보내지 않는다. 머지 전에 제목만 한국어로 옮긴다.
   코드 식별자·API 이름·CLI 명령·에러 문자열은 원문 그대로 쓴다.
 
@@ -62,7 +62,7 @@
 검증까지 드는 작업량이 부가 기능 하나 커버리지보다 비싸다고 판단, 서브에이전트로 시도했다가
 세션 한도만 태우고 실패한 사고 이후). 스크린샷이 명백히 낡았어도 직접 만들지 말고, 갱신이
 필요하다는 사실만 사용자에게 한 줄로 알린다. 실행 절차·게이트·함정은
-`docs/reference/release-workflow.md`, 체크리스트는 `RELEASE.md`.
+`docs/reference/release-workflow.md`, 체크리스트는 `docs/development/releasing.md`(`RELEASE.md`에서 연결).
 
 릴리스는 외부 공개(비가역)이므로 실행 직전 **적용할 버전과 노트 요약을 한 번 보여준 뒤** 진행한다.
 
