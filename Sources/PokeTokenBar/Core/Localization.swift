@@ -1864,6 +1864,12 @@ struct L {
     }
     func outfitItemName(_ item: OutfitItem) -> String {
         switch item {
+        case .beanie: return "비니"
+        case .beret: return "베레모"
+        case .hoodie: return "후드티"
+        case .stripedTee: return "줄무늬 셔츠"
+        case .longPants: return "긴바지"
+        case .crossbodyBag: return "크로스백"
         case .capRed: return "빨간 캡"
         case .strawHat: return "밀짚모자"
         case .hairBob: return "단발"

@@ -7,7 +7,7 @@ final class TrainerOutfitTests: XCTestCase {
             XCTAssertTrue(OutfitSlot.allCases.contains(item.slot))
             if let price = item.shopPrice { XCTAssertGreaterThan(price, 0, "\(item)") }
         }
-        XCTAssertEqual(OutfitItem.allCases.filter { $0.shopPrice != nil }.count, 8)
+        XCTAssertEqual(OutfitItem.allCases.filter { $0.shopPrice != nil }.count, 14)
         XCTAssertEqual(OutfitItem.allCases.filter { $0.shopPrice == nil }.count, 4)
     }
 
