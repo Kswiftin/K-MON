@@ -87,7 +87,12 @@ struct RaidBossInfoTests {
         try await Task.sleep(for: .milliseconds(300))
         #expect(hover.targetID == "one")
         hover.setHovered("one", isInside: false)
-        try await Task.sleep(for: .milliseconds(300))
+        // CI에서 메인 액터가 밀리면 닫힘 Task도 늦게 시작한다. 실제 닫힘을 기다리되,
+        // 닫힘 자체가 고장 난 경우에는 유한한 시간 안에 실패해야 한다.
+        let deadline = ContinuousClock.now.advanced(by: .seconds(5))
+        while hover.targetID != nil, ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(20))
+        }
         #expect(hover.targetID == nil)
     }
 }
