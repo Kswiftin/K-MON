@@ -48,6 +48,7 @@ struct RaidView: View {
         // 로그와 채팅이 잘린 채로 뜬다. 형제 오버레이(체육관·던전·꾸미기·대화)와 같은 값을 쓴다 —
         // 오버레이마다 창 높이가 뛰면 화면을 옮길 때마다 창이 요동친다.
         .frame(height: PopoverMetrics.currentHeight(for: .battle))
+        .modifier(RaidBossTooltipHost(store: store, contextID: "\(center.phase)"))
         .onChange(of: center.raidCatchAttempts.count) { revealCatchAttempts() }
         .onDisappear { catchRevealTask?.cancel() }
     }
@@ -161,6 +162,7 @@ struct RaidView: View {
             .foregroundStyle(claimed ? .green : .secondary)
         }
         .frame(maxWidth: .infinity)
+        .raidBossTooltip(RaidBossTooltipTarget(speciesID: species, tier: tier))
     }
 
     /// 들고 갈 개체를 고른다 — **방에 들어가기 전에만**. 로비에서 바꾸려면 참가자 `speciesID` 와
@@ -341,7 +343,8 @@ struct RaidView: View {
                         isFinished: center.isBattleFinished,
                         isReplaying: animator.overlay.isPlaying),
                     isFinished: center.isBattleFinished,
-                    turnEndsAt: center.turnEndsAt
+                    turnEndsAt: center.turnEndsAt,
+                    raidTier: center.raidTier ?? .one
                 ) { index in
                     center.submitAction(targetID: RaidBoss.bossID, moveIndex: index)
                 }
