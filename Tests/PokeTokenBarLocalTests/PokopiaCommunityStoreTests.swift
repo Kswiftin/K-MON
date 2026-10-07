@@ -130,4 +130,50 @@ import Testing
         store.debugSetItemCount(.dishHerbSoup, 1)
         #expect(store.pokopiaCommunityContext().canShareFood)
     }
+
+    @Test(arguments: [false, true])
+    func fractionalArrivalSurvivesTransferAndRemainsClaimable(intoFreshStore: Bool) throws {
+        let sourceDirectory = storeFixtureDirectory("community-precision-source")
+        let targetDirectory = storeFixtureDirectory("community-precision-target")
+        defer {
+            try? FileManager.default.removeItem(at: sourceDirectory)
+            try? FileManager.default.removeItem(at: targetDirectory)
+        }
+        let arrivedAt = CommunityFixture.now.addingTimeInterval(0.125)
+        let source = CommunityFixture.store(at: sourceDirectory.appendingPathComponent("state.json"), clock: { CommunityFixture.now })
+        #expect(source.memoryAlbum.admitTownResident(.init(speciesID: 1, name: "이상해씨", types: [.grass], arrivedAt: arrivedAt)))
+        source.refreshPokopiaCommunity()
+        let request = try #require(source.state.pokopiaCommunity.daily?.requests.first)
+        let exported = try source.exportedSaveData(appVersion: "test", deviceName: "fixture")
+        let target = intoFreshStore
+            ? CommunityFixture.store(at: targetDirectory.appendingPathComponent("state.json"), clock: { CommunityFixture.now }) : source
+        try target.applySave(SaveTransfer.decode(exported))
+        #expect(target.memoryAlbum.town.residents.first?.arrivedAt == arrivedAt)
+        #expect(target.state.pokopiaCommunity.daily?.requests.first?.arrivedAt == arrivedAt)
+        _ = target.completeFocusSession(minutes: 20)
+        #expect(PokopiaCommunity.status(request, state: target.state.pokopiaCommunity, context: target.pokopiaCommunityContext()) == .ready)
+        let stock = target.itemCount(request.reward)
+        #expect(target.claimPokopiaRequest(id: request.id) != nil)
+        #expect(target.itemCount(request.reward) == stock + 1)
+        #expect(target.claimPokopiaRequest(id: request.id) == nil)
+    }
+
+    @Test func sameSecondReentryAfterTransferStillRejectsTheOldRequest() throws {
+        let directory = storeFixtureDirectory("community-precision-reentry")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = CommunityFixture.store(at: directory.appendingPathComponent("state.json"), clock: { CommunityFixture.now })
+        #expect(store.memoryAlbum.admitTownResident(.init(speciesID: 1, name: "이상해씨", types: [.grass],
+            arrivedAt: CommunityFixture.now.addingTimeInterval(0.125))))
+        store.refreshPokopiaCommunity()
+        let request = try #require(store.state.pokopiaCommunity.daily?.requests.first)
+        try store.applySave(SaveTransfer.decode(store.exportedSaveData(appVersion: "test", deviceName: "fixture")))
+        #expect(store.memoryAlbum.evictTownResident(speciesID: 1))
+        #expect(store.memoryAlbum.admitTownResident(.init(speciesID: 1, name: "새 이웃", types: [.grass],
+            arrivedAt: CommunityFixture.now.addingTimeInterval(0.375))))
+        // 다시 내보내는 경계에서도 두 도착 시각이 같은 초로 합쳐지면 안 된다.
+        try store.applySave(SaveTransfer.decode(store.exportedSaveData(appVersion: "test", deviceName: "fixture")))
+        _ = store.completeFocusSession(minutes: 20)
+        #expect(PokopiaCommunity.status(request, state: store.state.pokopiaCommunity, context: store.pokopiaCommunityContext()) == .residentLeft)
+        #expect(store.claimPokopiaRequest(id: request.id) == nil)
+    }
 }

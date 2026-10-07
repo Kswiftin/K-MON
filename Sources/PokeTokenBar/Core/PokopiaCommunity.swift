@@ -14,6 +14,54 @@ struct PokopiaResidentRequest: Codable, Sendable, Equatable, Identifiable {
     var target: Int
     var reward: ItemKind
     var isClaimed = false
+
+    init(id: String, region: TownRegion, speciesID: Int, arrivedAt: Date, kind: PokopiaRequestKind,
+         terrain: TownTerrain?, target: Int, reward: ItemKind, isClaimed: Bool = false) {
+        self.id = id
+        self.region = region
+        self.speciesID = speciesID
+        self.arrivedAt = arrivedAt
+        self.kind = kind
+        self.terrain = terrain
+        self.target = target
+        self.reward = reward
+        self.isClaimed = isClaimed
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, region, speciesID, arrivedAt, arrivedAtReferenceTime, kind, terrain, target, reward, isClaimed
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(String.self, forKey: .id)
+        region = try c.decode(TownRegion.self, forKey: .region)
+        speciesID = try c.decode(Int.self, forKey: .speciesID)
+        if let exact = try c.decodeIfPresent(Double.self, forKey: .arrivedAtReferenceTime) {
+            arrivedAt = Date(timeIntervalSinceReferenceDate: exact)
+        } else {
+            arrivedAt = try c.decode(Date.self, forKey: .arrivedAt)
+        }
+        kind = try c.decode(PokopiaRequestKind.self, forKey: .kind)
+        terrain = try c.decodeIfPresent(TownTerrain.self, forKey: .terrain)
+        target = try c.decode(Int.self, forKey: .target)
+        reward = try c.decode(ItemKind.self, forKey: .reward)
+        isClaimed = try c.decode(Bool.self, forKey: .isClaimed)
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(id, forKey: .id)
+        try c.encode(region, forKey: .region)
+        try c.encode(speciesID, forKey: .speciesID)
+        try c.encode(arrivedAt, forKey: .arrivedAt)
+        try c.encode(arrivedAt.timeIntervalSinceReferenceDate, forKey: .arrivedAtReferenceTime)
+        try c.encode(kind, forKey: .kind)
+        try c.encodeIfPresent(terrain, forKey: .terrain)
+        try c.encode(target, forKey: .target)
+        try c.encode(reward, forKey: .reward)
+        try c.encode(isClaimed, forKey: .isClaimed)
+    }
 }
 
 struct PokopiaDailyBoard: Codable, Sendable, Equatable {
