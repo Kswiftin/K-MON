@@ -13,6 +13,23 @@ final class FocusTimer {
     /// 타이머도 세션도 재기동을 넘지 않는다. 재기동을 넘어야 하는 것은 이미 끝난 세션의 기록뿐이고
     /// 그건 원장이 들고 있다.
     private(set) var focusLabel: String?
+    /// 완료한 원장 항목을 보관한다. 현재 작업과 달리 휴식 종료 뒤 수동 재시작에만 쓴다.
+    private(set) var continuationSession: FocusSession?
+    private(set) var isContinuationReady = false
+
+    func rememberCompletedSession(_ session: FocusSession) {
+        guard phase == .focus else { return }
+        continuationSession = session
+        isContinuationReady = false
+    }
+
+    func continuation(in log: FocusSessionLog, now: Date) -> FocusSession? {
+        guard phase == .idle, isContinuationReady, let session = continuationSession,
+              session.endedAt <= now,
+              CompanionStore.dayKey(session.endedAt) == CompanionStore.dayKey(now),
+              log.sessions.contains(session) else { return nil }
+        return session
+    }
     /// 세션 완료 정산 훅. **돌려줄 값이 없다** — 정산 결과를 화면에 남기는 일은 스토어의
     /// `lastClaim` 이 맡는다. 예전엔 여기 `lastReward` 로도 들고 있었지만, 그 값은 세션 완료
     /// 경로에만 채워져 나머지 세 정산 경로를 설명하지 못했다(#192). 반환형을 남겨 두면 그걸
@@ -39,6 +56,8 @@ final class FocusTimer {
     private(set) var sessionStartSeq = 0
 
     func startFocus(minutes: Int = 25, label: String? = nil, now: Date = Date()) {
+        continuationSession = nil
+        isContinuationReady = false
         phase = .focus
         sessionStartSeq += 1
         focusMinutes = max(1, minutes)
@@ -50,12 +69,19 @@ final class FocusTimer {
     /// 휴식으로 넘어가며 라벨을 **비운다**. 안 비우면 15분 긴 휴식 내내 화면과 터미널이 방금 끝난
     /// 일을 "지금 하는 일" 로 띄운다. 기록은 이미 완료 훅의 인자로 넘어간 뒤라 영향이 없다.
     func startRest(minutes: Int = 5, now: Date = Date()) {
+        isContinuationReady = false
         phase = .rest
         focusLabel = nil
         endsAt = now.addingTimeInterval(TimeInterval(max(1, minutes) * 60))
     }
 
-    func stop() { phase = .idle; endsAt = nil; focusLabel = nil }
+    func stop() {
+        phase = .idle
+        endsAt = nil
+        focusLabel = nil
+        continuationSession = nil
+        isContinuationReady = false
+    }
 
     func tick(now: Date = Date()) {
         guard let endsAt, now >= endsAt else { return }
@@ -64,9 +90,12 @@ final class FocusTimer {
             onFocusCompleted?(focusMinutes, focusLabel)      // 기록이 먼저 — 아래가 그 집계를 읽는다
             startRest(minutes: nextRestMinutes?() ?? FocusChainRules.shortRestMinutes, now: now)
         } else {
-            stop()
-            // **마지막 문장이다.** 뒤에 무엇을 더하면 훅이 켠 다음 세션을 그것이 지운다.
-            // `stop()` 앞에 두면 훅이 본 단계가 `.rest` 라 게이트가 그 시작을 거절한다.
+            // 명시적 중단과 달리 정상 휴식 종료는 이어하기 후보를 보존한다.
+            phase = .idle
+            self.endsAt = nil
+            focusLabel = nil
+            isContinuationReady = continuationSession != nil
+            // 훅이 보는 단계는 idle이다. 훅 뒤에서 새 집중 상태를 지우지 않는다.
             onRestCompleted?()
         }
     }

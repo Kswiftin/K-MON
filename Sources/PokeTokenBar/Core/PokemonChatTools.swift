@@ -659,6 +659,9 @@ extension FocusTimer {
     /// 않으므로 그 두 경로는 한 글자도 안 바뀐다. 나중에 그쪽이 라벨을 받게 되어도 인자는 여기서만 는다.
     @discardableResult
     func startFocusSession(minutes: Int, label: String? = nil, companion: CompanionStore) -> Bool {
+        let refusal = PokedoroSessionGate.startRefusal(PokedoroSessionState(timer: self, companion: companion))
+        // 완료된 모험의 자동 정산은 유지하되, 실행 중인 타이머는 덮어쓰지 않는다.
+        guard refusal == nil || refusal == .adventureUnclaimed else { return false }
         guard companion.startFocusAdventure(minutes: minutes) else { return false }
         startFocus(minutes: minutes, label: label)
         return true
