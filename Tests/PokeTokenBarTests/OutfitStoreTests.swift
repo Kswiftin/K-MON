@@ -41,16 +41,21 @@ final class OutfitStoreTests: XCTestCase {
         XCTAssertFalse(richStore.buyOutfit(.helmetExplorer))
     }
 
-    func testWearRequiresOwnershipAndMatchingSlot() {
+    func testDraftSaveRequiresOwnershipAndMatchingSlot() {
         let store = makeStore()
-        store.wear(.capRed, in: .hat)
+        var draft = TrainerEditDraft(name: "트레이너", outfit: TrainerOutfit())
+        draft.select(.capRed, in: .hat)
+        XCTAssertFalse(store.saveTrainer(draft))
         XCTAssertEqual(store.outfit.worn, [:], "미소유는 못 입는다")
         store.grantOutfit(.capRed)
-        store.wear(.capRed, in: .top)
+        draft.outfit.worn = [.top: .capRed]
+        XCTAssertFalse(store.saveTrainer(draft))
         XCTAssertEqual(store.outfit.worn, [:], "슬롯이 다르면 못 입는다")
-        store.wear(.capRed, in: .hat)
+        draft.outfit.worn = [.hat: .capRed]
+        XCTAssertTrue(store.saveTrainer(draft))
         XCTAssertEqual(store.outfit.worn, [.hat: .capRed])
-        store.wear(nil, in: .hat)
+        draft.select(nil, in: .hat)
+        XCTAssertTrue(store.saveTrainer(draft))
         XCTAssertEqual(store.outfit.worn, [:])
     }
 

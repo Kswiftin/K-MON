@@ -1864,6 +1864,12 @@ struct L {
     }
     func outfitItemName(_ item: OutfitItem) -> String {
         switch item {
+        case .beanie: return "비니"
+        case .beret: return "베레모"
+        case .hoodie: return "후드티"
+        case .stripedTee: return "줄무늬 셔츠"
+        case .longPants: return "긴바지"
+        case .crossbodyBag: return "크로스백"
         case .capRed: return "빨간 캡"
         case .strawHat: return "밀짚모자"
         case .hairBob: return "단발"
@@ -1878,8 +1884,8 @@ struct L {
         case .helmetExplorer: return "탐험가 헬멧"
         }
     }
-    var outfitTitle: String { "꾸미기" }
-    var outfitWardrobe: String { "꾸미기" }
+    var outfitTitle: String { "트레이너 꾸미기" }
+    var outfitWardrobe: String { "트레이너 꾸미기" }
     var outfitTakeOff: String { "벗기" }
     var outfitLocked: String { "업적으로 해금" }
     /// 아이템 설명 — 가방과 상점이 읽는다. **`default:` 를 두지 않는다**: 진화가 아닌 새 아이템이

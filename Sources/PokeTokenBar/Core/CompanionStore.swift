@@ -4355,6 +4355,28 @@ final class CompanionStore {
 
     // MARK: 의상
 
+    var trainerEditDraft: TrainerEditDraft { TrainerEditDraft(name: trainerName, outfit: outfit) }
+    func trainerEditIssue(_ draft: TrainerEditDraft) -> TrainerEditIssue? {
+        draft.validationIssue(owned: state.ownedOutfits)
+    }
+
+    /// 이름·외형을 한 번의 원자적 저장으로 확정하고, 쓰기 실패를 성공으로 알리지 않는다.
+    @discardableResult
+    func saveTrainer(_ draft: TrainerEditDraft) -> Bool {
+        guard !isReadOnly, trainerEditIssue(draft) == nil else { return false }
+        let previousName = state.trainerName
+        let previousOutfit = state.outfit
+        state.trainerName = draft.normalizedName
+        state.outfit = draft.outfit.normalized(owned: state.ownedOutfits)
+        save()
+        if saveFailed {
+            state.trainerName = previousName
+            state.outfit = previousOutfit
+            return false
+        }
+        return true
+    }
+
     var outfit: TrainerOutfit { state.outfit }
     func ownsOutfit(_ item: OutfitItem) -> Bool { state.ownedOutfits.contains(item) }
 
@@ -4381,14 +4403,6 @@ final class CompanionStore {
         state.ownedOutfits.insert(item)
         save()
         return true
-    }
-
-    /// nil 이면 벗는다. 미소유·슬롯 불일치는 무시 — 신뢰경계는 `normalized(owned:)` 하나다.
-    func wear(_ item: OutfitItem?, in slot: OutfitSlot) {
-        var worn = state.outfit.worn
-        if let item { worn[slot] = item } else { worn.removeValue(forKey: slot) }
-        state.outfit = TrainerOutfit(worn: worn).normalized(owned: state.ownedOutfits)
-        save()
     }
 
     // MARK: 알 (보관 알 구매 — 개체·도감·확률 무영향)

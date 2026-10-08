@@ -1588,10 +1588,14 @@ struct StarterPickerView: View {
     let store: CompanionStore
     @State private var picking = false   // 선택 후 중복 탭 방지
     @State private var failed = false    // 실패를 **말한다** — 아래 주석 참고
-    @State private var trainer = ""
+    @State private var progress: TrainerCreationProgress
+
+    init(store: CompanionStore) {
+        self.store = store
+        _progress = State(initialValue: TrainerCreationProgress(hasTrainerName: store.hasTrainerName))
+    }
 
     private var l: L { store.l }
-    private var nameReady: Bool { !trainer.trimmingCharacters(in: .whitespaces).isEmpty }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -1605,63 +1609,56 @@ struct StarterPickerView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
 
-            // 1) 트레이너 이름 — 배틀에 표시된다. 이름을 넣어야 스타터를 고를 수 있다.
-            VStack(alignment: .leading, spacing: 4) {
-                Text(l.trainerNamePrompt).font(.callout.weight(.semibold))
-                TextField(l.trainerNamePlaceholder, text: $trainer)
-                    .textFieldStyle(.roundedBorder)
-                    .disabled(picking)
-                    .onSubmit { store.setTrainerName(trainer) }
-            }
-
-            Divider()
-
-            // 2) 타입 선택 — 해당 타입의 1세대 미진화체 한 마리가 알에서 무작위로 부화한다.
-            Text("원하는 타입을 골라요")
-                .font(.callout.weight(.semibold))
-            if picking {
-                HStack(spacing: 8) {
-                    ProgressView().controlSize(.small)
-                    Text("알 속의 포켓몬을 만나고 있어요…")
-                        .font(.caption2).foregroundStyle(.secondary)
-                }
-                .frame(maxWidth: .infinity, alignment: .center)
-                .padding(.vertical, 24)
+            if !progress.isComplete {
+                TrainerCreationView(store: store) { progress.complete(ifSaved: true) }
             } else {
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: 66))], spacing: 7) {
-                    ForEach(store.starterSelectableTypes, id: \.self) { type in
-                        Button {
-                            picking = true
-                            failed = false
-                            store.setTrainerName(trainer)
-                            Task {
-                                // **실패를 조용히 되돌리지 않는다.** `chooseStarterType` 은 종 인덱스
-                                // 조회 실패(오프라인)로도 false 를 준다. 예전엔 `picking` 만 내려서
-                                // 화면이 격자로 되돌아왔고, 첫 실행 사용자는 눌러도 아무 일이 없는
-                                // 버튼을 이유 없이 다시 보게 됐다 — 게임에 들어가는 유일한 문이다.
-                                if !(await store.chooseStarterType(type)) {
-                                    picking = false
-                                    failed = true
-                                }
-                            }
-                        } label: {
-                            TypeBadge(type: type)
-                                .frame(maxWidth: .infinity).padding(.vertical, 5)
-                        }
-                        .buttonStyle(.bordered).disabled(!nameReady)
+                Label(store.trainerName, systemImage: "person.fill").font(.callout.weight(.semibold))
+                Divider()
+
+                // 2) 타입 선택 — 해당 타입의 1세대 미진화체 한 마리가 알에서 무작위로 부화한다.
+                Text("원하는 타입을 골라요")
+                    .font(.callout.weight(.semibold))
+                if picking {
+                    HStack(spacing: 8) {
+                        ProgressView().controlSize(.small)
+                        Text("알 속의 포켓몬을 만나고 있어요…")
+                            .font(.caption2).foregroundStyle(.secondary)
                     }
+                    .frame(maxWidth: .infinity, alignment: .center)
+                    .padding(.vertical, 24)
+                } else {
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 66))], spacing: 7) {
+                        ForEach(store.starterSelectableTypes, id: \.self) { type in
+                            Button {
+                                picking = true
+                                failed = false
+                                Task {
+                                    // **실패를 조용히 되돌리지 않는다.** `chooseStarterType` 은 종 인덱스
+                                    // 조회 실패(오프라인)로도 false 를 준다. 예전엔 `picking` 만 내려서
+                                    // 화면이 격자로 되돌아왔고, 첫 실행 사용자는 눌러도 아무 일이 없는
+                                    // 버튼을 이유 없이 다시 보게 됐다 — 게임에 들어가는 유일한 문이다.
+                                    if !(await store.chooseStarterType(type)) {
+                                        picking = false
+                                        failed = true
+                                    }
+                                }
+                            } label: {
+                                TypeBadge(type: type)
+                                    .frame(maxWidth: .infinity).padding(.vertical, 5)
+                            }
+                            .buttonStyle(.bordered)
+                        }
+                    }
+                    Text(failed
+                         ? "포켓몬 정보를 받지 못했어요. 인터넷 연결을 확인하고 다시 골라 주세요."
+                         : "선택한 타입의 1세대 미진화체가 알에서 무작위로 태어나요. 전설·환상은 제외됩니다.")
+                        .font(.caption2)
+                        .foregroundStyle(failed ? AnyShapeStyle(.orange) : AnyShapeStyle(.tertiary))
+                        .fixedSize(horizontal: false, vertical: true)
                 }
-                Text(failed
-                     ? "포켓몬 정보를 받지 못했어요. 인터넷 연결을 확인하고 다시 골라 주세요."
-                     : nameReady
-                     ? "선택한 타입의 1세대 미진화체가 알에서 무작위로 태어나요. 전설·환상은 제외됩니다."
-                     : l.starterNeedName)
-                    .font(.caption2)
-                    .foregroundStyle(failed || !nameReady ? AnyShapeStyle(.orange) : AnyShapeStyle(.tertiary))
-                    .fixedSize(horizontal: false, vertical: true)
             }
         }
-        .onAppear { if trainer.isEmpty { trainer = store.trainerName } }
+
     }
 }
 

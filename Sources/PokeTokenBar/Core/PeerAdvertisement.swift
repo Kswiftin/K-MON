@@ -16,6 +16,8 @@ struct PeerAdvertisement: Equatable, Sendable {
         static let tiers = "achievementTiers"
         static let ceiling = "achievementCeiling"
         static let outfit = "outfit"
+        static let appearance = "appearance"
+        static let outfitTint = "outfitTint"
         static let representativeSpecies = "partnerSpecies"
         static let representativeShiny = "partnerShiny"
         static let runBestWave = "runWave"
@@ -71,8 +73,13 @@ struct PeerAdvertisement: Equatable, Sendable {
         self.achievementTiers = achievementTiers.map {
             min(ceiling ?? AchievementLadder.tierCeiling, max(0, $0))
         }
-        // 빈 착장은 nil 로 정규화 — 키를 안 실어야 `wireString` 규칙과 왕복이 맞는다.
-        self.outfit = outfit.flatMap { $0.worn.isEmpty ? nil : $0 }
+        // 의상이 없어도 무료 외형이 있으면 공유한다. 로컬 소유 목록은 원격 표시와 무관하다.
+        self.outfit = outfit.flatMap { value in
+            let worn = value.worn.filter { $0.key == $0.value.slot }
+            let valid = TrainerOutfit(worn: worn, appearance: value.appearance,
+                tints: value.tints.filter { worn[$0.key] != nil && $0.key != .hair })
+            return valid == TrainerOutfit() ? nil : valid
+        }
         self.representativeSpeciesID = representativeSpeciesID.flatMap { (1...20_000).contains($0) ? $0 : nil }
         self.representativeIsShiny = self.representativeSpeciesID == nil ? false : representativeIsShiny
         // 판 길이도 하한 1 — 0 을 분모로 그리면 나눗셈이 아니다(업적 분모와 같은 규칙).
@@ -95,7 +102,8 @@ struct PeerAdvertisement: Equatable, Sendable {
                   trainerLevel: record[Key.level].flatMap(Int.init),
                   achievementTiers: record[Key.tiers].flatMap(Int.init),
                   achievementCeiling: record[Key.ceiling].flatMap(Int.init),
-                  outfit: record[Key.outfit].map(TrainerOutfit.init(wireString:)),
+                  outfit: TrainerOutfit(wireString: record[Key.outfit] ?? "",
+                        appearanceWireString: record[Key.appearance], tintWireString: record[Key.outfitTint]),
                   representativeSpeciesID: record[Key.representativeSpecies].flatMap(Int.init),
                   representativeIsShiny: record[Key.representativeShiny] == "1",
                   runBestWave: record[Key.runBestWave].flatMap(Int.init),
@@ -112,6 +120,8 @@ struct PeerAdvertisement: Equatable, Sendable {
         if let achievementTiers { entries[Key.tiers] = String(achievementTiers) }
         if let achievementCeiling { entries[Key.ceiling] = String(achievementCeiling) }
         if let wire = outfit?.wireString { entries[Key.outfit] = wire }
+        if let wire = outfit?.appearance.wireString { entries[Key.appearance] = wire }
+        if let wire = outfit?.tintWireString { entries[Key.outfitTint] = wire }
         if let representativeSpeciesID {
             entries[Key.representativeSpecies] = String(representativeSpeciesID)
             if representativeIsShiny { entries[Key.representativeShiny] = "1" }

@@ -387,7 +387,7 @@ enum SaveTransfer {
             s.starterCandidates = []
         }
         // 미소유·슬롯 불일치 착용은 벗긴다 — `ownedOutfits` 는 서명에 들어가지만 `outfit.worn` 은
-        // 표시 전용이라 손편집으로 미소유 아이템을 입혀도 진행에 영향은 없지만, 그대로 두면 화면에
+        // 기본 외형·염색도 표시 전용이다. 미소유 착용을 그대로 두면 화면에
         // 산 적 없는 옷이 보인다.
         s.outfit = s.outfit.normalized(owned: s.ownedOutfits)
         return s
