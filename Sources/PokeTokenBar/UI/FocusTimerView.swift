@@ -95,12 +95,39 @@ struct FocusTimerView: View {
             } else {
                 // 라벨은 **선택**이다. 엔터로도 시작되게 해서, 적은 사람은 손을 옮기지 않고
                 // 시작하고 안 적는 사람은 지금까지와 똑같이 버튼 한 번으로 시작한다.
-                TextField("무엇에 집중하나요? (선택)",
-                          text: $label)
-                    .textFieldStyle(.roundedBorder)
-                    .controlSize(.small)
-                    .font(.caption)
-                    .onSubmit { startSession() }
+                TimelineView(.periodic(from: .now, by: 60)) { context in
+                    if let session = timer.continuation(in: companion.focusSessions, now: context.date) {
+                        Button { resumeSession() } label: {
+                            Text(FocusStartSuggestions.continuationTitle(for: session))
+                                .lineLimit(1).truncationMode(.tail)
+                        }
+                        .controlSize(.small)
+                        .disabled(!companion.hasActive || companion.isAdventureInProgress)
+                        .help(FocusStartSuggestions.continuationTitle(for: session))
+                        .accessibilityLabel(FocusStartSuggestions.continuationTitle(for: session))
+                    }
+                }
+                HStack(spacing: 6) {
+                    TextField("무엇에 집중하나요? (선택)", text: $label)
+                        .textFieldStyle(.roundedBorder)
+                        .controlSize(.small)
+                        .font(.caption)
+                        .onSubmit { startSession() }
+                    let suggestions = FocusStartSuggestions.recentTasks(in: companion.focusSessions)
+                    if !suggestions.isEmpty {
+                        Menu("최근 작업") {
+                            ForEach(suggestions, id: \.label) { suggestion in
+                                Button("\(suggestion.label) · \(suggestion.minutes)분") {
+                                    label = suggestion.label
+                                    selectedMinutes = suggestion.minutes
+                                }
+                                .help(suggestion.label)
+                                .accessibilityLabel("\(suggestion.label) · \(suggestion.minutes)분")
+                            }
+                        }
+                        .fixedSize().controlSize(.small)
+                    }
+                }
                 Picker("", selection: $selectedMinutes) {
                     // 대화의 `pokedoro.start` 도 같은 목록으로 인자를 접는다 — 두 벌이면 화면이
                     // 제시하지 않는 길이를 도구만 켤 수 있게 된다.
@@ -130,26 +157,35 @@ struct FocusTimerView: View {
             }
             // 오늘의 집계도 세 분기 **밖**이다 — 집중 중이든 쉬는 중이든 "오늘 얼마나 했나"는
             // 같은 자리에 있어야 한다. 값은 원장에서 온다(재기동·자정을 넘긴다).
-            HStack(spacing: 4) {
-                Image(systemName: "checkmark.circle").foregroundStyle(.secondary)
-                // 목표를 함께 적는다 — 완료 수만 있으면 "3세션" 이 많은지 적은지 알 수 없다.
-                // 체인은 이 목표에서 멈춘다(`FocusChainRules.afterRest`).
-                Text("오늘 \(companion.focusSessionsToday)/\(settings.dailyFocusGoal)세션 · \(companion.focusMinutesToday)분")
-                Spacer()
-                // 줄을 새로 만들지 않고 이 자리의 빈 공간을 쓴다 — 집중 카드의 세로 예산은
-                // 파트너 카드가 화면에 남느냐를 정한다(`MissionBoardView` 가 겪은 그 회귀).
-                // 회고는 바로 왼쪽 숫자를 설명하는 화면이라 그 옆이 제자리다.
-                // 아이콘만 두었을 때는 이 화면을 여는 사람이 없었다 — 오버레이 이름은 그것을
-                // 소유한 자리에서 **글자로** 말해야 한다(아이콘은 이름이 아니다).
-                Button { nav.showFocusRecap = true } label: {
-                    Label("회고", systemImage: "chart.bar.xaxis")
+            TimelineView(.periodic(from: .now, by: 60)) { context in
+                let day = CompanionStore.dayKey(context.date)
+                let completedToday = companion.focusSessions.count(on: day)
+                let minutesToday = companion.focusSessions.minutes(on: day)
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "checkmark.circle").foregroundStyle(.secondary)
+                        // 목표를 함께 적는다 — 완료 수만 있으면 "3세션" 이 많은지 적은지 알 수 없다.
+                        // 체인은 이 목표에서 멈춘다(`FocusChainRules.afterRest`).
+                        Text("오늘 \(completedToday)/\(settings.dailyFocusGoal)세션 · \(minutesToday)분")
+                        Spacer()
+                        // 줄을 새로 만들지 않고 이 자리의 빈 공간을 쓴다 — 집중 카드의 세로 예산은
+                        // 파트너 카드가 화면에 남느냐를 정한다(`MissionBoardView` 가 겪은 그 회귀).
+                        // 회고는 바로 왼쪽 숫자를 설명하는 화면이라 그 옆이 제자리다.
+                        // 아이콘만 두었을 때는 이 화면을 여는 사람이 없었다 — 오버레이 이름은 그것을
+                        // 소유한 자리에서 **글자로** 말해야 한다(아이콘은 이름이 아니다).
+                        Button { nav.showFocusRecap = true } label: {
+                            Label("회고", systemImage: "chart.bar.xaxis")
+                        }
+                            .buttonStyle(.borderless).controlSize(.small)
+                            .help("주간 회고")
+                            .accessibilityLabel("주간 회고")
+                    }
+                    .font(.caption2.monospacedDigit()).foregroundStyle(.secondary)
+                    Text(FocusStartSuggestions.goalHint(completed: completedToday, goal: settings.dailyFocusGoal).text)
+                        .font(.caption2).foregroundStyle(.secondary)
+                    todaySessionList
                 }
-                    .buttonStyle(.borderless).controlSize(.small)
-                    .help("주간 회고")
-                    .accessibilityLabel("주간 회고")
             }
-            .font(.caption2.monospacedDigit()).foregroundStyle(.secondary)
-            todaySessionList
             // 정산 배너는 세 분기 **밖**에 둔다. 예전엔 idle 분기 안에 있어서, 집중이 끝나는 순간
             // 타이머가 곧바로 휴식으로 넘어가(`FocusTimer.tick` → `startRest`) `isRunning` 이 참이
             // 되면 방금 정산한 결과가 화면에 뜨지도 못했다.
@@ -236,9 +272,17 @@ struct FocusTimerView: View {
     /// 집중 시작 — **버튼과 엔터가 같은 자리를 지난다.** 두 벌로 두면 엔터가 비활성 조건을
     /// 건너뛰어(버튼의 `.disabled` 는 엔터를 막지 않는다) 화면이 막아 둔 상태에서 세션이 시작된다.
     private func startSession() {
-        guard companion.hasActive, !companion.isAdventureInProgress else { return }
-        timer.startFocusSession(minutes: selectedMinutes, label: label, companion: companion)
+        guard timer.startFocusSession(minutes: selectedMinutes, label: label, companion: companion) else { return }
         // 다음 세션이 지난 라벨을 물려받지 않게 비운다 — 지금 도는 라벨은 타이머가 들고 있다.
+        label = ""
+    }
+
+    /// 표시 시점과 클릭 시점 사이의 날짜·세이브 변경도 다시 검사한다.
+    private func resumeSession() {
+        guard let session = timer.continuation(in: companion.focusSessions, now: Date()),
+              timer.startFocusSession(minutes: session.minutes, label: session.label, companion: companion)
+        else { return }
+        selectedMinutes = session.minutes
         label = ""
     }
 

@@ -80,6 +80,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, UNU
             // 라벨은 훅이 실어 온 값을 그대로 넘긴다 — 여기서 타이머를 다시 읽으면 휴식이 비우기
             // 전에 읽어야 한다는 순서 계약이 생기고, 어긋나도 화면엔 아무 오류가 안 뜬다.
             self.companion.completeFocusSession(minutes: minutes, label: label)
+            // tick 시각을 추정하지 않고 원장에 실제로 기록된 항목을 이어하기에 건넨다.
+            if let session = self.companion.focusSessions.sessions.last {
+                self.focusTimer.rememberCompletedSession(session)
+            }
             // 세션이 끝났다는 것부터 알린다. 팝오버 배너는 팝오버를 열어 둔 사람만 보는데,
             // 메뉴바 앱을 쓰는 동안 사용자는 다른 앱에 있다 — 알림이 없으면 집중이 끝난 줄도 모른다.
             let rest = FocusChainRules.restMinutes(completedToday: self.companion.focusSessionsToday)
@@ -484,8 +488,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, UNU
                 PokedoroSessionState(timer: focusTimer, companion: companion)))
         switch decision {
         case .promptNextSession:
+            let session = focusTimer.continuation(in: companion.focusSessions, now: Date())
             notifyFocusChain("휴식이 끝났어요",
-                             "눌러서 다음 집중을 시작하세요.")
+                             FocusStartSuggestions.restEndMessage(for: session))
         case .goalReached:
             notifyFocusChain("오늘 목표 달성!",
                              "오늘 \(companion.focusSessionsToday)세션을 마쳤어요. 더 할지는 직접 골라 주세요.")

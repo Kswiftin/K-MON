@@ -195,6 +195,7 @@ LOGIC_CORE=(
   "Sources/PokeTokenBar/Core/FocusSessionLog.swift"
   "Sources/PokeTokenBar/Core/FocusChainRules.swift"
   "Sources/PokeTokenBar/Core/FocusWeekRecap.swift"
+  "Sources/PokeTokenBar/Core/FocusStartSuggestions.swift"
   # 터미널이 앱의 세이브를 움직이는 **유일한 입구**. 나이 제한과 id 두 가드가 여기 있고, 그
   # 둘이 무너지면 앱을 켜는 순간 몇 시간 전 요청이 실행되거나 같은 요청이 매 틱 반복된다.
   "Sources/PokeTokenBar/Core/PokedoroRequestBus.swift"
