@@ -541,7 +541,7 @@ actor PokeAPIClient: PokeProviding {
     /// 아직 위력을 못 뽑는 기술(`VariableDamage.unmodeledMoveIDs`)은 뺀다 — 넣어 두면 PP 만
     /// 태우는 칸이 되고, 넷뿐인 자리를 죽은 기술이 차지한다.
     func canonicalLevelUpMoves(speciesID: Int, level: Int) async -> [MoveSpec] {
-        await levelUpMoves(speciesID: speciesID, level: level, limit: 4)
+        await levelUpMoves(speciesID: speciesID, level: level, limit: 4, accepts: VariableDamage.isUsable).map(\.move)
     }
 
     /// 현재 레벨까지 배울 수 있었던 레벨업 기술 **전부** — 하트비늘(다시 배우기) 후보용.
@@ -549,25 +549,32 @@ actor PokeAPIClient: PokeProviding {
     /// `canonicalLevelUpMoves` 와 나눠 둔다. 그쪽은 **무브셋을 채우는** 함수라 4개에서 멈추는데
     /// (기술 칸이 넷이다), 다시 배우기는 "지금까지 배울 수 있었던 것 중에 고른다" 라 상한이 없다.
     /// 한 함수를 두 용도로 쓰던 동안 후보 목록이 무브셋 상한을 물려받아 **종당 4개만** 보였다.
-    func levelUpMoveHistory(speciesID: Int, level: Int) async -> [MoveSpec] {
-        await levelUpMoves(speciesID: speciesID, level: level, limit: nil)
+    /// 습득 레벨을 함께 싣는다 — 후보 화면이 레벨 순으로 늘어놓으려면 진화 경로 여러 종의 목록을
+    /// 합친 뒤에도 각 기술의 레벨을 알아야 한다.
+    func levelUpMoveHistory(speciesID: Int, level: Int) async -> [LevelUpMove] {
+        await levelUpMoves(speciesID: speciesID, level: level, limit: nil, accepts: VariableDamage.isLearnable)
     }
 
-    /// `limit` 이 nil 이면 전부. 개수만 다른 두 용도가 같은 필터·같은 순서를 쓰게 한 곳에 둔다 —
-    /// 갈라 두면 무브셋에는 들어가는데 다시 배우기에는 안 뜨는 기술이 생긴다.
-    private func levelUpMoves(speciesID: Int, level: Int, limit: Int?) async -> [MoveSpec] {
+    /// `limit` 이 nil 이면 전부. 개수만 다른 두 용도가 같은 순서를 쓰게 한 곳에 둔다 — 갈라 두면
+    /// 무브셋에는 들어가는데 다시 배우기에는 안 뜨는 기술이 생긴다. 거르는 기준(`accepts`)만 다르다:
+    /// 다시 배우기는 진화 조건 기술(흉내내기)도 받아야 한다.
+    private func levelUpMoves(speciesID: Int, level: Int, limit: Int?,
+                              accepts: (MoveSpec) -> Bool) async -> [LevelUpMove] {
         guard let dto: PokemonMovesDTO = try? await get(base.appendingPathComponent("pokemon/\(speciesID)")) else { return [] }
-        let names = Self.levelUpMoveNames(dto, through: level)
-        var moves: [MoveSpec] = []
-        for name in names {
-            guard let move = try? await moveDetail(named: name), VariableDamage.isUsable(move) else { continue }
-            moves.append(move)
+        var moves: [LevelUpMove] = []
+        for entry in Self.levelUpMoveLevels(dto, through: level) {
+            guard let move = try? await moveDetail(named: entry.name), accepts(move) else { continue }
+            moves.append(LevelUpMove(move: move, level: entry.level))
             if let limit, moves.count == limit { break }
         }
         return moves
     }
 
     static func levelUpMoveNames(_ dto: PokemonMovesDTO, through level: Int) -> [String] {
+        levelUpMoveLevels(dto, through: level).map(\.name)
+    }
+
+    static func levelUpMoveLevels(_ dto: PokemonMovesDTO, through level: Int) -> [(name: String, level: Int)] {
         var learned: [String: Int] = [:]
         for entry in dto.moves {
             let levels = entry.version_group_details
@@ -576,7 +583,8 @@ actor PokeAPIClient: PokeProviding {
             guard let learnedAt = levels.max() else { continue }
             learned[entry.move.name] = max(learned[entry.move.name] ?? 0, learnedAt)
         }
-        return learned.sorted { $0.value == $1.value ? $0.key < $1.key : $0.value > $1.value }.map(\.key)
+        return learned.sorted { $0.value == $1.value ? $0.key < $1.key : $0.value > $1.value }
+            .map { (name: $0.key, level: $0.value) }
     }
 
     /// 정확히 이 레벨에 배우는 공격 기술. 사용자 기술 습득 선택창에서 사용한다.
@@ -592,7 +600,7 @@ actor PokeAPIClient: PokeProviding {
         }
         var result: [MoveSpec] = []
         for name in Array(Set(names)).sorted() {
-            if let move = try? await moveDetail(named: name), VariableDamage.isUsable(move) {
+            if let move = try? await moveDetail(named: name), VariableDamage.isLearnable(move) {
                 result.append(move)
             }
         }
@@ -764,7 +772,8 @@ actor PokeAPIClient: PokeProviding {
                 evolutionGender: PokemonGender.fromEvolutionCode(
                     link.evolution_details.compactMap(\.gender).first),
                 evolutionKnownMoveID: link.evolution_details.compactMap(\.known_move).first
-                    .map { Self.id(from: $0.url ?? "") },
+                    .map { Self.id(from: $0.url ?? "") }
+                    .flatMap { Self.unlearnableEvolutionMoveIDs.contains($0) ? nil : $0 },
                 evolutionTimeOfDay: link.evolution_details.contains(where: { ($0.time_of_day ?? "").isEmpty })
                     ? nil : link.evolution_details.compactMap(\.time_of_day).first(where: { !$0.isEmpty }),
                 evolutionRelativePhysicalStats: link.evolution_details.compactMap(\.relative_physical_stats).first,
@@ -782,6 +791,10 @@ actor PokeAPIClient: PokeProviding {
         guard !opensWithoutItem else { return details.first }
         return details.first { $0.item != nil } ?? details.first
     }
+    /// 앱 안에서 배울 길이 없는 진화 조건 기술 — 이 조건은 떼어 내 "레벨업으로 진화" 로 접는다.
+    /// 드래곤응원(913)은 원작에서도 기술머신 전용인데 앱 기술머신에 없고, 독침천침(839)은 히스이
+    /// 침바루만 배우는데 앱의 침바루는 일반 모습이다. 조건을 남기면 과미르·침바루가 영영 진화하지 못한다.
+    static let unlearnableEvolutionMoveIDs: Set<Int> = [913, 839]
     private func allIDs(_ n: EvoNode) -> [Int] { [n.speciesID] + n.children.flatMap(allIDs) }
     private static func allKnownMoveIDs(_ n: EvoNode) -> [Int] {
         (n.evolutionKnownMoveID.map { [$0] } ?? []) + n.children.flatMap(allKnownMoveIDs)

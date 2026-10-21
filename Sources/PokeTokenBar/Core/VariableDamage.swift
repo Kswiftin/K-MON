@@ -403,6 +403,27 @@ enum VariableDamage: Equatable, Sendable {
             && (move.damageClass != .status || move.hasModeledStatusEffect)
     }
 
+    /// 진화 조건으로 쓰이는데 배틀 효과가 없는 기술. 흉내내기(102)가 꼬지지·흉내내의 진화 조건이다.
+    static let evolutionKeyMoveIDs: Set<Int> = [102]
+
+    /// 진화 조건 기술을 진화 전 종이 **Lv.1 에만** 배워, 레벨업 습득창으로는 못 받는 진화 대상.
+    /// 맘모꾸리(473 — 메꾸리 원시의힘)·아고용(804 — 베베놈 용의파동). "놓친 기술"로만 배운다.
+    static let relearnOnlyEvolutionTargetIDs: Set<Int> = [473, 804]
+
+    /// 기술 조건 진화 안내 문구 — 홈과 포켓몬 탭이 같은 말을 하게 한 곳에 둔다.
+    static func knownMoveEvolutionText(moveName: String, targetSpeciesID: Int) -> String {
+        relearnOnlyEvolutionTargetIDs.contains(targetSpeciesID)
+            ? "\(moveName) 습득 후 레벨업 (놓친 기술에서 배울 수 있음)"
+            : "\(moveName) 습득 후 레벨업"
+    }
+
+    /// 사용자가 **직접 배우는** 경로(레벨업 습득창·다시 배우기)의 기준. `isUsable` 로만 거르면 진화
+    /// 조건 기술이 후보에 영영 안 떠 그 종이 진화하지 못한다. 자동 무브셋은 여전히 `isUsable` 을 쓴다 —
+    /// 효과 없는 기술이 넷뿐인 칸을 차지하면 안 된다.
+    static func isLearnable(_ move: MoveSpec) -> Bool {
+        isUsable(move) || evolutionKeyMoveIDs.contains(move.id)
+    }
+
     /// 엔진이 실제로 데미지를 내는 기술인가 — **무브셋 선택은 `power > 0` 대신 이걸 본다.**
     ///
     /// `power > 0` 은 "공격기냐"와 같은 뜻이 아니다. PokéAPI 가 `power: null` 로 주는 공격기는

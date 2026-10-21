@@ -150,6 +150,7 @@ private struct LineThrowsProvider: PokeProviding {
 final class IndexProvider: PokeProviding, @unchecked Sendable {
     nonisolated(unsafe) var index: [BaseSpecies] = []
     nonisolated(unsafe) var failAll = false
+    init(index: [BaseSpecies] = []) { self.index = index }
     func line(baseSpeciesID: Int) async throws -> EvoLine {
         makeLine(base: baseSpeciesID, tree: node(baseSpeciesID))
     }
@@ -2193,7 +2194,7 @@ final class CompanionIdentityTests: XCTestCase {
                      BaseSpecies(id: 30, captureRate: 100)]
         for seed: UInt64 in [1, 7, 42, 999] {
             var r = SeededRNG(seed: seed)
-            let roll = Int(r.next() % 300)
+            let roll = Int((r.next() / 100) % 300)   // 하위 두 자리는 묶음(안 가진/가진 종) 선택 몫
             let expected = index[roll / 100].id      // 구간: [0,100)→10, [100,200)→20, [200,300)→30
             let p = IndexProvider(); p.index = index
             let s = samplerStore(p, seed: seed, preloadState: eggReadyState())
@@ -2209,7 +2210,7 @@ final class CompanionIdentityTests: XCTestCase {
         var legendarySeed: UInt64?, commonSeed: UInt64?
         for seed: UInt64 in 0..<3000 {
             var r = SeededRNG(seed: seed)
-            let roll = Int(r.next() % 256)
+            let roll = Int((r.next() / 100) % 256)
             if roll >= 254, legendarySeed == nil { legendarySeed = seed }
             if roll < 254, commonSeed == nil { commonSeed = seed }
             if legendarySeed != nil, commonSeed != nil { break }
@@ -2232,7 +2233,7 @@ final class CompanionIdentityTests: XCTestCase {
         var found: UInt64?
         for seed: UInt64 in 0..<5000 {
             var r = SeededRNG(seed: seed)
-            let v = r.next()
+            let v = r.next() / 100
             if v % 400 < 200, v % 300 >= 100 { found = seed; break }
         }
         guard let seed = found else { return XCTFail("시드 탐색 실패") }
@@ -2246,6 +2247,50 @@ final class CompanionIdentityTests: XCTestCase {
         let s2 = samplerStore(p2, seed: seed, preloadState: eggReadyState(collected: ["1:1"]))
         await s2.hatchIfNeeded()
         XCTAssertEqual(s2.state.active?.baseID, 2, "수집済 가중치 ½ 로 선택 구간이 이동해야 한다")
+    }
+
+    func testPicksUnownedHatchUsesPercentAndPity() {
+        XCTAssertTrue(CompanionStore.picksUnownedHatch(roll: 79, ownedStreak: 0))
+        XCTAssertFalse(CompanionStore.picksUnownedHatch(roll: 80, ownedStreak: 0))
+        XCTAssertFalse(CompanionStore.picksUnownedHatch(roll: 99, ownedStreak: CompanionStore.ownedHatchPityLimit - 1))
+        XCTAssertTrue(CompanionStore.picksUnownedHatch(roll: 99, ownedStreak: CompanionStore.ownedHatchPityLimit))
+    }
+
+    /// 가진 흔한 종(255)과 안 가진 전설(3) — 포획률만 보면 전설은 1% 남짓이지만, 묶음을 먼저 고르므로
+    /// "안 가진 종" 굴림이면 전설이, 천장에 닿았으면 굴림과 무관하게 전설이 나와야 한다.
+    func testHatchPrefersUnownedSpeciesAndPityForcesIt() async {
+        let index = [BaseSpecies(id: 1, captureRate: 255), BaseSpecies(id: 2, captureRate: 3)]
+        func seed(where predicate: (UInt64) -> Bool) -> UInt64? {
+            (0..<5000).first { candidate in
+                var generator = SeededRNG(seed: candidate)
+                return predicate(generator.next())
+            }
+        }
+        // 묶음 굴림은 "안 가진 종", 종 굴림은 둘 다 모았다면 흔한 종에 떨어질 자리
+        guard let unownedSeed = seed(where: { $0 % 100 < 80 && ($0 / 100) % 258 < 255 }),
+              let ownedSeed = seed(where: { $0 % 100 >= 80 && ($0 / 100) % 258 < 255 })
+        else { return XCTFail("시드 탐색 실패") }
+        func eggState(streak: Int) -> CompanionState {
+            var state = eggReadyState()
+            state.dex = [DexEntry(baseID: 1, finalID: 1, chainOrder: [1], rarity: .common, caughtAt: nil)]
+            state.ownedHatchStreak = streak
+            return state
+        }
+
+        let preferred = samplerStore(IndexProvider(index: index), seed: unownedSeed, preloadState: eggState(streak: 1))
+        await preferred.hatchIfNeeded()
+        XCTAssertEqual(preferred.state.active?.baseID, 2)
+        XCTAssertEqual(preferred.state.ownedHatchStreak, 0, "처음 보는 종이 나오면 연속 기록이 끊긴다")
+
+        let ownedRoll = samplerStore(IndexProvider(index: index), seed: ownedSeed, preloadState: eggState(streak: 0))
+        await ownedRoll.hatchIfNeeded()
+        XCTAssertEqual(ownedRoll.state.active?.baseID, 1)
+        XCTAssertEqual(ownedRoll.state.ownedHatchStreak, 1, "가진 종이 나오면 연속 기록이 오른다")
+
+        let pity = samplerStore(IndexProvider(index: index), seed: ownedSeed,
+                                preloadState: eggState(streak: CompanionStore.ownedHatchPityLimit))
+        await pity.hatchIfNeeded()
+        XCTAssertEqual(pity.state.active?.baseID, 2, "천장이면 '가진 종' 굴림이어도 안 가진 종이 나와야 한다")
     }
 
     /// 알 상태 프리패칭 — update 틱에 종이 pre-roll 되어 영속되고, 부화는 pending 을 그대로 사용.

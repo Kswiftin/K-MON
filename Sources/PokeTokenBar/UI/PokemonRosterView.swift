@@ -734,7 +734,7 @@ private struct PokemonDetailCard: View {
         if let time = next.evolutionTimeOfDay { parts.append(time == "day" ? "낮" : "밤") }
         if let move = next.evolutionKnownMoveID {
             let name = line?.evolutionMoveNames[move].flatMap { PokemonNaming.name($0) } ?? "#\(move)"
-            parts.append("\(name) 습득 후 레벨업")
+            parts.append(VariableDamage.knownMoveEvolutionText(moveName: name, targetSpeciesID: next.speciesID))
         }
         else if let level = next.evolutionLevel { parts.append("Lv.\(level)에 진화") }
         else if let item = ItemKind.allCases.first(where: { $0.evolutionRule?.opens(next) == true }) { parts.append(store.l.evolutionNeedsItem(store.l.itemName(item))) }

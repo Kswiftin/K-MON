@@ -563,7 +563,8 @@ final class CompanionStore {
         if let moveID = next.evolutionKnownMoveID {
             let moveName = currentLine?.evolutionMoveNames[moveID]
                 .flatMap { PokemonNaming.name($0) } ?? "#\(moveID)"
-            return genderPrefix + "\(moveName) 습득 후 레벨업"
+            return genderPrefix + VariableDamage.knownMoveEvolutionText(moveName: moveName,
+                                                                        targetSpeciesID: next.speciesID)
         }
         if let level = next.evolutionLevel {
             return genderPrefix + "Lv.\(level)에 진화"
@@ -573,10 +574,6 @@ final class CompanionStore {
         case "level-up":
             return genderPrefix + "레벨업으로 진화"
         case "trade":
-            if let partnerID = next.evolutionTradeSpeciesID {
-                let partner = specialSpeciesName(partnerID)
-                return genderPrefix + "\(partner)와 교환"
-            }
             return genderPrefix + l.evolutionNeedsItem(l.itemName(.linkingCord))
         default:
             return genderPrefix + "특수 조건으로 진화"
@@ -586,8 +583,6 @@ final class CompanionStore {
     private func specialSpeciesName(_ id: Int) -> String {
         switch id {
         case 223: return "총어"
-        case 588: return "딱정곤"
-        case 616: return "쪼마리"
         default: return "#\(id)"
         }
     }
@@ -2387,7 +2382,7 @@ final class CompanionStore {
     /// 올라도 배울 기술 제안이 전혀 안 뜬다, 2026-09-10 사용자 보고). 이 조회가 그 공백을 메운다 —
     /// 포켓몬탭 정보 팝오버가 개체를 열 때마다 불러 "놓친 기술"을 무료로 되돌려준다.
     func missedLevelUpMoves(for mon: MonState) async -> [MoveSpec] {
-        var inherited: [[MoveSpec]] = []
+        var inherited: [[LevelUpMove]] = []
         for speciesID in mon.pathIDs {
             let moves = await PokeAPIClient.shared.levelUpMoveHistory(speciesID: speciesID, level: mon.level)
             inherited.append(moves)
@@ -4141,7 +4136,7 @@ final class CompanionStore {
         isLoadingRelearnCandidates = true
         Task { @MainActor in
             defer { isLoadingRelearnCandidates = false }
-            var inherited: [[MoveSpec]] = []
+            var inherited: [[LevelUpMove]] = []
             var index = 0
             // pathIDs 도 매 반복 다시 읽는다 — 조회 중에 진화하면 경로에 종이 **붙는다**. 캡처본으로
             // 돌면 새로 붙은 종의 기술이 후보에서 통째로 빠진다.
@@ -4523,6 +4518,7 @@ final class CompanionStore {
         notifyCompanionEvent(shiny ? l.notifShinyHatchTitle : l.notifHatchTitle,
                              shiny ? l.notifShinyHatchBody(name) : l.notifHatchBody(name))
         if !wasRegistered { recordMission(.dexRegistrations, 1) }
+        recordHatchOwnership(wasRegistered: wasRegistered)
         AppLog.write("stored egg hatched: base=\(line.baseID) shiny=\(shiny)")
         save()
     }
@@ -4749,6 +4745,7 @@ final class CompanionStore {
         notifyCompanionEvent(showShiny ? l.notifShinyHatchTitle : l.notifHatchTitle,
                              showShiny ? l.notifShinyHatchBody(name) : l.notifHatchBody(name))
         if !wasRegistered { recordMission(.dexRegistrations, 1) }
+        recordHatchOwnership(wasRegistered: wasRegistered)
         justEvolvedTo = nil        // 새 부화는 "성장" 문구(진화 아님) — 직전 진화명이 남아 표시되지 않게
         displayState = .levelUp
         eventUntil = clock().addingTimeInterval(4)
@@ -4835,23 +4832,49 @@ final class CompanionStore {
     ///      단, 이미 수집한 base 는 가중치 ½(미수집 부스트 — 재부화/shiny 사냥은 열어둠)
     ///   ③ 누적 가중치에서 정확히 1롤 — 루프/재롤 없음, 시간 상한 확정적
     /// 인덱스 취득 실패(오프라인 + 캐시 없음) 시 nil → 알 유지, 다음 갱신 틱 재시도.
+    /// 알에서 안 가진 종이 나올 확률(%).
+    nonisolated static let unownedHatchPercent: UInt64 = 80
+    /// 가진 종이 이만큼 연달아 나오면 다음 알은 안 가진 종으로 확정한다.
+    nonisolated static let ownedHatchPityLimit = 3
+
+    /// 이번 부화를 안 가진 종 묶음에서 뽑는가(순수) — 천장에 닿았으면 굴림과 무관하게 참.
+    nonisolated static func picksUnownedHatch(roll: UInt64, ownedStreak: Int) -> Bool {
+        ownedStreak >= ownedHatchPityLimit || roll % 100 < unownedHatchPercent
+    }
+
+    /// 부화 결과로 연속 기록을 갱신한다 — 가진 종이면 +1, 처음 보는 종이면 0.
+    private func recordHatchOwnership(wasRegistered: Bool) {
+        state.ownedHatchStreak = wasRegistered ? state.ownedHatchStreak + 1 : 0
+    }
+
     private func chooseBase() async -> Int? {
         let tier = state.eggTier
         if let full = try? await provider.baseSpeciesIndex(), !full.isEmpty {
             // 등급 보증 알은 후보를 먼저 좁힌다 — capture_rate 상한이 곧 등급 하한이므로
             // (Rarity.captureRateCeiling) 전설도 자연히 포함된다("희귀 이상"에 전설이 들어가는 게 정상).
             // 좁힌 결과가 비면 보증을 못 지키므로 전체 풀로 폴백하지 말고 알을 유지한다(다음 틱 재시도).
-            let index = tier.map { t in full.filter { t.includes(captureRate: $0.captureRate) } } ?? full
-            guard !index.isEmpty else {
+            let tierIndex = tier.map { t in full.filter { t.includes(captureRate: $0.captureRate) } } ?? full
+            guard !tierIndex.isEmpty else {
                 AppLog.write("hatch: no candidate for guaranteed \(tier?.rawValue ?? "none") — egg kept, retry next tick")
                 return nil
             }
+            // 포획률 가중치만으로 뽑으면 흔한 종(255)이 이미 가진 종이어도 안 가진 중간 등급(45)을
+            // 압도해 같은 종만 나온다. 먼저 "안 가진 종 / 가진 종" 묶음을 고르고 그 안에서 가중 추첨한다.
+            let ownedSpecies = Set(dexEntries.flatMap(\.chainOrder))
+            let unowned = tierIndex.filter { !ownedSpecies.contains($0.id) }
+            let owned = tierIndex.filter { ownedSpecies.contains($0.id) }
+            // 난수는 한 번만 뽑아 묶음 선택(하위 두 자리)과 종 선택(나머지)에 나눠 쓴다 — 소비량이
+            // 늘면 뒤따르는 이로치·성격 굴림이 밀려 같은 시드가 다른 결과를 낸다.
+            let roll = rng.next()
+            let picksUnowned = Self.picksUnownedHatch(roll: roll, ownedStreak: state.ownedHatchStreak)
+            let preferred = picksUnowned ? unowned : owned
+            let index = preferred.isEmpty ? tierIndex : preferred
             let weights = index.map { e in
                 state.collectedFinals.contains(where: { $0.hasPrefix("\(e.id):") })
                     ? max(1, e.captureRate / 2) : max(1, e.captureRate)
             }
             let total = weights.reduce(0, +)
-            var r = Int(rng.next() % UInt64(total))
+            var r = Int((roll / 100) % UInt64(total))
             for (i, w) in weights.enumerated() {
                 r -= w
                 if r < 0 { return index[i].id }
