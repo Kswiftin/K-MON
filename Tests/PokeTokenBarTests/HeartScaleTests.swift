@@ -239,14 +239,17 @@ final class HeartScaleTests: XCTestCase {
     }
 
     /// 두 조회가 갈라지지 않게 잠근다 — 무브셋에는 들어가는데 다시 배우기에는 안 뜨는 기술이
-    /// 생기면 "왜 이건 못 배우지" 가 된다. 필터·정렬은 한 함수(`levelUpMoves`)가 공유한다.
+    /// 생기면 "왜 이건 못 배우지" 가 된다. 정렬은 한 함수(`levelUpMoves`)가 공유하고, 거르는 기준만
+    /// 다르다 — 다시 배우기는 진화 조건 기술(흉내내기)까지 받는 `isLearnable` 이다.
     func testBothLevelUpQueriesShareOneFilterAndOrder() throws {
         let client = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
             .appendingPathComponent("Sources/PokeTokenBar/Core/PokeAPIClient.swift")
         let text = try String(contentsOf: client, encoding: .utf8)
-        XCTAssertTrue(text.contains("levelUpMoves(speciesID: speciesID, level: level, limit: 4)"))
-        XCTAssertTrue(text.contains("levelUpMoves(speciesID: speciesID, level: level, limit: nil)"))
+        XCTAssertTrue(text.contains(
+            "levelUpMoves(speciesID: speciesID, level: level, limit: 4, accepts: VariableDamage.isUsable)"))
+        XCTAssertTrue(text.contains(
+            "levelUpMoves(speciesID: speciesID, level: level, limit: nil, accepts: VariableDamage.isLearnable)"))
     }
 
     // MARK: 놓친 레벨업 기술 무료 학습 — 모험 파티 예비 자리(박스 개체)용 (2026-09-10 사용자 보고)
