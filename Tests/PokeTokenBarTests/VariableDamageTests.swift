@@ -641,6 +641,22 @@ final class VariableDamageTests: XCTestCase {
 
     // MARK: 아직 모델링하지 않은 기술
 
+    /// 흉내내기는 효과가 없어 자동 무브셋엔 안 들어가지만, 꼬지지·흉내내의 진화 조건이라 직접 배우는
+    /// 경로에서는 걸러지면 안 된다 — 걸러지던 동안 두 종은 영영 진화하지 못했다.
+    func testEvolutionKeyMoveIsLearnableButNotAutoPicked() {
+        let mimic = spec(102, damageClass: .status, power: 0)
+        XCTAssertFalse(VariableDamage.isUsable(mimic))
+        XCTAssertTrue(VariableDamage.isLearnable(mimic))
+        XCTAssertFalse(VariableDamage.isLearnable(spec(216)), "진화 조건이 아닌 미구현 기술은 그대로 거른다")
+    }
+
+    func testRelearnOnlyEvolutionHintMentionsMissedMoves() {
+        XCTAssertEqual(VariableDamage.knownMoveEvolutionText(moveName: "원시의힘", targetSpeciesID: 473),
+                       "원시의힘 습득 후 레벨업 (놓친 기술에서 배울 수 있음)")
+        XCTAssertEqual(VariableDamage.knownMoveEvolutionText(moveName: "구르기", targetSpeciesID: 463),
+                       "구르기 습득 후 레벨업")
+    }
+
     /// 위력을 못 뽑는 기술은 무브셋 후보에서 뺀다 — 넣으면 예전과 똑같이 죽은 칸이 된다.
     func testUnmodeledMovesAreKeptOutOfMovesets() {
         XCTAssertFalse(VariableDamage.isUsable(spec(216)), "은혜갚기(친밀도)는 아직 못 뽑는다")

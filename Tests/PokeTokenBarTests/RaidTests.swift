@@ -101,17 +101,17 @@ final class RaidTests: XCTestCase {
     }
 
     func testCatchRatesFollowRarity() {
-        XCTAssertEqual(RaidBoss.catchPercent(for: .legendary), 5)
-        XCTAssertEqual(RaidBoss.catchPercent(for: .rare), 15)
-        XCTAssertEqual(RaidBoss.catchPercent(for: .uncommon), 25)
+        XCTAssertEqual(RaidBoss.catchPercent(for: .legendary), 15)
+        XCTAssertEqual(RaidBoss.catchPercent(for: .rare), 45)
+        XCTAssertEqual(RaidBoss.catchPercent(for: .uncommon), 75)
     }
 
-    func testWeeklySixStarBossIsAlwaysShinyAndHasThreePercentCatchRate() {
+    func testWeeklySixStarBossIsAlwaysShinyAndHasNinePercentCatchRate() {
         let species = RaidBoss.speciesID(dayKey: "2026-W37", tier: .six)
         XCTAssertTrue(RaidBoss.isShinyBoss(tier: .six))
         XCTAssertFalse(RaidBoss.isShinyBoss(tier: .five))
         XCTAssertTrue(boss(tier: .six, dayKey: "2026-W37").side.snapshot.isShiny)
-        XCTAssertEqual(RaidBoss.catchPercent(tier: .six, speciesID: species), 3)
+        XCTAssertEqual(RaidBoss.catchPercent(tier: .six, speciesID: species), 9)
     }
 
     func testRaidPoolsAreBroadEnoughToAvoidFrequentRepeats() {

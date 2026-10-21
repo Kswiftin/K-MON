@@ -25,12 +25,11 @@ final class SafariZoneTests: XCTestCase {
 
     // MARK: 기저 포획률·도망률
 
-    /// 0단계는 `RaidBoss.catchPercent(for:)` 기저값과 정확히 같아야 한다 — 재사용이지 근사가 아니다.
-    func testCatchPercentMatchesRaidBossBaseAtZeroStage() {
-        for rarity: Rarity in [.common, .uncommon, .rare, .legendary] {
-            XCTAssertEqual(SafariZone.catchPercent(rarity: rarity, catchStage: 0),
-                           RaidBoss.catchPercent(for: rarity),
-                           "\(rarity) 0단계는 레이드 기저값과 같아야 한다")
+    /// 0단계는 사파리존 기저값과 정확히 같아야 한다 — 레이드 포획률을 올려도 사파리존은 그대로다.
+    func testCatchPercentMatchesSafariBaseAtZeroStage() {
+        for (rarity, expected) in [(Rarity.common, 25), (.uncommon, 25), (.rare, 15), (.legendary, 5)] {
+            XCTAssertEqual(SafariZone.catchPercent(rarity: rarity, catchStage: 0), expected,
+                           "\(rarity) 0단계는 사파리존 기저값과 같아야 한다")
         }
     }
 

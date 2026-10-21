@@ -116,6 +116,21 @@ final class HeldItemEvolutionTests: XCTestCase {
         XCTAssertEqual(s.nextEvolutionItem, nil, "최종형이라 더 쓸 아이템이 없다")
     }
 
+    /// 딱정곤 → 슈바르고: 쪼마리와 교환해야 하는 진화. 앱의 교환은 진화를 일으키지 않으므로
+    /// 연결의끈이 유일한 길이다 — 막혀 있던 동안 이 두 종은 영영 진화하지 못했다.
+    func testLinkingCordEvolvesTradePartnerEvolution() async {
+        let line = heldLine(base: 588, tree: EvoNode(speciesID: 588, children: [
+            EvoNode(speciesID: 589, children: [], evolutionTrigger: "trade", evolutionTradeSpeciesID: 616),
+        ]))
+        let s = store(line)
+        await s.hatch(baseID: 588)
+        s.debugAddItem(.linkingCord)
+
+        XCTAssertEqual(s.nextEvolutionItem, .linkingCord)
+        XCTAssertTrue(s.useEvolutionItem(.linkingCord))
+        XCTAssertEqual(s.currentSpeciesID, 589)
+    }
+
     // MARK: (c) 엉뚱한 아이템은 실패하고 재고도 줄지 않는다
 
     func testWrongHeldItemNeitherEvolvesNorConsumes() async {
@@ -309,6 +324,24 @@ final class HeldItemEvolutionTests: XCTestCase {
         let tree = PokeAPIClient.evoNode(from: try JSONDecoder().decode(ChainLink.self, from: Data(json.utf8)))
         XCTAssertEqual(try XCTUnwrap(tree.node(withID: 463)).evolutionKnownMoveID, 205)
         XCTAssertEqual(try XCTUnwrap(tree.keepingAnimatedSprites()?.node(withID: 463)).evolutionKnownMoveID, 205)
+    }
+
+    /// 과미르 → 과미드라(드래곤응원)는 앱에서 배울 길이 없는 기술 조건이라 떼어 낸다 — 남으면
+    /// 영영 진화하지 못한다. 트리거(level-up)는 남아 "레벨업으로 진화" 경로를 탄다.
+    func testUnlearnableKnownMoveIsDroppedAtChainParsing() throws {
+        let json = """
+        {"species":{"name":"dipplin","url":"https://pokeapi.co/api/v2/pokemon-species/1011/"},
+         "evolution_details":[],"evolves_to":[
+          {"species":{"name":"hydrapple","url":"https://pokeapi.co/api/v2/pokemon-species/1019/"},
+           "evolves_to":[],"evolution_details":[{"min_level":null,"min_happiness":null,
+            "trigger":{"name":"level-up","url":null},"item":null,"held_item":null,"gender":null,
+            "known_move":{"name":"dragon-cheer","url":"https://pokeapi.co/api/v2/move/913/"}}]}
+         ]}
+        """
+        let tree = PokeAPIClient.evoNode(from: try JSONDecoder().decode(ChainLink.self, from: Data(json.utf8)))
+        let hydrapple = try XCTUnwrap(tree.node(withID: 1019))
+        XCTAssertNil(hydrapple.evolutionKnownMoveID)
+        XCTAssertEqual(hydrapple.evolutionTrigger, "level-up")
     }
 
     /// 지닌물건 노드는 자동 진화로 넘어가지 않는다 — 아이템을 요구하는 진화가 레벨만으로 열리면

@@ -59,10 +59,11 @@ read_when:
 -3: 0.5×  -2: 0.6×  -1: 0.75×  0: 1×  +1: 1.33×  +2: 1.67×  +3: 2×
 ```
 
-## 기저값 — `Rarity` 기반 고정 %를 재사용한 이유(`RaidBoss.catchPercent`)
+## 기저값 — `Rarity` 기반 고정 %(`SafariZone.basePercent`)
 
-기저 포획률은 `RaidBoss.catchPercent(for:)`를 그대로 재사용한다(legendary 5%, rare 15%,
-uncommon/common 25%). 종별 실제 `capture_rate`를 쓰지 않는 이유는 `wave-run-design.md`의 포획
+기저 포획률은 등급별 고정값이다(legendary 5%, rare 15%, uncommon/common 25%). 처음엔
+`RaidBoss.catchPercent(for:)`를 재사용했지만, 레이드 포획률을 3배로 올리면서(2026-10-21) 사파리존은
+단계 배율이 따로 곱해지므로 원래 값을 `SafariZone.basePercent(for:)`로 떼어 두었다. 종별 실제 `capture_rate`를 쓰지 않는 이유는 `wave-run-design.md`의 포획
 절이 이미 정리한 것과 같다 — 희귀도 축을 하나 더 두면 같은 일을 두 번 하는 셈이고, 종마다
 `/pokemon-species` 왕복이 붙는다.
 

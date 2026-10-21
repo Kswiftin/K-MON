@@ -19,11 +19,19 @@ enum SafariZone {
 
     // MARK: 기저 포획률·도망률
 
-    /// 기저 포획률은 `RaidBoss.catchPercent(for:)` 를 그대로 재사용한다 — 종별 실제
-    /// `capture_rate` 를 쓰지 않는 이유는 `wave-run-design.md` 의 포획 절과 같다(희귀도 축
-    /// 중복, 종마다 API 왕복 추가).
+    /// 등급별 기저 포획률 — 종별 실제 `capture_rate` 를 쓰지 않는 이유는 `wave-run-design.md` 의
+    /// 포획 절과 같다(희귀도 축 중복, 종마다 API 왕복 추가). 예전엔 `RaidBoss.catchPercent(for:)` 를
+    /// 재사용했지만 레이드만 3배로 올리면서 떼어냈다 — 사파리존은 단계 배율이 따로 곱해진다.
+    static func basePercent(for rarity: Rarity) -> Int {
+        switch rarity {
+        case .legendary: 5
+        case .rare: 15
+        case .uncommon, .common: 25
+        }
+    }
+
     static func catchPercent(rarity: Rarity, catchStage: Int) -> Int {
-        let value = Double(RaidBoss.catchPercent(for: rarity)) * stageMultiplier(catchStage)
+        let value = Double(basePercent(for: rarity)) * stageMultiplier(catchStage)
         return Int(min(95, max(5, value.rounded())))
     }
 

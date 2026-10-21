@@ -222,15 +222,15 @@ enum RaidBoss {
 
     static func catchPercent(for rarity: Rarity) -> Int {
         switch rarity {
-        case .legendary: 5
-        case .rare: 15
-        case .uncommon, .common: 25
+        case .legendary: 15
+        case .rare: 45
+        case .uncommon, .common: 75
         }
     }
 
-    /// 주간 6성은 보스가 이로치로 확정되는 대신 포획 확률을 3%로 제한한다.
+    /// 주간 6성은 보스가 이로치로 확정되는 대신 포획 확률을 9%로 제한한다.
     static func catchPercent(tier: RaidTier, speciesID: Int) -> Int {
-        tier == .six ? 3 : catchPercent(for: rarity(speciesID: speciesID))
+        tier == .six ? 9 : catchPercent(for: rarity(speciesID: speciesID))
     }
 
     /// 반나절로 안 가른, 달력 하루 키(`yyyy-MM-dd`) — 6★ 주간 레이드의 보상·포획 원장이 쓴다

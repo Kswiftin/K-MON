@@ -49,7 +49,6 @@ struct RaidView: View {
         // 오버레이마다 창 높이가 뛰면 화면을 옮길 때마다 창이 요동친다.
         .frame(height: PopoverMetrics.currentHeight(for: .battle))
         .modifier(RaidBossTooltipHost(store: store, contextID: "\(center.phase)"))
-        .onChange(of: center.raidCatchAttempts.count) { revealCatchAttempts() }
         .onDisappear { catchRevealTask?.cancel() }
     }
 
@@ -471,6 +470,10 @@ struct RaidView: View {
                 }
             }
             .animation(.spring(response: 0.35), value: revealedCatchAttempts)
+            // 공개는 이 목록이 **화면에 나타날 때** 시작한다. 추첨은 정산 시점(마지막 턴 재생 중)에
+            // 끝나므로, 그 변화에 걸면 재생이 2초를 넘는 판에서 결과 화면이 뜰 때 첫 줄이 이미 공개돼 있다.
+            .onAppear { revealCatchAttempts() }
+            .onChange(of: center.raidCatchAttempts.count) { revealCatchAttempts() }
         }
     }
 

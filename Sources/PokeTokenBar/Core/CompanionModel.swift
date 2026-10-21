@@ -171,7 +171,8 @@ enum PokemonBalance {
 /// `held_item` 을 읽지 않아, 연결의끈 하나로 야도킹·킹크로스까지 공짜로 진화됐다. 조건을 규칙으로
 /// 표현해 "지닌물건이 필요한 진화" 와 "순수 교환 진화" 를 분리한다.
 enum EvolutionItemRule: Sendable, Equatable {
-    /// 지닌물건이 필요 없는 교환 진화만(괴력몬·홍수몬 …) — 연결의끈 담당.
+    /// 지닌물건이 필요 없는 교환 진화만(괴력몬·홍수몬 …) — 연결의끈 담당. 특정 종과 교환해야 하는
+    /// 진화(딱정곤↔쪼마리)도 여기 든다 — 앱의 교환은 진화를 일으키지 않아 다른 길이 없다.
     case plainTrade
     /// 대상에게 직접 쓰는 아이템(돌 전부) — `trigger=use-item`.
     case useItem(String)
@@ -193,7 +194,6 @@ enum EvolutionItemRule: Sendable, Equatable {
         case .plainTrade:
             // 지닌물건이 필요한 교환 진화는 제외 — 그 종에는 전용 아이템이 따로 있다.
             return node.evolutionTrigger == "trade" && node.evolutionHeldItem == nil
-                && node.evolutionTradeSpeciesID == nil
         case .useItem(let name):
             return node.evolutionTrigger == "use-item" && node.evolutionItem == name
         case .heldItem(let name):
@@ -2828,6 +2828,9 @@ struct CompanionState: Codable, Sendable {
     // 시즌 순환 챌린지 진행도. 세트는 저장하지 않고 시즌 키에서 고른다(SeasonBoard 참고).
     var seasons = SeasonBoard()
     var focusEggs = 0
+    // 이미 도감에 있는 종이 연달아 부화한 횟수 — 천장(`CompanionStore.ownedHatchPityLimit`)에 닿으면
+    // 다음 알은 안 가진 종으로 확정한다. 안 가진 종이 나오면 0 으로 돌아간다.
+    var ownedHatchStreak = 0
     // 보관 중인 알마다 자동 부화 예정 시각. 알은 획득 5분 뒤 현재 동행과 무관하게 박스에서 부화한다.
     var focusEggReadyDates: [Date] = []
     /// 지금 만드는 중인 마을 물건 **하나**(9단계). 큐가 아니다 — 동시 여러 건은 상한·정렬·설비별
@@ -2927,6 +2930,7 @@ struct CompanionState: Codable, Sendable {
         achievements       = c.lenient(AchievementLadder.self, forKey: .achievements,
                                        default: AchievementLadder())
         focusEggs          = c.lenient(Int.self, forKey: .focusEggs, default: 0)
+        ownedHatchStreak   = c.lenient(Int.self, forKey: .ownedHatchStreak, default: 0)
         focusEggReadyDates = c.lenient([Date].self, forKey: .focusEggReadyDates, default: [])
         // 9단계 이전 세이브엔 이 키가 없다 — 없으면 nil 이고, 그것이 "아무것도 안 만드는 중" 이다.
         townCraft          = c.lenientOptional(TownCraftOrder.self, forKey: .townCraft)
