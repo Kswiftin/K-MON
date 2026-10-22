@@ -671,9 +671,6 @@ final class MultiplayerRoomCenter {
         // (`catchRaidBoss` 와 같은 예외 — 무제한 포획 이벤트).
         guard companion.isLiveEventActive || !companion.raidCatchClaimedToday(tier: tier) else {
             raidCatchResult = .claimedToday
-            // 비동기 경로(아래 `catchRaidBoss`)의 `.claimedToday` 분기와 같은 안내를 띄운다 —
-            // 여기서 빼먹으면 이 이른 반환만 결과는 맞는데 화면에 이유가 안 뜬다.
-            lastError = companion.l.raidCatchAlreadyToday
             return
         }
         guard mine.succeeded else { raidCatchResult = .escaped; return }
@@ -682,15 +679,22 @@ final class MultiplayerRoomCenter {
             let result = await companion.catchRaidBoss(speciesID: species, tier: tier)
             // await 뒤의 쓰기는 **사용자가 이미 떠난 방의 것일 수 있다**(`sessionEpoch` 관례).
             // 포획 자체는 위에서 이미 끝났다 — 개체는 내 세이브의 값이라 방과 함께 사라지지 않는다.
-            guard let self, self.sessionEpoch == epoch else { return }
+            // 이미 방을 떠났으면 공개할 화면이 없으므로 보류할 이유도 없다 — 알림을 바로 보낸다.
+            guard let self, self.sessionEpoch == epoch else { companion.sendPendingRaidCatchNotice(); return }
             self.raidCatchResult = result
-            switch result {
-            // 실패도 "오늘은 이미 잡았다" 도 덮어두지 않는다 — 앞은 원장을 안 써 오늘 다시 되고,
-            // 뒤는 오늘 다시 해도 같다. 두 사유를 한 문구로 접으면 하나는 반드시 거짓이 된다.
-            case .box, .companion, .escaped: break
-            case .claimedToday: self.lastError = companion.l.raidCatchAlreadyToday
-            case .unavailable: self.lastError = companion.l.raidCatchFailed
-            }
+        }
+    }
+
+    /// 내 포획 결과의 이유 문구. `lastError` 에 넣지 않는다 — 그 자리는 정산 즉시 화면 위에 떠서
+    /// 두구두구 공개보다 먼저 결과를 말해 버린다. 결과 화면이 내 줄을 공개한 뒤에 그린다.
+    ///
+    /// 실패도 "오늘은 이미 잡았다" 도 덮어두지 않는다 — 앞은 원장을 안 써 오늘 다시 되고,
+    /// 뒤는 오늘 다시 해도 같다. 두 사유를 한 문구로 접으면 하나는 반드시 거짓이 된다.
+    var raidCatchNotice: String? {
+        switch raidCatchResult {
+        case .claimedToday: companion.l.raidCatchAlreadyToday
+        case .unavailable: companion.l.raidCatchFailed
+        case .box, .companion, .escaped, nil: nil
         }
     }
 
@@ -1911,6 +1915,8 @@ final class MultiplayerRoomCenter {
     }
 
     func leaveRoom() {
+        // 공개 전에 나가면 결과 화면이 내 줄을 못 보여 준다 — 보류해 둔 포획 알림을 여기서 보낸다.
+        companion.sendPendingRaidCatchNotice()
         if isHost, pokeathlonRace != nil, !settledPool { settle(winnerID: pokeathlonRace?.winnerID) }
         else if !isHost, let escrowed = escrowedBet {
             // 호스트 정산을 못 받고 방을 떠나면 자기 판돈은 스스로 되돌린다(경기 미완주 = 환불).

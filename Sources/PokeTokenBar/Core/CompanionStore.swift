@@ -120,6 +120,9 @@ final class CompanionStore {
     private(set) var displayedMoves: [MoveSpec] = []
     private(set) var isLoadingDisplayedMoves = false
     private var moveLearningQueue: [MoveLearningPrompt] = []
+    /// 레벨업 구간 조회를 한 줄로 세운다 — 사탕을 여러 개 먹이면 사탕마다 조회가 따로 도는데, 끝나는
+    /// 순서가 매번 달라 높은 레벨의 카드가 먼저 뜨고 대기열 순서가 섞였다(2026-10-22 사용자 보고).
+    private var moveLearningTask: Task<Void, Never>?
     private(set) var state = CompanionState()
     private(set) var displayState: CompanionStateKind = .egg
     private(set) var currentLine: EvoLine?
@@ -1978,6 +1981,30 @@ final class CompanionStore {
             && state.boxedMons.contains(where: { $0.id == mon.id })
     }
 
+    /// 박사에게 보내기 자동 선택 — 이미 한 번 이상 졸업한 계열에서 중복으로 가진 개체를 고른다.
+    /// 이로치는 고르지 않는다. 계열마다 하나는 남긴다: 보낼 수 없는 개체(동행·즐겨찾기·이로치·잠김)가
+    /// 있으면 그게 남는 몫이고, 없으면 레벨이 가장 높은 개체를 남긴다.
+    ///
+    /// 계열은 도감 기록의 `chainOrder` 로 묶는다 — `baseID` 는 레이드·사파리에서 진화 중간 종으로 잡은
+    /// 개체면 그 종 자체라, 같은 계열이 둘로 갈려 중복을 못 센다.
+    var professorAutoSelection: Set<UUID> {
+        var lineRoot: [Int: Int] = [:]
+        for entry in state.dex {
+            guard let root = entry.chainOrder.first else { continue }
+            for speciesID in entry.chainOrder { lineRoot[speciesID] = root }
+        }
+        let lined = ownedMons.compactMap { mon in lineRoot[mon.currentID].map { (root: $0, mon: mon) } }
+        var selection: Set<UUID> = []
+        for group in Dictionary(grouping: lined, by: \.root).values where group.count > 1 {
+            let mons = group.map(\.mon)
+            let sendable = mons.filter { canSendToProfessor($0) && !$0.isShiny }
+                .sorted { ($0.level, $0.id.uuidString) > ($1.level, $1.id.uuidString) }
+            let keepsLockedOne = sendable.count < mons.count
+            selection.formUnion((keepsLockedOne ? sendable : Array(sendable.dropFirst())).map(\.id))
+        }
+        return selection
+    }
+
     /// 선택한 박스 개체를 한 번에 박사에게 보낸다. 전부 보낼 수 있을 때만 커밋하는 원자적 동작이다.
     /// 누적 3마리마다 **일반 알** 하나를 넣고, 실제 희귀도는 기존 알과 동일하게 부화 롤이 정한다.
     @discardableResult
@@ -2424,7 +2451,9 @@ final class CompanionStore {
     /// 기술을 다시 제안**하고 중복 카드가 쌓였다. 매 반복마다 현재 상태를 다시 읽는다.
     private func queueMoveLearning(from first: Int, through last: Int) {
         guard let monID = state.active?.id else { return }
-        Task { @MainActor in
+        let previous = moveLearningTask
+        moveLearningTask = Task { @MainActor in
+            await previous?.value
             for level in first...last {
                 // 도중에 개체가 바뀌었으면(교체·졸업·리롤) 남은 구간은 그 개체 몫이 아니다.
                 guard let mon = state.active, mon.id == monID else { return }
@@ -2437,11 +2466,19 @@ final class CompanionStore {
                     let alreadyQueued = moveLearningQueue.contains { $0.move.id == move.id }
                         || pendingMoveLearningPrompt?.move.id == move.id
                     guard !alreadyKnown, !alreadyQueued else { continue }
-                    moveLearningQueue.append(MoveLearningPrompt(monID: monID, level: level, move: move))
+                    let index = Self.levelOrderedInsertionIndex(queuedLevels: moveLearningQueue.map(\.level),
+                                                                newLevel: level)
+                    moveLearningQueue.insert(MoveLearningPrompt(monID: monID, level: level, move: move), at: index)
                 }
             }
             showNextMoveLearningPrompt()
         }
+    }
+
+    /// 새 카드를 넣을 자리 — 같은 레벨끼리는 들어온 순서를 지키고, 더 높은 레벨 카드보다는 앞에 선다.
+    /// 조회를 한 줄로 세워도(`moveLearningTask`) 대기열 자체가 레벨 순이라는 보장을 여기서 한 번 더 건다.
+    nonisolated static func levelOrderedInsertionIndex(queuedLevels: [Int], newLevel: Int) -> Int {
+        queuedLevels.firstIndex { $0 > newLevel } ?? queuedLevels.endIndex
     }
 
     private func showNextMoveLearningPrompt() {
@@ -3293,7 +3330,7 @@ final class CompanionStore {
             recordEventMemory("레이드에서 \(name)을(를) 잡았다.", "Caught \(name) in a raid.",
                               "レイドで\(name)を捕まえた。",
                               companionID: caught.id, eventID: "raid-catch:\(caught.id.uuidString)")
-            notifyCompanionEvent(l.raidCaughtTitle, l.raidCaughtBody(name, toBox: destination == .box))
+            pendingRaidCatchNotice = (l.raidCaughtTitle, l.raidCaughtBody(name, toBox: destination == .box))
             AppLog.write("raid catch: species=\(speciesID) rarity=\(line.rarity) shiny=\(isShiny) to=\(destination)")
         case .safariZone:
             recordEventMemory("사파리존에서 \(name)을(를) 잡았다.", "Caught \(name) in the Safari Zone.",
@@ -4558,6 +4595,17 @@ final class CompanionStore {
 
     /// companion 이벤트 시스템 알림(.app + 토글 ON 일 때만). 한도 알림과 독립.
     private var notifSeq = 0
+    /// 레이드 포획 알림은 바로 보내지 않는다 — 포획은 정산 시점에 끝나지만 결과 화면은 참가자 순서대로
+    /// 두구두구 후 공개하므로, 바로 보내면 내 차례가 오기 전에 알림이 결과를 먼저 말해 버린다.
+    private var pendingRaidCatchNotice: (title: String, body: String)?
+    var hasPendingRaidCatchNotice: Bool { pendingRaidCatchNotice != nil }
+
+    /// 보류해 둔 레이드 포획 알림을 보낸다. 결과 화면이 내 줄을 공개할 때, 또는 공개 전에 방을 떠날 때 부른다.
+    func sendPendingRaidCatchNotice() {
+        guard let notice = pendingRaidCatchNotice else { return }
+        pendingRaidCatchNotice = nil
+        notifyCompanionEvent(notice.title, notice.body)
+    }
     private func notifyCompanionEvent(_ title: String, _ body: String) {
         guard AppEnv.isBundledApp else { return }
         guard !(UserDefaults.standard.object(forKey: "doNotDisturb") as? Bool ?? false) else { return }
