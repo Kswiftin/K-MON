@@ -468,13 +468,30 @@ struct RaidView: View {
                              alreadyClaimed: attempt.id == center.myID
                                 && center.raidCatchResult == .claimedToday)
                 }
+                // 이유 문구와 포획 알림은 **내 줄이 공개된 뒤에** 내보낸다 — 먼저 나가면 두구두구가
+                // 끝나기 전에 결과를 말해 버린다. 포획은 비동기라 공개보다 늦게 끝날 수도 있어 둘 다 지켜본다.
+                if myCatchRevealed, let notice = center.raidCatchNotice {
+                    Text(notice).font(.caption2).foregroundStyle(.orange)
+                }
             }
             .animation(.spring(response: 0.35), value: revealedCatchAttempts)
             // 공개는 이 목록이 **화면에 나타날 때** 시작한다. 추첨은 정산 시점(마지막 턴 재생 중)에
             // 끝나므로, 그 변화에 걸면 재생이 2초를 넘는 판에서 결과 화면이 뜰 때 첫 줄이 이미 공개돼 있다.
             .onAppear { revealCatchAttempts() }
             .onChange(of: center.raidCatchAttempts.count) { revealCatchAttempts() }
+            .onChange(of: myCatchRevealed) { sendCatchNoticeIfRevealed() }
+            .onChange(of: center.raidCatchResult) { sendCatchNoticeIfRevealed() }
         }
+    }
+
+    /// 내 줄이 공개됐나. 추첨에 내가 없으면(뽑힐 자격이 없던 판) 공개할 내 결과도 없다.
+    private var myCatchRevealed: Bool {
+        guard let mine = center.raidCatchAttempts.firstIndex(where: { $0.id == center.myID }) else { return false }
+        return mine < revealedCatchAttempts
+    }
+
+    private func sendCatchNoticeIfRevealed() {
+        if myCatchRevealed { store.sendPendingRaidCatchNotice() }
     }
 
     /// 세 국면 — **대기**(순서가 아직 안 옴), **두구두구**(바로 다음 차례, 물음표가 맥동한다),

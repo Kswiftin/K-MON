@@ -1421,6 +1421,18 @@ final class CompanionStoreTests: XCTestCase {
         XCTAssertEqual(s.debugMoveLearningQueueCount, 0, "같은 기술이 큐에 또 쌓이면 안 된다")
     }
 
+    /// [회귀] 기술 카드 대기열은 레벨 순이다 — 사탕 여러 개의 조회가 끝나는 순서대로 쌓이던 동안
+    /// 높은 레벨 카드가 앞에 섰다(2026-10-22 사용자 보고). 같은 레벨끼리는 들어온 순서를 지킨다.
+    func testMoveLearningQueueInsertsByLevel() {
+        XCTAssertEqual(CompanionStore.levelOrderedInsertionIndex(queuedLevels: [], newLevel: 7), 0)
+        XCTAssertEqual(CompanionStore.levelOrderedInsertionIndex(queuedLevels: [12, 15], newLevel: 11), 0,
+                       "늦게 끝난 낮은 레벨 조회는 높은 레벨 카드 앞에 서야 한다")
+        XCTAssertEqual(CompanionStore.levelOrderedInsertionIndex(queuedLevels: [11, 15], newLevel: 12), 1)
+        XCTAssertEqual(CompanionStore.levelOrderedInsertionIndex(queuedLevels: [11, 11, 15], newLevel: 11), 2,
+                       "같은 레벨이면 먼저 들어온 카드 뒤에 선다")
+        XCTAssertEqual(CompanionStore.levelOrderedInsertionIndex(queuedLevels: [11, 12], newLevel: 20), 2)
+    }
+
     /// 최종형이 아니면 졸업 버튼 자체가 안 뜬다.
     func testCannotGraduateBeforeTheFinalForm() async {
         let s = store(linear3)

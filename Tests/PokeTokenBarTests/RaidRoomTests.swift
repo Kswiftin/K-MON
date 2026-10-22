@@ -898,9 +898,27 @@ final class RaidRoomTests: XCTestCase {
         let center = await raidWhereIAmDrawn(store)
 
         XCTAssertEqual(center.raidCatchResult, .claimedToday)
-        XCTAssertEqual(center.lastError, store.l.raidCatchAlreadyToday,
+        XCTAssertEqual(center.raidCatchNotice, store.l.raidCatchAlreadyToday,
                        "로드 실패가 아니라 '하루 한 마리' 라고 말해야 한다")
+        XCTAssertNil(center.lastError, "화면 위 안내 자리에 넣으면 두구두구 공개 전에 결과가 샌다")
         XCTAssertTrue(store.state.boxedMons.isEmpty)
+    }
+
+    /// **회귀**: 포획 알림은 잡는 순간 나가지 않는다 — 결과 화면이 참가자 순서대로 두구두구 후
+    /// 공개하는데, 알림이 먼저 나가면 내 차례가 오기 전에 결과를 말해 버린다(2026-10-22 사용자 보고).
+    /// 공개 전에 방을 떠나면 그때 보낸다.
+    @MainActor
+    func testRaidCatchNoticeWaitsForTheRevealAndGoesOutOnLeave() async {
+        let store = stubStore(TestClock(), tag: "raid-catch-notice-held")
+        await store.hatch(baseID: 20)
+
+        let center = await raidWhereIAmDrawn(store)
+
+        XCTAssertEqual(center.raidCatchResult, .box, "테스트 전제: 실제로 잡았다")
+        XCTAssertTrue(store.hasPendingRaidCatchNotice, "잡는 순간 알림을 보내면 공개 순서보다 먼저 샌다")
+        XCTAssertNil(center.raidCatchNotice, "잡은 판에는 이유 문구가 없다")
+        center.leaveRoom()
+        XCTAssertFalse(store.hasPendingRaidCatchNotice, "공개 전에 떠나면 알림을 그때 보낸다")
     }
 
     /// **회귀**: 포획이 실패한 판은 성공 문구의 근거를 남기지 않는다.
@@ -917,7 +935,8 @@ final class RaidRoomTests: XCTestCase {
 
         XCTAssertEqual(center.raidCatchResult, .unavailable,
                        "실패가 성공과 같은 값이면 화면이 '상자에 있어요' 를 그린다")
-        XCTAssertEqual(center.lastError, store.l.raidCatchFailed)
+        XCTAssertEqual(center.raidCatchNotice, store.l.raidCatchFailed)
+        XCTAssertNil(center.lastError, "화면 위 안내 자리에 넣으면 두구두구 공개 전에 결과가 샌다")
         XCTAssertNil(store.state.active)
         XCTAssertTrue(store.state.boxedMons.isEmpty)
         XCTAssertFalse(store.raidCatchClaimedToday, "못 잡은 판이 오늘의 기회를 태우면 안 된다")

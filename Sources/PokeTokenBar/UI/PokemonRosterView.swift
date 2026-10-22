@@ -282,6 +282,11 @@ struct PokemonRosterView: View {
                 Spacer(minLength: 4)
                 Button("취소") { endProfessorSelection() }
                     .buttonStyle(.borderless).controlSize(.mini)
+                // 졸업한 계열의 중복만 고른다(이로치·즐겨찾기 제외, 계열마다 하나 남김 — `professorAutoSelection`).
+                Button("자동 선택") { professorSelection = store.professorAutoSelection }
+                    .buttonStyle(.borderless).controlSize(.mini)
+                    .disabled(store.professorAutoSelection.isEmpty)
+                    .help("이미 졸업한 계열에서 중복된 포켓몬을 고릅니다. 계열마다 레벨이 가장 높은 1마리는 남깁니다.")
                 Button(professorSendButtonTitle) { professorConfirmation = true }
                     .buttonStyle(.borderedProminent).controlSize(.mini)
                     .disabled(professorSelection.isEmpty)
