@@ -190,8 +190,8 @@ enum RaidBoss {
         383, 384, 480, 481, 482, 483, 484, 485, 486, 487, 488, 638, 639, 640, 641,
         642, 643, 644, 645, 646
     ]
-    /// 주간 6성은 일반 티어와 별도 로테이션이다. 강한 최종 진화체를 넓게 섞어 같은 보스가
-    /// 몇 주 간격으로 되풀이되는 느낌을 줄인다.
+    /// 6성은 일반 티어와 별도 로테이션이다. 강한 최종 진화체를 넓게 섞어 같은 보스가
+    /// 자주 되풀이되는 느낌을 줄인다.
     static let weeklySpeciesPool = [
         28, 38, 40, 49, 53, 57, 62, 73, 78, 80, 82, 85, 87, 89, 91, 97, 99,
         101, 105, 110, 113, 119, 122, 123, 124, 125, 126, 128, 139, 141, 142, 164,
@@ -275,11 +275,6 @@ enum RaidBoss {
         speciesID(dayKey: bossKey(at: date, tier: tier, calendar: calendar), tier: tier)
     }
 
-    static func weeklyPeriodKey(_ date: Date, calendar: Calendar = .current) -> String {
-        let parts = calendar.dateComponents([.yearForWeekOfYear, .weekOfYear], from: date)
-        return String(format: "%04d-W%02d", parts.yearForWeekOfYear ?? 0, parts.weekOfYear ?? 0)
-    }
-
     /// 반나절보다 잘게 자른 시간 키(`yyyy-MM-dd-HH`) — 이벤트 창(`LiveEventWindow`) 동안만
     /// `bossKey`가 이 키로 종을 뽑는다. `-am`/`-pm` 접미사와 형태가 달라 `speciesID(dayKey:tier:)`
     /// 의 "오전과 다른 종" 보정(`hasSuffix("-pm")`)은 안 타지만, 1시간짜리 이벤트 로테이션에는
@@ -289,10 +284,10 @@ enum RaidBoss {
         return String(format: "%@-%02d", dailyKey(date, calendar: calendar), hour)
     }
 
-    /// 오늘의 레이드 보스를 고르는 키. 6★ 는 그 주 내내 고정(`weeklyPeriodKey`), 나머지는 평소
-    /// 반나절(`periodKey`)마다 바뀌지만 이벤트 창 동안은 `hourlyKey`로 매시간 바뀐다.
+    /// 오늘의 레이드 보스를 고르는 키. 모든 티어가 반나절(`periodKey`)마다 바뀐다. 1★·3★·5★는
+    /// 이벤트 창 동안 `hourlyKey`로 매시간 바뀌지만 6★는 이벤트와 무관하게 반나절을 지킨다.
     static func bossKey(at date: Date, tier: RaidTier, calendar: Calendar = .current) -> String {
-        if tier == .six { return weeklyPeriodKey(date, calendar: calendar) }
+        if tier == .six { return periodKey(date, calendar: calendar) }
         return LiveEventWindow.isActive(date, calendar: calendar)
             ? hourlyKey(date, calendar: calendar) : periodKey(date, calendar: calendar)
     }

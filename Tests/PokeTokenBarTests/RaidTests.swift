@@ -153,7 +153,7 @@ final class RaidTests: XCTestCase {
     }
 
     /// 이벤트 창 동안만 보스 종 선택이 반나절(`periodKey`)이 아니라 시간(`hourlyKey`)을 탄다 —
-    /// 6★ 는 그 주 내내 고정이라 이벤트와 무관하다.
+    /// 6★ 는 이벤트와 무관하게 반나절 키를 지킨다.
     func testBossKeyRotatesHourlyOnlyDuringTheEventWindow() {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = TimeZone(secondsFromGMT: 0)!
@@ -173,9 +173,25 @@ final class RaidTests: XCTestCase {
         // 창 밖에서는 평소처럼 반나절 키다.
         XCTAssertEqual(RaidBoss.bossKey(at: outsideEvent, tier: .three, calendar: calendar), "2026-09-12-pm")
 
-        // 6★ 는 이벤트와 무관하게 그 주 내내 고정.
-        XCTAssertEqual(RaidBoss.bossKey(at: inEvent, tier: .six, calendar: calendar),
-                       RaidBoss.weeklyPeriodKey(inEvent, calendar: calendar))
+        // 6★ 는 이벤트와 무관하게 반나절 키다.
+        XCTAssertEqual(RaidBoss.bossKey(at: inEvent, tier: .six, calendar: calendar), "2026-09-11-pm")
+    }
+
+    /// 6★ 보스도 다른 티어처럼 오전·오후마다 바뀐다(예전엔 그 주 내내 고정이었다).
+    func testSixStarBossRotatesEachHalfDay() {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "Asia/Seoul")!
+        let morning = calendar.date(from: DateComponents(year: 2026, month: 10, day: 26, hour: 9))!
+        let afternoon = calendar.date(from: DateComponents(year: 2026, month: 10, day: 26, hour: 15))!
+        let nextMorning = calendar.date(from: DateComponents(year: 2026, month: 10, day: 27, hour: 9))!
+
+        XCTAssertEqual(RaidBoss.bossKey(at: morning, tier: .six, calendar: calendar), "2026-10-26-am")
+        XCTAssertEqual(RaidBoss.bossKey(at: afternoon, tier: .six, calendar: calendar), "2026-10-26-pm")
+        XCTAssertNotEqual(RaidBoss.speciesID(at: morning, tier: .six, calendar: calendar),
+                          RaidBoss.speciesID(at: afternoon, tier: .six, calendar: calendar),
+                          "같은 날 오전과 오후 6★ 보스는 달라야 한다")
+        XCTAssertNotEqual(RaidBoss.bossKey(at: morning, tier: .six, calendar: calendar),
+                          RaidBoss.bossKey(at: nextMorning, tier: .six, calendar: calendar))
     }
 
     /// [회귀 가드] `MultiplayerRoomCenter.applyRaidSettlement` 는 시계를 주입받지 않아
@@ -239,15 +255,6 @@ final class RaidTests: XCTestCase {
         XCTAssertLessThanOrEqual(RaidTier.five.bossLevel, RaidBoss.partyLevel,
                                  "보스가 파티보다 높은 레벨이면 화력이 HP 표와 무관하게 튄다")
         XCTAssertEqual(RaidTier.six.bossLevel, RaidBoss.partyLevel)
-    }
-
-    func testSixStarBossStaysFixedForTheWholeWeek() {
-        var calendar = Calendar(identifier: .iso8601)
-        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
-        let monday = calendar.date(from: DateComponents(year: 2026, month: 9, day: 7, hour: 9))!
-        let sunday = calendar.date(byAdding: .day, value: 6, to: monday)!
-        XCTAssertEqual(RaidBoss.speciesID(at: monday, tier: .six, calendar: calendar),
-                       RaidBoss.speciesID(at: sunday, tier: .six, calendar: calendar))
     }
 
     // MARK: 정산 — 기여도가 무임승차를 가른다
