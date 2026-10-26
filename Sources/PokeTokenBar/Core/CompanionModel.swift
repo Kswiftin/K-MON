@@ -2766,7 +2766,7 @@ struct CompanionState: Codable, Sendable {
     /// 5★ 전용 지급 원장 — `raidRewardDate` 와 같은 규칙, 다른 티어.
     var raidRewardDateTierFive = ""
     var raidRewardDateTierSix = ""
-    /// 6★ 는 보스가 오전/오후로 안 바뀌고 그 주 내내 고정이라, 위 값엔 **오전/오후 키가 아니라
+    /// 6★ 지급은 오전/오후 구간이 아니라 하루 횟수로 세므로, 위 값엔 **오전/오후 키가 아니라
     /// 하루 키**(`RaidBoss.dailyKey`)가 들어간다 — `raidRewardDateTierSix` 가 오늘 키와 같으면
     /// `raidRewardCountTierSix` 가 오늘 받은 횟수, 다르면(날짜가 바뀌면) 0 이다. 한도는
     /// `CompanionStore.sixStarDailyClaimLimit`(2회) — 오전/오후 구분 없이 하루 승리 횟수로만

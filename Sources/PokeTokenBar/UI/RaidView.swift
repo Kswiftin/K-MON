@@ -93,9 +93,7 @@ struct RaidView: View {
     /// 보여줘 어느 티어가 무엇을 주는지 방을 열기 전에 알 수 있게 한다.
     private var todaysBossCard: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(RaidHalfDay.at(Date()) == .morning
-                 ? "오전 레이드 보스 · 6★는 이번 주 고정"
-                 : "오후 레이드 보스 · 6★는 이번 주 고정")
+            Text(RaidHalfDay.at(Date()) == .morning ? "오전 레이드 보스" : "오후 레이드 보스")
                 .font(.caption2).foregroundStyle(.secondary)
             liveEventBanner
             HStack(spacing: 10) {
@@ -231,7 +229,7 @@ struct RaidView: View {
                     .disabled(center.phase != .idle)
                 }
             }
-            Text("6★ 주간 레이드 · 추천 5명 · 도전 횟수 제한 없음(보상은 오전·오후 무관 하루 2회)")
+            Text("6★ 레이드 · 추천 5명 · 도전 횟수 제한 없음(보상은 오전·오후 무관 하루 2회)")
                 .font(.caption2).foregroundStyle(.secondary)
         }
     }
