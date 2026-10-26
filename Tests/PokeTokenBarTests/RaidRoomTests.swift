@@ -378,46 +378,48 @@ final class RaidRoomTests: XCTestCase {
         XCTAssertEqual(store.creditRaidReward(300), 300)
     }
 
-    /// [회귀] 6★ 지급은 하루 2회로 세야 하는데, 지급 원장이 다른 티어와
-    /// 같은 반나절 키를 써서 "오전 1회·오후 1회"로 잘렸다 — 아침에 두 판을 이겨도 두 번째
-    /// 보상이 없었다(사용자 보고, 2026-09-10). **주가 아니라 하루 2회다** — 오전/오후를 넘나들지
-    /// 않고 같은 반나절 안에서 두 번째 승리를 줘도 지급돼야 한다는 게 이 테스트의 핵심이다.
+    /// [회귀] 6★ 지급은 구간(오전/오후)마다 2회다. 구간당 1회로 자르면 한 구간에 두 판을 이겨도
+    /// 두 번째 보상이 없었다(사용자 보고, 2026-09-10). 보스가 구간마다 바뀌면서(2026-10-26) 한도도
+    /// 하루 2회에서 구간마다 2회로 바꿨다 — 같은 구간의 두 번째 승리와, 다음 구간의 새 2회를 함께 본다.
     @MainActor
-    func testSixStarDailyRewardGivesTwiceRegardlessOfHalfDay() {
+    func testSixStarRewardGivesTwicePerHalfDay() {
         let clock = TestClock()
-        let store = stubStore(clock, tag: "raid-six-daily-reward")
+        let store = stubStore(clock, tag: "raid-six-half-day-reward")
 
-        XCTAssertEqual(store.creditRaidReward(1_000, tier: .six), 1_000, "오늘 첫 승리는 지급된다")
-        XCTAssertFalse(store.raidRewardClaimedToday(tier: .six), "하루 2회 중 아직 한 번만 썼다")
+        XCTAssertEqual(store.creditRaidReward(1_000, tier: .six), 1_000, "이번 구간 첫 승리는 지급된다")
+        XCTAssertFalse(store.raidRewardClaimedToday(tier: .six), "구간당 2회 중 아직 한 번만 썼다")
 
-        // 시계를 전혀 돌리지 않는다 — 같은 반나절 안에서의 두 번째 승리를 검증하는 것이 요점이다.
-        XCTAssertEqual(store.creditRaidReward(1_000, tier: .six), 1_000,
-                       "오전/오후 구분 없이 오늘 두 번째 승리도 지급돼야 한다")
-        XCTAssertTrue(store.raidRewardClaimedToday(tier: .six), "오늘의 2회를 다 썼다")
-        XCTAssertEqual(store.creditRaidReward(1_000, tier: .six), 0, "오늘 세 번째는 없다")
+        // 시계를 돌리지 않는다 — 같은 구간 안에서의 두 번째 승리를 검증한다.
+        XCTAssertEqual(store.creditRaidReward(1_000, tier: .six), 1_000, "같은 구간 두 번째 승리도 지급돼야 한다")
+        XCTAssertTrue(store.raidRewardClaimedToday(tier: .six), "이번 구간의 2회를 다 썼다")
+        XCTAssertEqual(store.creditRaidReward(1_000, tier: .six), 0, "같은 구간 세 번째는 없다")
 
-        // 날짜가 바뀌면 다시 2회가 열린다.
-        clock.advance(24 * 60 * 60)
-        XCTAssertFalse(store.raidRewardClaimedToday(tier: .six), "날짜가 바뀌면 다시 2회가 열린다")
+        // 12시간 뒤는 반드시 다른 구간이다 — 같은 날이어도 다시 2회가 열린다.
+        clock.advance(12 * 60 * 60)
+        XCTAssertFalse(store.raidRewardClaimedToday(tier: .six), "다음 구간엔 다시 2회가 열린다")
         XCTAssertEqual(store.creditRaidReward(1_000, tier: .six), 1_000)
+        XCTAssertEqual(store.creditRaidReward(1_000, tier: .six), 1_000)
+        XCTAssertEqual(store.creditRaidReward(1_000, tier: .six), 0)
     }
 
-    /// 포획 추첨은 지급 성공(`raidPayout > 0`)에서만 도므로, 포획 원장도 지급과 같은 하루 한도를
-    /// 따라야 한다 — 안 그러면 같은 반나절 안의 두 번째 승리에서 보상은 나가는데 포획만
-    /// "이미 오늘 잡음"으로 막히는 어긋난 조합이 생긴다.
+    /// 포획 추첨은 지급 성공(`raidPayout > 0`)에서만 도므로, 포획 원장도 지급과 같은 구간당 2회를
+    /// 따라야 한다 — 안 그러면 같은 구간의 두 번째 승리에서 보상은 나가는데 포획만 "이미 잡음"으로
+    /// 막히는 어긋난 조합이 생긴다.
     @MainActor
-    func testSixStarDailyCatchAllowsTwiceRegardlessOfHalfDay() {
+    func testSixStarCatchAllowsTwicePerHalfDay() {
         let clock = TestClock()
-        let store = stubStore(clock, tag: "raid-six-daily-catch")
+        let store = stubStore(clock, tag: "raid-six-half-day-catch")
 
         XCTAssertTrue(store.claimRaidCatch(tier: .six))
-        XCTAssertFalse(store.raidCatchClaimedToday(tier: .six), "하루 2회 중 아직 한 번만 썼다")
-        XCTAssertTrue(store.claimRaidCatch(tier: .six), "같은 반나절 안에서도 두 번째 포획이 열려야 한다")
+        XCTAssertFalse(store.raidCatchClaimedToday(tier: .six), "구간당 2회 중 아직 한 번만 썼다")
+        XCTAssertTrue(store.claimRaidCatch(tier: .six), "같은 구간 안에서도 두 번째 포획이 열려야 한다")
         XCTAssertTrue(store.raidCatchClaimedToday(tier: .six))
-        XCTAssertFalse(store.claimRaidCatch(tier: .six), "오늘 세 번째는 없다")
+        XCTAssertFalse(store.claimRaidCatch(tier: .six), "같은 구간 세 번째는 없다")
 
-        clock.advance(24 * 60 * 60)
-        XCTAssertTrue(store.claimRaidCatch(tier: .six), "날짜가 바뀌면 다시 2회가 열린다")
+        clock.advance(12 * 60 * 60)
+        XCTAssertTrue(store.claimRaidCatch(tier: .six), "다음 구간엔 다시 2회가 열린다")
+        XCTAssertTrue(store.claimRaidCatch(tier: .six))
+        XCTAssertFalse(store.claimRaidCatch(tier: .six))
     }
 
     // MARK: 이벤트 창(2026-09-11 08~20시) — 포획 추첨 무제한

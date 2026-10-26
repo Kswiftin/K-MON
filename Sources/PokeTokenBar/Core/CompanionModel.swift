@@ -2766,11 +2766,11 @@ struct CompanionState: Codable, Sendable {
     /// 5★ 전용 지급 원장 — `raidRewardDate` 와 같은 규칙, 다른 티어.
     var raidRewardDateTierFive = ""
     var raidRewardDateTierSix = ""
-    /// 6★ 지급은 오전/오후 구간이 아니라 하루 횟수로 세므로, 위 값엔 **오전/오후 키가 아니라
-    /// 하루 키**(`RaidBoss.dailyKey`)가 들어간다 — `raidRewardDateTierSix` 가 오늘 키와 같으면
-    /// `raidRewardCountTierSix` 가 오늘 받은 횟수, 다르면(날짜가 바뀌면) 0 이다. 한도는
-    /// `CompanionStore.sixStarDailyClaimLimit`(2회) — 오전/오후 구분 없이 하루 승리 횟수로만
-    /// 센다(아침에 두 판을 이겨도 둘 다 받을 수 있어야 한다는 사용자 보고로 도입).
+    /// 6★ 지급은 오전/오후 구간마다 횟수로 센다 — 위 값엔 구간 키(`RaidBoss.periodKey`)가
+    /// 들어가고, `raidRewardDateTierSix` 가 지금 구간 키와 같으면 `raidRewardCountTierSix` 가 이번
+    /// 구간에 받은 횟수, 다르면 0 이다. 한도는 `CompanionStore.sixStarClaimLimitPerHalfDay`(2회)
+    /// (한 구간에 두 판을 이겨도 둘 다 받을 수 있어야 한다는 사용자 보고로 도입). 2026-10-26 전
+    /// 세이브엔 하루 키(`yyyy-MM-dd`)가 남아 있을 수 있다 — 구간 키와 달라 0 으로 읽힌다.
     var raidRewardCountTierSix = 0
     /// 레이드 보스를 마지막으로 잡은 오전/오후 키 — **1★ 전용**. 구간당 한 마리의 멱등 가드이고
     /// 같은 이유로 서명 대상이다(`rc` 세그먼트).
@@ -2784,9 +2784,9 @@ struct CompanionState: Codable, Sendable {
     /// 5★ 전용 포획 원장 — `raidCatchDate` 와 같은 규칙, 다른 티어.
     var raidCatchDateTierFive = ""
     var raidCatchDateTierSix = ""
-    /// `raidRewardCountTierSix` 와 같은 하루 키+카운트 모양 — 포획 추첨은 보상 지급이 성공할 때만
-    /// 도므로(`MultiplayerRoomCenter.applyRaidSettlement`), 이 원장도 보상과 같은 한도(하루 2회)를
-    /// 따라야 같은 날 오전에 두 번 이겨도 두 번째 포획이 막히지 않는다.
+    /// `raidRewardCountTierSix` 와 같은 구간 키+카운트 모양 — 포획 추첨은 보상 지급이 성공할 때만
+    /// 도므로(`MultiplayerRoomCenter.applyRaidSettlement`), 이 원장도 보상과 같은 한도(구간당 2회)를
+    /// 따라야 한 구간에 두 번 이겨도 두 번째 포획이 막히지 않는다.
     var raidCatchCountTierSix = 0
     /// 사파리존 하루 방문(참여) 원장 — `gymDefenseRewardDate`/`Today` 와 같은 날짜+카운트 모양.
     /// 방문 자체(걷기·볼)를 몇 번 할 수 있는지를 잠근다. 포획(보상) 원장과 분리하는 이유는

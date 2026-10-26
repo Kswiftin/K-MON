@@ -233,8 +233,7 @@ enum RaidBoss {
         tier == .six ? 9 : catchPercent(for: rarity(speciesID: speciesID))
     }
 
-    /// 반나절로 안 가른, 달력 하루 키(`yyyy-MM-dd`) — 6★ 주간 레이드의 보상·포획 원장이 쓴다
-    /// (오전/오후 무관 하루 2회, `CompanionStore.sixStarDailyClaimLimit`).
+    /// 반나절로 안 가른, 달력 하루 키(`yyyy-MM-dd`) — `periodKey`·`hourlyKey` 의 앞부분이다.
     static func dailyKey(_ date: Date, calendar: Calendar = .current) -> String {
         let components = calendar.dateComponents([.year, .month, .day], from: date)
         return String(format: "%04d-%02d-%02d", components.year ?? 0,
